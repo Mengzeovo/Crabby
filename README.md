@@ -1,6 +1,6 @@
-# Life Assistant Agent
+# Crabby: Your life assistant for Obsidian
 
-Life Assistant Agent 是一个围绕 Obsidian Vault 构建的本地 AI 助手。它由三部分组成：
+Crabby 是一个围绕 Obsidian Vault 构建的本地 AI 助手。它由三部分组成：
 
 - Python FastAPI 后端：负责 LLM 调用、工具执行、MCP 集成、会话、附件、定时任务和运行时配置。
 - Obsidian TypeScript 插件：负责聊天 UI、设置页、后端生命周期管理、MCP 配置和 Obsidian 客户端工具桥接。
