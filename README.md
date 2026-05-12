@@ -1,33 +1,54 @@
 # Crabby
 
-<a href="#english">English</a> | <a href="#chinese">简体中文</a>
+Crabby 是一个围绕本地 Obsidian Vault 构建的 AI 助手。它把 Obsidian 聊天、Vault 搜索、LLM Profile、工具调用、MCP、Persona、Skill、会话分支、定时任务和桌面伴随入口组合成一个本地优先的个人助理系统。
 
----
+它的默认使用场景很明确：一台本机、一个本地 Vault、用户自己掌控的配置和数据。
 
-<h2 id="english">🇬🇧 English</h2>
+## 适合先了解什么
 
-**Crabby** is a local AI assistant built around an Obsidian Vault. It consists of three core components:
+如果你第一次接触 Crabby，可以按这个顺序看：
 
-- **Python FastAPI Backend**: Handles LLM API calls, tool execution, MCP (Model Context Protocol) integration, session management, file attachments, cron jobs, and runtime configuration.
-- **Obsidian TypeScript Plugin**: Provides the main chat UI, settings panel, backend lifecycle management, MCP configuration, and bridges Obsidian client capabilities to the backend.
-- **Electron Desktop Pet**: A lightweight desktop companion that reuses the same backend session for seamless interactions outside Obsidian.
+1. 先读本文，了解项目是什么、怎么运行、怎么安装。
+2. 再读 [docs/项目能力概览.md](docs/项目能力概览.md)，看完整产品能力。
+3. 如果要维护代码，继续读 [docs/architecture.md](docs/architecture.md) 和 [AGENTS.md](AGENTS.md)。
 
-### Repository Layout
+## Crabby 能做什么
+
+- **在 Obsidian 里聊天**：支持流式回复、工具状态、reasoning 展示、图片附件、上下文占用、当前回合 usage、session 累计 usage、历史恢复和 conversation 分支。
+- **搜索和使用 Vault**：通过 `obsidian_search` 使用接近 Obsidian Search 的语义检索 `.md` 和 `.canvas` 文件，也可以用 `read`、`edit`、`grep`、`glob`、`task_query` 等工具处理本地内容。
+- **管理多个 LLM Provider**：通过 LLM Profile 保存 provider、model、API key、base URL、vision、thinking/reasoning 等设置。
+- **切换工作人格**：内置 secretary、archivist、researcher、philosopher、mentor 等 Persona，也支持 Auto / Manual / None 模式。
+- **使用 Skill 行为指南**：用 `SKILL.md` 描述某类任务的处理方法，用户可通过 slash command 指定当前回合 Skill。
+- **连接 MCP 工具生态**：支持 `stdio` 和 `sse` MCP server，插件设置页可编辑配置并触发 reload。
+- **创建后台定时任务**：通过 Cron 工具让助手在未来时间点执行隔离 agent 回合，并把结果通知回源 session。
+- **使用 Desktop Pet**：Electron 桌面伴随客户端复用同一个后端，提供轻量聊天、气泡和通知入口。
+- **打包私有发布版**：把 Obsidian 插件和平台专属后端二进制打成一个手动安装 zip。
+
+## 项目结构
 
 ```text
-server/             Python backend
-obsidian-plugin/    Obsidian plugin source and built main.js
-desktop-pet/        Electron desktop companion
-docs/               Architecture and design notes
-prompts/            Default prompt templates
-personas/           Runtime persona assets
-skills/             Runtime skill assets
-scripts/            Build and release helper scripts
+server/             Python FastAPI 后端
+obsidian-plugin/    Obsidian 插件源码和构建后的 main.js
+desktop-pet/        Electron Desktop Pet
+docs/               产品、架构、路线图和设计文档
+prompts/            默认 prompt fragments
+personas/           Runtime Persona 定义
+skills/             Runtime Skill 定义
+scripts/            构建和发布辅助脚本
 ```
 
-### Development
+## 前置要求
 
-**Backend:**
+- Obsidian Desktop。Crabby 是 desktop-only 插件，因为它需要管理本地后端进程。
+- Python 3.11+ 和 [`uv`](https://docs.astral.sh/uv/)。
+- Node.js 和 npm。
+- 一个可用的 LLM Provider API key，或本地 Ollama-compatible 模型。
+- 如果要打包发布，需要一台和目标系统/CPU 架构一致的构建机器。打包脚本不会跨平台编译后端二进制。
+
+## 本地开发
+
+后端：
+
 ```bash
 cd server
 uv sync --dev
@@ -36,16 +57,20 @@ uv run pytest
 uv run ruff check .
 ```
 
-**Obsidian Plugin:**
+Obsidian 插件：
+
 ```bash
 cd obsidian-plugin
 npm ci
 npm run test:config
+npm run test:chat-content
+npm run test:chat-styles
 npx tsc --noEmit
 npm run build
 ```
 
-**Desktop Pet:**
+Desktop Pet：
+
 ```bash
 cd desktop-pet
 npm ci
@@ -54,42 +79,47 @@ npm run test
 npm run build
 ```
 
-### Private Obsidian Release Package
+## 手动发布包
 
-For private or manual installation, the release artifact is a zip archive containing both the Obsidian plugin frontend and a pre-built backend binary.
+Crabby 当前支持私有手动安装包：一个 zip 里同时包含 Obsidian 插件前端和预构建的后端可执行文件。
 
-*Current private target example: macOS Apple Silicon (`darwin arm64`), version `0.1.0`.*
+插件前端本身跨平台，但后端二进制不跨平台。你需要按目标系统和 CPU 架构分别构建。
 
-#### 1. Clone
-```bash
-git clone <your-repo>
-cd Crabby
-```
+下面以 macOS Apple Silicon、版本 `0.1.0` 为例。
 
-#### 2. Build The Backend Runtime
-Run this on the target platform (e.g., on an Apple Silicon Mac for `darwin arm64`):
+先在目标平台构建后端 runtime：
+
 ```bash
 cd server
 uv sync --dev
 uv run --with pyinstaller python ../scripts/build-backend-runtime.py --version 0.1.0
 cd ..
 ```
-*Expected backend binary: `dist/backend-runtime/0.1.0/darwin/crabby-backend`*
 
-#### 3. Install Plugin Dependencies
+macOS 下预期输出：
+
+```text
+dist/backend-runtime/0.1.0/darwin/crabby-backend
+```
+
+再构建手动安装 zip：
+
 ```bash
 cd obsidian-plugin
 npm ci
+npm run build
 cd ..
-```
-
-#### 4. Build The Manual Install Zip
-```bash
 python scripts/package-obsidian-release.py --platform darwin --arch arm64
 ```
-*Output: `dist/obsidian-plugin/crabby-0.1.0-darwin-arm64.zip`*
 
-The zip contains:
+预期输出：
+
+```text
+dist/obsidian-plugin/crabby-0.1.0-darwin-arm64.zip
+```
+
+包内结构：
+
 ```text
 crabby/
   manifest.json
@@ -101,158 +131,98 @@ crabby/
         darwin/
           crabby-backend
 ```
-*`runtime/state.json` stores the backend executable path relative to the plugin directory, allowing the plugin folder to be moved with the vault across machines.*
 
-### Manual Installation In Obsidian
+`runtime/state.json` 会把后端可执行文件路径记录为相对 `runtime/` 的路径，所以插件目录可以跟随 Vault 移动。
 
-1. Locate your target vault.
-2. Unzip `crabby-0.1.0-darwin-arm64.zip` into `<YourVault>/.obsidian/plugins/`. Ensure the final structure looks like this:
-   ```text
-   <YourVault>/.obsidian/plugins/crabby/manifest.json
-   <YourVault>/.obsidian/plugins/crabby/main.js
-   <YourVault>/.obsidian/plugins/crabby/runtime/state.json
-   ...
-   ```
-3. *(macOS/Linux only)* Ensure the backend binary is executable if your unzip tool didn't preserve permissions:
+## 在 Obsidian 中安装
+
+1. 把 zip 解压到 `<YourVault>/.obsidian/plugins/`。
+2. 确认最终路径是 `<YourVault>/.obsidian/plugins/crabby/manifest.json`。
+3. macOS 或 Linux 下，如果解压工具没有保留执行权限，运行：
+
    ```bash
    chmod +x "<YourVault>/.obsidian/plugins/crabby/runtime/backend/0.1.0/darwin/crabby-backend"
    ```
-4. Restart Obsidian.
-5. Open `Settings -> Community plugins`.
-6. Disable "Restricted mode" if necessary.
-7. Enable **Crabby**.
 
-The plugin will read `runtime/state.json`, resolve the relative backend path, and lazily boot up the bundled backend server.
-
-### Notes
-- Running `scripts/build-backend-runtime.py` on Windows creates a Windows backend executable (`.exe`); running it on macOS creates a macOS executable.
-- The Obsidian frontend (`manifest.json` and `main.js`) is cross-platform, but the bundled backend binary is platform-specific.
-- This private packaging workflow does not require a remote URL manifest or a temporary static server.
-
-<br/>
-<br/>
-
-<h2 id="chinese">🇨🇳 简体中文</h2>
-
-**Crabby** 是一个基于 Obsidian Vault 知识库构建的本地 AI 助手。项目主要由以下三部分组成：
-
-- **Python FastAPI 后端**：负责提供 LLM 调用、工具执行、MCP (Model Context Protocol) 集成、会话管理、附件支持、定时任务（Cron）和运行时配置等核心功能。
-- **Obsidian TypeScript 插件**：负责提供 Obsidian 内部的聊天 UI、设置页面、后端的生命周期管理、MCP 配置编辑器，并将部分 Obsidian 的客户端能力桥接给后端工具引用。
-- **Electron 桌面宠物 (Desktop Pet)**：轻一点的桌面交互入口，与 Obsidian 插件复用同一个后端会话上下文。
-
-### 代码仓库结构
-
-```text
-server/             后端服务 (Python)
-obsidian-plugin/    Obsidian 插件源码及编译后的 main.js
-desktop-pet/        Electron 桌搭应用
-docs/               架构和设计文档
-prompts/            默认角色/系统提示词模板
-personas/           运行时人格扩展包
-skills/             内置 AI 技能脚本
-scripts/            用于构建和打包的辅助脚本
-```
-
-### 本地开发
-
-**后端 (Backend)：**
-```bash
-cd server
-uv sync --dev
-uv run python main.py
-uv run pytest
-uv run ruff check .
-```
-
-**Obsidian 插件：**
-```bash
-cd obsidian-plugin
-npm ci
-npm run test:config
-npx tsc --noEmit
-npm run build
-```
-
-**桌面宠物 (Desktop Pet)：**
-```bash
-cd desktop-pet
-npm ci
-npm run typecheck
-npm run test
-npm run build
-```
-
-### 私有化 Obsidian 发布打包
-
-针对私有库或手动安装，我们会将前端插件和预编译的后端可执行文件一并打包到一个 Zip 中。
-
-*当前的默认打包目标示例：macOS Apple Silicon (`darwin arm64`)，版本 `0.1.0`。*
-
-#### 1. 克隆代码
-```bash
-git clone <your-repo>
-cd Crabby
-```
-
-#### 2. 构建后端 Runtime 二进制文件
-需要在对应平台上运行，例如需要打包 M1 版本则需要在 Apple Silicon Mac 上运行：
-```bash
-cd server
-uv sync --dev
-uv run --with pyinstaller python ../scripts/build-backend-runtime.py --version 0.1.0
-cd ..
-```
-*预期输出二进制位置：`dist/backend-runtime/0.1.0/darwin/crabby-backend`*
-
-#### 3. 安装插件依赖
-```bash
-cd obsidian-plugin
-npm ci
-cd ..
-```
-
-#### 4. 构建用于离线安装的 Zip 包
-```bash
-python scripts/package-obsidian-release.py --platform darwin --arch arm64
-```
-*输出位置：`dist/obsidian-plugin/crabby-0.1.0-darwin-arm64.zip`*
-
-ZIP 中的包结构大致如下：
-```text
-crabby/
-  manifest.json
-  main.js
-  runtime/
-    state.json
-    backend/
-      0.1.0/
-        darwin/
-          crabby-backend
-```
-*`runtime/state.json` 记录了后端二进制文件相对于插件目录的相对路径，确保在不同机器上直接拷贝 Vault 文件夹时插件依然能找到后端进程。*
-
-### 如何在 Obsidian 中手动安装
-
-1. 打开目标 Vault 文件夹。
-2. 将 `crabby-0.1.0-darwin-arm64.zip` 解压缩到 `<你的Vault>/.obsidian/plugins/` 下，最终层级必须是：
-   ```text
-   <你的Vault>/.obsidian/plugins/crabby/manifest.json
-   <你的Vault>/.obsidian/plugins/crabby/main.js
-   <你的Vault>/.obsidian/plugins/crabby/runtime/state.json
-   ...
-   ```
-3. *(对于 macOS/Linux)* 如果解压工具没有保留可执行权限，请手动赋予后端文件执行权限：
-   ```bash
-   chmod +x "<你的Vault>/.obsidian/plugins/crabby/runtime/backend/0.1.0/darwin/crabby-backend"
-   ```
 4. 重启 Obsidian。
-5. 进入 `设置 -> 第三方插件 (Community plugins)`。
-6. 如果开启了“安全模式(Restricted mode)”，需要将其关闭。
-7. 在插件列表中启用 **Crabby**。
+5. 打开 `Settings -> Community plugins`。
+6. 如有需要，关闭 Restricted Mode。
+7. 启用 **Crabby**。
 
-插件启动后会读取 `runtime/state.json`，解析后端的相对路径，并将包含在内的后端服务器自动拉起。
+启用后，插件会读取 `runtime/state.json`，在后台启动本地 backend，写入 host heartbeat，并在可能时复用健康的 managed backend。
 
-### 注意事项
-- 在 Windows 上执行后端构建脚本 `build-backend-runtime.py` 会对应生成 Windows 可执行文件(`.exe`)，同理 macOS 会生成 macOS 系统文件。
-- Obsidian 插件前端文件 (`manifest.json` 和 `main.js`) 虽然是跨平台的，但捆绑包中的后端文件具有严格的系统平台区分。
-- 这种打包发布方案彻底省去了需要公开 manifest URL 加载或者临时启动静态资源服务器的需求。
+## 首次运行
+
+1. 打开 `Settings -> Crabby`。
+2. 检查 backend runtime 状态。
+3. 创建一个 LLM Profile，选择 provider 和 model，填入 API key 或本地 base URL。
+4. 保存并激活 profile。
+5. 点击 **Test Current Profile**。
+6. 打开 Crabby chat view 开始使用。
+
+插件托管的密钥和运行时设置在：
+
+```text
+<YourVault>/.obsidian/plugins/crabby/config/.env
+```
+
+这个文件只应保留在本地，不要提交真实 API key。
+
+## 运行时数据
+
+插件托管安装时，Crabby 会在插件目录下维护运行时文件：
+
+```text
+<YourVault>/.obsidian/plugins/crabby/
+  config/.env
+  config/mcp_servers.json
+  config/prompts/
+  config/personas/
+  data/sessions/
+  data/attachments/
+  logs/
+  runtime/state.json
+  runtime/host-heartbeat.json
+```
+
+Cron jobs 存在 Vault 内：
+
+```text
+<YourVault>/.Crabby/data/cron_jobs.json
+```
+
+## 文档入口
+
+- [docs/项目能力概览.md](docs/项目能力概览.md)：第一次了解项目时先读。
+- [docs/architecture.md](docs/architecture.md)：当前架构和运行时流程。
+- [docs/技术路线.md](docs/技术路线.md)：维护者技术路线。
+- [docs/会话设计.md](docs/会话设计.md)：session、conversation、branch cache 和 fork 设计。
+- [docs/llm-provider-matrix.md](docs/llm-provider-matrix.md)：内置 provider preset。
+- [docs/execution-plan.md](docs/execution-plan.md)：发布路线图。
+- [AGENTS.md](AGENTS.md)：维护者和 agent 接手说明。
+
+## 常见排障
+
+- **打包时找不到后端二进制**：先运行 backend runtime 构建命令，或给 `scripts/package-obsidian-release.py` 传入 `--backend-binary <path>`。
+- **启用插件后 backend 没启动**：查看已安装插件目录下 `logs/` 里的 `runtime-manager.log`、`backend-out.log` 和 `backend-error.log`。
+- **macOS 阻止后端运行**：确认文件有执行权限；如果 zip 来自浏览器或聊天工具，还可以清理 quarantine：
+
+  ```bash
+  xattr -dr com.apple.quarantine "<YourVault>/.obsidian/plugins/crabby"
+  ```
+
+- **一台机器能用，另一台机器不能用**：请在目标 CPU 架构上重新构建后端 runtime，或为 `arm64` 和 `x64` 分别发布包。
+- **聊天界面能打开，但模型调用失败**：检查 active LLM profile、API key、base URL、model name，以及 **Test Current Profile** 的结果。
+
+## 安全边界
+
+Crabby 不是云端多用户 SaaS。它是本地自动化助手，会把你配置给它的上下文发送给你选择的 LLM provider。
+
+需要特别注意：
+
+- 使用云端 LLM 时，用户输入、检索到的笔记片段和工具结果可能发送给 provider。
+- `edit`、settings/profile、Cron 等工具具备写入能力。
+- 启用 `bash` 后，模型具备非交互式 shell 能力。
+- MCP server 的实际能力取决于你配置的外部 server。
+
+请只在可信本地环境中启用写入、shell、MCP 和后台任务能力。
