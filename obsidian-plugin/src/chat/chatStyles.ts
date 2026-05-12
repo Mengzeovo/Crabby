@@ -1,7 +1,7 @@
-const STYLE_ID = "life-assistant-chat-styles";
+const STYLE_ID = "crabby-chat-styles";
 
 const CHAT_STYLES = `
-  .life-assistant-chat {
+  .crabby-chat {
     position: relative;
     display: flex;
     flex-direction: column;

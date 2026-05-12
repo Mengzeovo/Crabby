@@ -385,7 +385,7 @@ class BashTool(Tool):
         is_truncated = False
         cache_path = None
         if len(output) > self.max_result_chars:
-            cache_dir = ctx.vault_path / ".LifeAssistantAgent" / "cache" / "tool-results"
+            cache_dir = ctx.vault_path / ".Crabby" / "cache" / "tool-results"
             cache_dir.mkdir(parents=True, exist_ok=True)
             digest = hashlib.sha256(output.encode("utf-8")).hexdigest()[:12]
             cache_file = cache_dir / f"bash-{digest}.txt"

@@ -44,7 +44,7 @@ class PersonaRouter:
         valid_ids = ", ".join(persona.id for persona in personas)
 
         system = (
-            "你是 LifeAssistantAgent 的人格路由分类器。\n"
+            "你是 Crabby 的人格路由分类器。\n"
             "你会收到所有候选人格的完整 PERSONA.md 信息和当前用户上下文。\n"
             "请根据用户当前意图选择唯一最匹配、最应该被插入系统提示词的人格。\n"
             f"persona_id 只能是这些值之一，或 null: {valid_ids}。\n"

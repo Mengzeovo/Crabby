@@ -31,7 +31,7 @@ export const DEFAULT_PROMPT_TEMPLATES: ConfigTemplateMap = {
   "tool_usage.md": `## 工具使用
 - 优先使用 \`obsidian_search\` 查找 Obsidian 原生知识文件，也就是 \`.md\` 和 \`.canvas\`，包括笔记、标签、属性、标题、章节和任务。
 - \`obsidian_search\` 不可用、需要查找非 Obsidian 文件类型、原始文本、代码或日志时，再使用 \`grep\`、\`glob\` 和 \`read\`。
-- 当你需要查看或修改 Life Assistant 插件自己的配置、运行时路径、LLM Profile 或后端 vault 同步状态时，使用 \`life_assistant_settings\`，不要用搜索工具去猜 \`.obsidian\` 下面的文件。
+- 当你需要查看或修改 Crabby 插件自己的配置、运行时路径、LLM Profile 或后端 vault 同步状态时，使用 \`crabby_settings\`，不要用搜索工具去猜 \`.obsidian\` 下面的文件。
 - 当专用文件工具和 shell 命令都能完成任务时，优先使用专用文件工具。
 - shell 工具在 Windows 上运行 PowerShell，在 macOS/Linux 上运行 bash。
 - 在 Windows 上优先使用 PowerShell 语法；链式命令优先用 \`;\`，\`&&\` / \`||\` 只是兼容处理，不要依赖 bash-only 语法。

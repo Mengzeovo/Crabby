@@ -22,7 +22,7 @@ Meaningful updates include:
 
 ## Repository Purpose
 
-LifeAssistantAgent is a local AI assistant built around an Obsidian vault. It
+Crabby is a local AI assistant built around an Obsidian vault. It
 combines:
 
 - A Python FastAPI backend for LLM calls, tool execution, MCP integration,
@@ -79,7 +79,7 @@ Important backend files and folders:
 - `server/api/websocket.py`: Streaming chat WebSocket, tool-loop warnings,
   and safe conversation-ID checks.
 - `server/api/client_tools.py`: WebSocket bridge for client-hosted Obsidian
-  tools such as `obsidian_search` and `life_assistant_settings`.
+  tools such as `obsidian_search` and `crabby_settings`.
 - `server/llm/`: LLM client, provider presets, output adapters, profile store,
   profile probe, prompt assembly, context metering, token accounting, session
   activity, and tool execution helpers.
@@ -100,7 +100,7 @@ Important backend files and folders:
 - `server/personas/`: Persona loader, registry, router, runtime selection,
   and API-facing models.
 - `server/tools/`: Built-in tools such as `obsidian_search`,
-  `life_assistant_settings`, `read`, `grep`, `glob`, `bash`, `edit`, `fetch`,
+  `crabby_settings`, `read`, `grep`, `glob`, `bash`, `edit`, `fetch`,
   `cron`, and `task_query`.
 - `server/tools/bash.py`: Non-interactive cross-platform shell tool. On
   Windows it launches PowerShell without a profile and translates top-level
@@ -108,11 +108,11 @@ Important backend files and folders:
 - `server/tools/edit.py`: Vault-relative exact string replacement that
   preserves the target file's newline style and rejects paths outside the
   vault.
-- `server/tools/life_assistant_settings.py`: Self-management tool that talks
+- `server/tools/crabby_settings.py`: Self-management tool that talks
   to the Obsidian bridge and uses backend admin profile APIs instead of local
   mirror mutation.
 - `server/tools/cron.py`: Cron task create/list/delete tool and
-  `.LifeAssistantAgent/data/cron_jobs.json` persistence.
+  `.Crabby/data/cron_jobs.json` persistence.
 - `server/memory/`: File-backed session manifest/conversation storage, legacy
   flat-session migration, active branch materialization/cache, unsafe session
   ID validation, unbounded active-branch message history, actual usage
@@ -155,7 +155,7 @@ Important plugin files and folders:
   Obsidian to the backend.
 - `obsidian-plugin/src/clientTools/obsidianClientTools.ts`: Routes backend RPC
   requests to plugin-hosted tools.
-- `obsidian-plugin/src/clientTools/lifeAssistantSettingsTool.ts`: Plugin-hosted
+- `obsidian-plugin/src/clientTools/crabbySettingsTool.ts`: Plugin-hosted
   self-management tool for settings and backend-owned profiles.
 - `obsidian-plugin/src/config/`: Backend, profile sync, and MCP config
   helpers.
@@ -190,7 +190,7 @@ python scripts/package-obsidian-release.py --platform darwin --arch arm64
 ```
 
 The packaging script expects the backend binary at
-`dist/backend-runtime/<version>/<platform>/life-assistant-backend` unless
+`dist/backend-runtime/<version>/<platform>/crabby-backend` unless
 `--backend-binary` is supplied.
 
 ## Desktop Pet Map
@@ -238,7 +238,7 @@ npm run test
 5. The chat profile selector rebuilds from mirrored `llmProfiles`, refreshes on
    settings changes, and activates profiles through the backend admin API.
 6. The Obsidian plugin client-tool bridge serves both `obsidian_search` and
-   `life_assistant_settings`. The settings tool works through the live plugin
+   `crabby_settings`. The settings tool works through the live plugin
    object, can reconnect the bridge after backend URL changes, updates active
    chat clients when settings move, and uses backend admin profile APIs instead
    of mutating local profile mirrors directly.
@@ -300,7 +300,7 @@ npm run test
 
 - The model can use `cron_create`, `cron_list`, and `cron_delete` when those
   tools are registered.
-- Cron jobs are persisted at `<vault>/.LifeAssistantAgent/data/cron_jobs.json`.
+- Cron jobs are persisted at `<vault>/.Crabby/data/cron_jobs.json`.
 - The daemon scans once per second and consumes jobs FIFO.
 - Cron execution waits until session activity is idle, with a 30-minute wait
   cap per queued job.
@@ -322,7 +322,7 @@ npm run test
 - `obsidian_search` supports common Obsidian Search DSL semantics: terms,
   phrases, OR, negation, regex, file/path/content/tag/line/block/section/task
   operators, and property queries.
-- Use `life_assistant_settings` for the plugin's own config/runtime/profile
+- Use `crabby_settings` for the plugin's own config/runtime/profile
   state. It is the intended path for agent self-management and avoids exposing
   `.obsidian` as a general search surface.
 - Use `grep`, `glob`, and `read` for non-Obsidian file types, raw text/code/log
@@ -352,7 +352,7 @@ npm run test
 - `PROMPTS_DIR` controls the prompt fragments loaded by the backend. The
   Obsidian plugin sets it to the installed plugin config folder's
   `prompts/` directory, for example
-  `<vault>/.obsidian/plugins/life-assistant-agent/config/prompts/`.
+  `<vault>/.obsidian/plugins/crabby/config/prompts/`.
 - Active LLM secrets/base URL can use generic `LLM_API_KEY` and
   `LLM_BASE_URL`.
 - Legacy and provider-specific key fallbacks remain supported:
@@ -370,9 +370,9 @@ npm run test
 - Backend-owned LLM profiles are stored in `.env` as `PROFILE_<id>_*` keys,
   with `ACTIVE_PROFILE_ID` selecting the currently applied profile.
 - Managed backend orphan cleanup uses
-  `LIFE_ASSISTANT_HOST_HEARTBEAT_FILE`,
-  `LIFE_ASSISTANT_HOST_HEARTBEAT_TIMEOUT_SECONDS`,
-  `LIFE_ASSISTANT_HOST_PID`, and `LIFE_ASSISTANT_BACKEND_RELOADER_PARENT`.
+  `CRABBY_HOST_HEARTBEAT_FILE`,
+  `CRABBY_HOST_HEARTBEAT_TIMEOUT_SECONDS`,
+  `CRABBY_HOST_PID`, and `CRABBY_BACKEND_RELOADER_PARENT`.
 - `PERSONA_ROUTER_THRESHOLD` controls the minimum confidence needed for auto
   persona lock-in; the default is `0.75`.
 - The Obsidian LLM profile editor uses provider/model presets, still allows
@@ -439,8 +439,8 @@ Use the smallest relevant verification set:
   `cd server && uv run ruff check .`, `cd obsidian-plugin && npm run test:config`,
   `cd obsidian-plugin && npx tsc --noEmit`, and
   `cd obsidian-plugin && npm run build`.
-- Obsidian client-tool bridge or `life_assistant_settings` tool change:
-  `cd server && uv run pytest tests/test_obsidian_search_tool.py tests/test_life_assistant_settings_tool.py`,
+- Obsidian client-tool bridge or `crabby_settings` tool change:
+  `cd server && uv run pytest tests/test_obsidian_search_tool.py tests/test_crabby_settings_tool.py`,
   `cd server && uv run ruff check .`, `cd obsidian-plugin && npm run test:config`,
   `cd obsidian-plugin && npx tsc --noEmit`, and
   `cd obsidian-plugin && npm run build`.
@@ -503,7 +503,7 @@ Use the smallest relevant verification set:
   deleting, and activating profiles. The built-in `kimi` preset maps to Kimi
   Code, not Moonshot/Kimi Platform.
 - The Obsidian client-tool bridge exposes both `obsidian_search` and
-  `life_assistant_settings`; the latter is for agent self-management and
+  `crabby_settings`; the latter is for agent self-management and
   requires the plugin bridge to be connected.
 - Backend session history is no longer capped by `max_turns`; persisted active
   branches retain complete message history until an explicit pruning or
@@ -530,7 +530,7 @@ Use the smallest relevant verification set:
   client IDs.
 - `obsidian-plugin/src/chat/chatStyles.ts` now upserts the shared style tag on
   reload, so hot-reloading the plugin refreshes chat CSS instead of leaving an
-  old `<style id="life-assistant-chat-styles">` node in place.
+  old `<style id="crabby-chat-styles">` node in place.
 - The backend `bash` tool is non-interactive. On Windows it runs PowerShell
   without loading the profile, forces UTF-8 output, and accepts top-level
   `&&` / `||` command chains by translating them before execution.

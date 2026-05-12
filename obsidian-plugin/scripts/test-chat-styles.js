@@ -56,8 +56,8 @@ async function main() {
   try {
     ensureChatStyles();
     assert.equal(documentStub.appended.length, 1);
-    assert.equal(documentStub.appended[0].id, "life-assistant-chat-styles");
-    assert.match(documentStub.appended[0].textContent, /life-assistant-chat/);
+    assert.equal(documentStub.appended[0].id, "crabby-chat-styles");
+    assert.match(documentStub.appended[0].textContent, /crabby-chat/);
     assert.match(documentStub.appended[0].textContent, /chat-assistant-name/);
 
     documentStub.appended[0].textContent = "stale css";

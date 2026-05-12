@@ -12,7 +12,7 @@ from api.client_tools import (
     obsidian_client_tools,
 )
 from tools.base import Context
-from tools.life_assistant_settings import LifeAssistantSettingsTool
+from tools.crabby_settings import CrabbySettingsTool
 from tools.registry import create_default_registry
 
 
@@ -24,27 +24,27 @@ class FakeWebSocket:
         self.sent.append(payload)
 
 
-def test_registry_includes_life_assistant_settings() -> None:
+def test_registry_includes_crabby_settings() -> None:
     registry = create_default_registry()
 
-    assert registry.get("life_assistant_settings") is not None
+    assert registry.get("crabby_settings") is not None
 
 
 @pytest.mark.asyncio
-async def test_life_assistant_settings_reports_missing_plugin(
+async def test_crabby_settings_reports_missing_plugin(
     tmp_path: Path,
 ) -> None:
-    tool = LifeAssistantSettingsTool()
+    tool = CrabbySettingsTool()
     params = tool.input_schema(action="inspect")
 
     result = await tool.call(params, Context(vault_path=tmp_path))
 
-    assert "Life Assistant settings tool failed" in result.output
+    assert "Crabby settings tool failed" in result.output
     assert result.metadata["connected"] is False
 
 
 @pytest.mark.asyncio
-async def test_life_assistant_settings_formats_snapshot(
+async def test_crabby_settings_formats_snapshot(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -52,22 +52,22 @@ async def test_life_assistant_settings_formats_snapshot(
         assert payload["action"] == "inspect"
         return {
             "ok": True,
-            "message": "Loaded current Life Assistant plugin settings.",
+            "message": "Loaded current Crabby plugin settings.",
             "settings": {
                 "backendUrl": "http://127.0.0.1:8000",
                 "activeProfileId": "profile-1",
             },
         }
 
-    monkeypatch.setattr(obsidian_client_tools, "life_assistant_settings", fake_settings)
-    tool = LifeAssistantSettingsTool()
+    monkeypatch.setattr(obsidian_client_tools, "crabby_settings", fake_settings)
+    tool = CrabbySettingsTool()
 
     result = await tool.call(
         tool.input_schema(action="inspect"),
         Context(vault_path=tmp_path),
     )
 
-    assert "Loaded current Life Assistant plugin settings." in result.output
+    assert "Loaded current Crabby plugin settings." in result.output
     assert "Current plugin settings snapshot:" in result.output
     assert '"activeProfileId": "profile-1"' in result.output
     assert result.metadata["connected"] is True
@@ -81,7 +81,7 @@ async def test_client_tool_manager_sends_settings_rpc_and_receives_result() -> N
     await manager.connect(ws)  # type: ignore[arg-type]
 
     task = asyncio.create_task(
-        manager.life_assistant_settings({"action": "inspect"}),
+        manager.crabby_settings({"action": "inspect"}),
     )
     for _ in range(10):
         if ws.sent:
@@ -91,7 +91,7 @@ async def test_client_tool_manager_sends_settings_rpc_and_receives_result() -> N
     assert ws.sent
     request = ws.sent[0]
     assert request["type"] == "client_tool_request"
-    assert request["tool"] == "life_assistant_settings"
+    assert request["tool"] == "crabby_settings"
     assert request["input"] == {"action": "inspect"}
 
     await manager.handle_client_message(
@@ -100,7 +100,7 @@ async def test_client_tool_manager_sends_settings_rpc_and_receives_result() -> N
             "request_id": request["request_id"],
             "result": {
                 "ok": True,
-                "message": "Loaded current Life Assistant plugin settings.",
+                "message": "Loaded current Crabby plugin settings.",
                 "settings": {"backendUrl": "http://127.0.0.1:8000"},
             },
         },
@@ -116,7 +116,7 @@ async def test_client_tool_manager_surfaces_settings_bridge_errors() -> None:
     ws = FakeWebSocket()
     await manager.connect(ws)  # type: ignore[arg-type]
 
-    task = asyncio.create_task(manager.life_assistant_settings({"action": "inspect"}))
+    task = asyncio.create_task(manager.crabby_settings({"action": "inspect"}))
     for _ in range(10):
         if ws.sent:
             break

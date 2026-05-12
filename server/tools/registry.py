@@ -177,14 +177,14 @@ def create_default_registry() -> ToolRegistry:
     from tools.edit import EditTool
     from tools.glob import GlobTool
     from tools.grep import GrepTool
-    from tools.life_assistant_settings import LifeAssistantSettingsTool
+    from tools.crabby_settings import CrabbySettingsTool
     from tools.obsidian_search import ObsidianSearchTool
     from tools.read import ReadTool
     from tools.task_query import TaskQueryTool
 
     registry = ToolRegistry()
     registry.register(ObsidianSearchTool())
-    registry.register(LifeAssistantSettingsTool())
+    registry.register(CrabbySettingsTool())
     registry.register(ReadTool())
     registry.register(EditTool())
     registry.register(GrepTool())

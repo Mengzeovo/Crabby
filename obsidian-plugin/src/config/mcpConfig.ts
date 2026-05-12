@@ -12,15 +12,15 @@ import type {
   MCPRuntimeStatus,
   ReloadConfigResult,
 } from "../api/client";
-import type { LifeAssistantSettings } from "../settings";
+import type { CrabbySettings } from "../settings";
 import {
   isTruthyEnvValue,
   readEnvValue,
   resolveBackendEnvPath,
 } from "./backendConfig";
 
-const ADMIN_ENABLED_KEY = "LIFE_ASSISTANT_ADMIN_ENABLED";
-const ADMIN_TOKEN_KEY = "LIFE_ASSISTANT_ADMIN_TOKEN";
+const ADMIN_ENABLED_KEY = "CRABBY_ADMIN_ENABLED";
+const ADMIN_TOKEN_KEY = "CRABBY_ADMIN_TOKEN";
 
 export interface BackendMcpPathResolution {
   ok: boolean;
@@ -62,7 +62,7 @@ interface BackendAdminTokenResult {
 
 export function resolveBackendMcpConfigPath(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     "backendMcpConfigPath" | "backendEnvPath" | "backendPath"
   >,
 ): BackendMcpPathResolution {
@@ -218,7 +218,7 @@ export function validateMcpConfigText(text: string): McpConfigValidationResult {
 
 export function loadMcpConfigLocally(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     "backendMcpConfigPath" | "backendEnvPath" | "backendPath"
   >,
 ): LocalMcpConfigResult {
@@ -265,7 +265,7 @@ export function loadMcpConfigLocally(
 
 export function createMcpConfigFromExample(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     "backendMcpConfigPath" | "backendEnvPath" | "backendPath"
   >,
 ): LocalMcpConfigResult {
@@ -320,7 +320,7 @@ export function createMcpConfigFromExample(
 
 export function saveMcpConfigLocally(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     "backendMcpConfigPath" | "backendEnvPath" | "backendPath"
   >,
   text: string,
@@ -370,7 +370,7 @@ export function saveMcpConfigLocally(
 
 export async function reloadMcpConfigLocally(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     "backendEnvPath" | "backendPath" | "backendMcpConfigPath"
   >,
   client: Pick<AgentClient, "reloadConfig">,
@@ -389,7 +389,7 @@ export async function reloadMcpConfigLocally(
 
 export async function fetchMcpRuntimeStatus(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     "backendEnvPath" | "backendPath" | "backendMcpConfigPath"
   >,
   client: Pick<AgentClient, "getMcpStatus">,
@@ -463,7 +463,7 @@ export function formatMcpRuntimeStatus(status: MCPRuntimeStatus): string {
 
 function resolveBackendAdminToken(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     "backendEnvPath" | "backendPath" | "backendMcpConfigPath"
   >,
 ): BackendAdminTokenResult {

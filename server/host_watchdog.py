@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 def start_host_heartbeat_watchdog() -> list[asyncio.Task[Any]]:
     """Start a watchdog task when the Obsidian host heartbeat is configured."""
-    heartbeat_file = settings.life_assistant_host_heartbeat_file.strip()
-    timeout_seconds = settings.life_assistant_host_heartbeat_timeout_seconds
+    heartbeat_file = settings.crabby_host_heartbeat_file.strip()
+    timeout_seconds = settings.crabby_host_heartbeat_timeout_seconds
     if not heartbeat_file or timeout_seconds <= 0:
         return []
 
@@ -27,8 +27,8 @@ def start_host_heartbeat_watchdog() -> list[asyncio.Task[Any]]:
         host_heartbeat_watchdog_loop(
             Path(heartbeat_file),
             timeout_seconds,
-            host_pid=settings.life_assistant_host_pid,
-            kill_reloader_parent=settings.life_assistant_backend_reloader_parent,
+            host_pid=settings.crabby_host_pid,
+            kill_reloader_parent=settings.crabby_backend_reloader_parent,
         ),
         name="host-heartbeat-watchdog",
     )

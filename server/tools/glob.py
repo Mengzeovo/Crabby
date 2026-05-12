@@ -16,7 +16,14 @@ from pydantic import BaseModel, Field
 from tools.base import Context, Tool, ToolResult
 
 # Agent 绝不可搜索的目录（系统/配置/版本控制等）
-BLOCKED_DIRS = {".obsidian", ".LifeAssistantAgent", ".git", "node_modules", ".venv"}
+BLOCKED_DIRS = {
+    ".obsidian",
+    ".Crabby",
+    ".LifeAssistantAgent",
+    ".git",
+    "node_modules",
+    ".venv",
+}
 
 # 单次查询返回的最大文件数，防止结果集过大
 MAX_FILES = 500

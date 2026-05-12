@@ -18,7 +18,14 @@ from pydantic import BaseModel, Field
 from tools.base import Context, Tool, ToolResult
 
 # Agent 绝不可搜索的目录（系统/配置/版本控制等）
-BLOCKED_DIRS = {".obsidian", ".LifeAssistantAgent", ".git", "node_modules", ".venv"}
+BLOCKED_DIRS = {
+    ".obsidian",
+    ".Crabby",
+    ".LifeAssistantAgent",
+    ".git",
+    "node_modules",
+    ".venv",
+}
 
 # 单次查询返回的最大匹配行数，防止结果过大导致 LLM 上下文溢出
 MAX_MATCHES = 200

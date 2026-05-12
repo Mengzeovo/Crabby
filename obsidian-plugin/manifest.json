@@ -1,6 +1,6 @@
 {
-  "id": "life-assistant-agent",
-  "name": "Life Assistant Agent",
+  "id": "crabby",
+  "name": "Crabby",
   "version": "0.1.0",
   "minAppVersion": "1.4.0",
   "description": "Local AI assistant that reads your vault and provides intelligent suggestions.",

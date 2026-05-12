@@ -1,8 +1,8 @@
-# LifeAssistantAgent 架构
+# Crabby 架构
 
 最后更新：2026-05-08
 
-LifeAssistantAgent 是一个围绕 Obsidian Vault 构建的本地 AI 助手。它由三部分组成：
+Crabby 是一个围绕 Obsidian Vault 构建的本地 AI 助手。它由三部分组成：
 
 - Python FastAPI 后端：负责 LLM 调用、工具执行、MCP 集成、运行时配置、会话、附件、Token 与上下文统计、Cron 任务和管理端重载。
 - Obsidian TypeScript 插件：负责聊天 UI、设置界面、后端生命周期与配置管理、MCP 配置编辑，以及由 Obsidian 客户端托管的工具。
@@ -22,7 +22,7 @@ LLM profiles、prompts、tools、MCP、sessions、attachments、cron
 Anthropic / OpenAI-compatible / Ollama / MCP
 
 Obsidian Vault
-笔记、.LifeAssistantAgent/cron 数据、插件运行时配置/数据
+笔记、.Crabby/cron 数据、插件运行时配置/数据
 ```
 
 ## 1. 仓库结构
@@ -55,7 +55,7 @@ Obsidian Vault
 
 - 插件会在已安装插件目录下创建运行时布局。
 - 插件会写入后端 `.env`、MCP 配置、提示词配置、Persona 配置、会话数据、附件数据、日志、运行时状态和宿主心跳文件。
-- Prompt 运行时来源是已安装插件目录下的 `config/prompts/`，例如 `<vault>/.obsidian/plugins/life-assistant-agent/config/prompts/`。这不是普通 Vault 笔记目录，也不是后端源码目录；它属于插件自己的用户可见配置。
+- Prompt 运行时来源是已安装插件目录下的 `config/prompts/`，例如 `<vault>/.obsidian/plugins/crabby/config/prompts/`。这不是普通 Vault 笔记目录，也不是后端源码目录；它属于插件自己的用户可见配置。
 - 插件首次启动时会从内置默认模板 seed `identity.md`、`safety.md`、`tool_usage.md` 和 `skill_intro.md`，并通过 `PROMPTS_DIR` 告诉后端读取这份插件配置。
 - 如果存在 `.dev-runtime.json`，插件会以开发模式启动；否则启动已下载的生产后端可执行文件。
 - 插件会在检查 `/health`、`/admin/mcp/status` 和 `/admin/profiles` 后复用可访问的托管后端。
@@ -64,7 +64,7 @@ Obsidian Vault
 Cron 任务存储在当前 Vault 中：
 
 ```text
-<vault>/.LifeAssistantAgent/data/cron_jobs.json
+<vault>/.Crabby/data/cron_jobs.json
 ```
 
 ## 3. 后端
@@ -118,7 +118,7 @@ Cron 任务存储在当前 Vault 中：
 - `GET /attachments/{attachment_id}`
 - `WS /client-tools/obsidian`
 
-Admin 端点需要 `X-Life-Assistant-Admin-Token`，并且只在配置后启用：
+Admin 端点需要 `X-Crabby-Admin-Token`，并且只在配置后启用：
 
 - `POST /admin/reload`
 - `POST /admin/reload-settings`
@@ -204,7 +204,7 @@ Reasoning/thinking 控制是可选的，并受 provider 能力约束：
 
 - 后端负责把静态片段、动态环境、工具目录、Persona 和 Skill 组装成最终 system prompt。
 - Obsidian 插件负责创建并维护用户可见的运行时 prompt 文件夹。
-- 插件托管运行时的 prompt 来源是 `<vault>/.obsidian/plugins/life-assistant-agent/config/prompts/`，通过 `PROMPTS_DIR` 传给后端。
+- 插件托管运行时的 prompt 来源是 `<vault>/.obsidian/plugins/crabby/config/prompts/`，通过 `PROMPTS_DIR` 传给后端。
 - 仓库根目录 `prompts/` 只是开发/默认模板来源；当 `PROMPTS_DIR` 未配置时，后端才回退读取它。
 
 提示词输入：
@@ -238,7 +238,7 @@ Skill 运行时：
 当前内置工具包括：
 
 - `obsidian_search`：通过插件桥执行 Obsidian 原生 `.md` 和 `.canvas` 搜索。
-- `life_assistant_settings`：通过插件桥检查或更新插件运行时设置，以及后端拥有的 profiles。
+- `crabby_settings`：通过插件桥检查或更新插件运行时设置，以及后端拥有的 profiles。
 - `read`：读取 Vault 中的 UTF-8 文件，带敏感文件名阻断和截断缓存。
 - `edit`：基于 Vault 相对路径的精确文本替换或新文件创建，带路径逃逸保护和换行符保留。
 - `grep`、`glob`：后端侧文件搜索。
@@ -284,7 +284,7 @@ MCP：
 - `src/runtime/backendRuntime.ts`：托管后端布局、启动、复用、安装、停止、心跳和运行时状态。
 - `src/api/client.ts`：REST/WebSocket client 和 admin/profile 调用。
 - `src/chat/`：聊天视图、transcript、composer、persona/profile 选择器、context bar 和流式 thought 渲染。
-- `src/clientTools/`：插件托管的 `obsidian_search` 和 `life_assistant_settings`。
+- `src/clientTools/`：插件托管的 `obsidian_search` 和 `crabby_settings`。
 - `src/search/`：Obsidian Search DSL parser 和搜索实现。
 - `src/settings.ts`：运行时、MCP 和 LLM profile 设置 UI。
 - `src/config/`：env/profile/MCP 辅助逻辑和 provider presets。
@@ -333,7 +333,7 @@ Context 和 usage：
 
 ## 12. Cron 和后台通知
 
-Cron 工具把任务写入 `<vault>/.LifeAssistantAgent/data/cron_jobs.json`。
+Cron 工具把任务写入 `<vault>/.Crabby/data/cron_jobs.json`。
 
 守护进程行为：
 

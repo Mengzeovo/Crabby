@@ -39,7 +39,7 @@ TOOL_USAGE = """\
 ## Obsidian Search Tool Preference
 - Prefer `obsidian_search` for Obsidian-native knowledge lookup in `.md` and `.canvas` files, including notes, tags, properties, headings, sections, and tasks.
 - Use `grep`, `glob`, and `read` for non-Obsidian file types, raw text/code/log files, or when `obsidian_search` reports that the Obsidian plugin bridge is unavailable.
-- Use `life_assistant_settings` when you need to inspect or change the Life Assistant plugin's own configuration, runtime paths, or backend-owned LLM profile state.
+- Use `crabby_settings` when you need to inspect or change the Crabby plugin's own configuration, runtime paths, or backend-owned LLM profile state.
 
 ## 工具使用
 - 当专用文件工具和 shell 命令都能完成任务时，优先使用专用文件工具。

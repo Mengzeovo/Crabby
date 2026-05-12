@@ -7,7 +7,7 @@ import { ItemView, WorkspaceLeaf } from "obsidian";
 import { AgentClient } from "../api/client";
 import { createDefaultPersonaState } from "../api/client";
 import { SETTINGS_UPDATED_EVENT } from "../config/settingsEvents";
-import type LifeAssistantPlugin from "../main";
+import type CrabbyPlugin from "../main";
 import { createChatComposer } from "./chatComposer";
 import {
   ICON_ATTACH,
@@ -24,7 +24,7 @@ import { createChatTranscript } from "./chatTranscript";
 import { createChatTurnRunner } from "./chatTurnRunner";
 import type { ChatCleanup, ChatElements, ChatViewState } from "./chatTypes";
 
-export const VIEW_TYPE_CHAT = "life-assistant-chat";
+export const VIEW_TYPE_CHAT = "crabby-chat";
 
 export class ChatView extends ItemView {
   private readonly client: AgentClient;
@@ -43,7 +43,7 @@ export class ChatView extends ItemView {
   private elements!: ChatElements;
   private cleanupFns: ChatCleanup[] = [];
 
-  constructor(leaf: WorkspaceLeaf, private readonly plugin: LifeAssistantPlugin) {
+  constructor(leaf: WorkspaceLeaf, private readonly plugin: CrabbyPlugin) {
     super(leaf);
     this.client = new AgentClient(this.plugin.settings.backendUrl);
   }
@@ -53,7 +53,7 @@ export class ChatView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Life Assistant";
+    return "Crabby";
   }
 
   getIcon(): string {
@@ -74,7 +74,7 @@ export class ChatView extends ItemView {
 
     const container = this.contentEl;
     container.empty();
-    container.addClass("life-assistant-chat");
+    container.addClass("crabby-chat");
 
     const headerArea = container.createDiv({ cls: "chat-header-area" });
     const headerLeftEl = headerArea.createDiv({
@@ -304,7 +304,7 @@ export class ChatView extends ItemView {
 
     transcript.appendMessage(
       "assistant",
-      "你好！我是你的 Life Assistant，有什么可以帮你的？",
+      "你好！我是你的 Crabby，有什么可以帮你的？",
     );
   }
 

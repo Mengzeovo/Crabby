@@ -22,7 +22,7 @@ function getPluginTarget() {
     resolvedVault.vaultPath,
     ".obsidian",
     "plugins",
-    "life-assistant-agent",
+    "crabby",
   );
   return {
     ...resolvedVault,

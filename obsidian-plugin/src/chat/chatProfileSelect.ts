@@ -4,7 +4,7 @@ import type { AgentClient } from "../api/client";
 import { activateLlmProfileOnBackend } from "../config/backendConfig";
 import { getLlmProviderPreset } from "../config/llmProviders";
 import { SETTINGS_UPDATED_EVENT } from "../config/settingsEvents";
-import type LifeAssistantPlugin from "../main";
+import type CrabbyPlugin from "../main";
 import type { LlmProfile } from "../settings";
 import type { ChatCleanup } from "./chatTypes";
 
@@ -27,7 +27,7 @@ function getProviderBadgeText(profile: LlmProfile): string {
 
 export function mountProfileSelect(
   parentEl: HTMLDivElement,
-  plugin: LifeAssistantPlugin,
+  plugin: CrabbyPlugin,
   client: AgentClient,
 ): ChatCleanup {
   const customSelect = parentEl.createDiv({ cls: "chat-custom-select" });

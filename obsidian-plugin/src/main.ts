@@ -1,5 +1,5 @@
 /**
- * Life Assistant Agent - Obsidian plugin entry point.
+ * Crabby - Obsidian plugin entry point.
  */
 
 import { Notice, Plugin } from "obsidian";
@@ -20,13 +20,13 @@ import {
 import { notifySettingsUpdated } from "./config/settingsEvents";
 import {
   DEFAULT_SETTINGS,
-  LifeAssistantSettings,
-  LifeAssistantSettingTab,
+  CrabbySettings,
+  CrabbySettingTab,
 } from "./settings";
 import { BackendRuntimeManager } from "./runtime/backendRuntime";
 
-export default class LifeAssistantPlugin extends Plugin {
-  settings: LifeAssistantSettings = hydrateSettings(DEFAULT_SETTINGS, null);
+export default class CrabbyPlugin extends Plugin {
+  settings: CrabbySettings = hydrateSettings(DEFAULT_SETTINGS, null);
   runtimeManager: BackendRuntimeManager | null = null;
   clientToolBridge: ObsidianClientToolBridge | null = null;
   private unloaded = false;
@@ -42,15 +42,15 @@ export default class LifeAssistantPlugin extends Plugin {
     this.clientToolBridge.start();
 
     this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
-    this.addSettingTab(new LifeAssistantSettingTab(this.app, this));
+    this.addSettingTab(new CrabbySettingTab(this.app, this));
 
-    this.addRibbonIcon("bot", "Life Assistant", () => {
+    this.addRibbonIcon("bot", "Crabby", () => {
       this.activateView();
     });
 
     this.addCommand({
       id: "open-chat",
-      name: "Open Life Assistant Chat",
+      name: "Open Crabby Chat",
       callback: () => this.activateView(),
     });
 
@@ -91,17 +91,17 @@ export default class LifeAssistantPlugin extends Plugin {
 
         if (!runtimeStatus.running && runtimeStatus.mode === "production") {
           new Notice(
-            "Life Assistant backend runtime is not installed. Open settings to install it.",
+            "Crabby backend runtime is not installed. Open settings to install it.",
           );
         }
       } catch (error) {
         if (!this.unloaded) {
           console.error(
-            "[Life Assistant] Failed to start backend runtime:",
+            "[Crabby] Failed to start backend runtime:",
             error,
           );
           const message = error instanceof Error ? error.message : String(error);
-          new Notice(`Life Assistant backend startup failed: ${message}`);
+          new Notice(`Crabby backend startup failed: ${message}`);
         }
       }
     })();
@@ -150,7 +150,7 @@ export default class LifeAssistantPlugin extends Plugin {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error("[Life Assistant] Failed to sync backend vault path:", error);
+      console.error("[Crabby] Failed to sync backend vault path:", error);
       return {
         ok: false,
         changed: false,

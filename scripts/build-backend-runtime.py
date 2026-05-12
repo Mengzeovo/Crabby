@@ -34,7 +34,7 @@ def platform_key() -> str:
 
 
 def executable_name() -> str:
-    return "life-assistant-backend.exe" if platform_key() == "win32" else "life-assistant-backend"
+    return "crabby-backend.exe" if platform_key() == "win32" else "crabby-backend"
 
 
 def sha256_file(path: Path) -> str:
@@ -59,7 +59,7 @@ def build_runtime(version: str) -> Path:
         "--noconfirm",
         "--onefile",
         "--name",
-        "life-assistant-backend",
+        "crabby-backend",
         "--paths",
         str(SERVER_DIR),
         "--workpath",

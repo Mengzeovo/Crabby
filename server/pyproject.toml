@@ -1,5 +1,5 @@
 [project]
-name = "life-assistant-agent"
+name = "crabby"
 version = "0.1.0"
 description = "Local AI assistant built on Obsidian Vault"
 requires-python = ">=3.11"

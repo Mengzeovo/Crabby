@@ -73,8 +73,8 @@ class _FakeMCPManager:
 
 def _install_admin_runtime(monkeypatch, config_path: Path) -> None:
     monkeypatch.setattr(admin_api, "reload_settings", lambda: None)
-    monkeypatch.setattr(config.settings, "life_assistant_admin_enabled", True)
-    monkeypatch.setattr(config.settings, "life_assistant_admin_token", "secret")
+    monkeypatch.setattr(config.settings, "crabby_admin_enabled", True)
+    monkeypatch.setattr(config.settings, "crabby_admin_token", "secret")
     monkeypatch.setattr(mcp_runtime, "MCPClientManager", _FakeMCPManager)
     monkeypatch.setattr(
         mcp_runtime,
@@ -85,13 +85,13 @@ def _install_admin_runtime(monkeypatch, config_path: Path) -> None:
 
 def test_admin_reload_returns_404_when_disabled(monkeypatch):
     monkeypatch.setattr(admin_api, "reload_mcp_servers", _noop_reload_mcp_servers)
-    monkeypatch.setattr(config.settings, "life_assistant_admin_enabled", False)
-    monkeypatch.setattr(config.settings, "life_assistant_admin_token", "secret")
+    monkeypatch.setattr(config.settings, "crabby_admin_enabled", False)
+    monkeypatch.setattr(config.settings, "crabby_admin_token", "secret")
 
     with TestClient(_build_admin_app()) as client:
         response = client.post(
             "/admin/reload",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
 
     assert response.status_code == 404
@@ -99,13 +99,13 @@ def test_admin_reload_returns_404_when_disabled(monkeypatch):
 
 def test_admin_reload_returns_403_for_wrong_token(monkeypatch):
     monkeypatch.setattr(admin_api, "reload_mcp_servers", _noop_reload_mcp_servers)
-    monkeypatch.setattr(config.settings, "life_assistant_admin_enabled", True)
-    monkeypatch.setattr(config.settings, "life_assistant_admin_token", "secret")
+    monkeypatch.setattr(config.settings, "crabby_admin_enabled", True)
+    monkeypatch.setattr(config.settings, "crabby_admin_token", "secret")
 
     with TestClient(_build_admin_app()) as client:
         response = client.post(
             "/admin/reload",
-            headers={"X-Life-Assistant-Admin-Token": "wrong"},
+            headers={"X-Crabby-Admin-Token": "wrong"},
         )
 
     assert response.status_code == 403
@@ -113,18 +113,18 @@ def test_admin_reload_returns_403_for_wrong_token(monkeypatch):
 
 def test_admin_shutdown_requires_token_and_requests_process_shutdown(monkeypatch):
     called: list[bool] = []
-    monkeypatch.setattr(config.settings, "life_assistant_admin_enabled", True)
-    monkeypatch.setattr(config.settings, "life_assistant_admin_token", "secret")
+    monkeypatch.setattr(config.settings, "crabby_admin_enabled", True)
+    monkeypatch.setattr(config.settings, "crabby_admin_token", "secret")
     monkeypatch.setattr(admin_api, "request_process_shutdown", lambda: called.append(True))
 
     with TestClient(_build_admin_app()) as client:
         forbidden = client.post(
             "/admin/shutdown",
-            headers={"X-Life-Assistant-Admin-Token": "wrong"},
+            headers={"X-Crabby-Admin-Token": "wrong"},
         )
         response = client.post(
             "/admin/shutdown",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
 
     assert forbidden.status_code == 403
@@ -134,14 +134,14 @@ def test_admin_shutdown_requires_token_and_requests_process_shutdown(monkeypatch
 
 
 def test_admin_profile_test_requires_token(monkeypatch):
-    monkeypatch.setattr(config.settings, "life_assistant_admin_enabled", True)
-    monkeypatch.setattr(config.settings, "life_assistant_admin_token", "secret")
+    monkeypatch.setattr(config.settings, "crabby_admin_enabled", True)
+    monkeypatch.setattr(config.settings, "crabby_admin_token", "secret")
 
     with TestClient(_build_admin_app()) as client:
         missing = client.post("/admin/profile/test")
         forbidden = client.post(
             "/admin/profile/test",
-            headers={"X-Life-Assistant-Admin-Token": "wrong"},
+            headers={"X-Crabby-Admin-Token": "wrong"},
         )
 
     assert missing.status_code == 403
@@ -154,8 +154,8 @@ def test_admin_profiles_roundtrip_uses_env_as_source(monkeypatch, tmp_path: Path
         "\n".join(
             [
                 "EXTRA_SETTING=keep-me",
-                "LIFE_ASSISTANT_ADMIN_ENABLED=true",
-                "LIFE_ASSISTANT_ADMIN_TOKEN=secret",
+                "CRABBY_ADMIN_ENABLED=true",
+                "CRABBY_ADMIN_TOKEN=secret",
             ],
         )
         + "\n",
@@ -167,11 +167,11 @@ def test_admin_profiles_roundtrip_uses_env_as_source(monkeypatch, tmp_path: Path
     with TestClient(_build_admin_app()) as client:
         empty = client.get(
             "/admin/profiles",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
         saved = client.put(
             "/admin/profiles/deepseek",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
             json={
                 "activate": True,
                 "profile": {
@@ -207,7 +207,7 @@ def test_admin_profiles_roundtrip_uses_env_as_source(monkeypatch, tmp_path: Path
     with TestClient(_build_admin_app()) as client:
         deleted = client.delete(
             "/admin/profiles/deepseek",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
 
     assert deleted.status_code == 200
@@ -293,8 +293,8 @@ def test_admin_profile_test_live_probes_reasoning_provider(
         def stream(self, *_args, **_kwargs):
             return FakeStreamResponse()
 
-    monkeypatch.setattr(config.settings, "life_assistant_admin_enabled", True)
-    monkeypatch.setattr(config.settings, "life_assistant_admin_token", "secret")
+    monkeypatch.setattr(config.settings, "crabby_admin_enabled", True)
+    monkeypatch.setattr(config.settings, "crabby_admin_token", "secret")
     monkeypatch.setattr(config.settings, "llm_provider", provider)
     monkeypatch.setattr(config.settings, "llm_model", model)
     monkeypatch.setattr(config.settings, "llm_api_key", "provider-secret")
@@ -305,7 +305,7 @@ def test_admin_profile_test_live_probes_reasoning_provider(
     with TestClient(_build_admin_app()) as client:
         response = client.post(
             "/admin/profile/test",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
 
     assert response.status_code == 200
@@ -322,8 +322,8 @@ def test_admin_profile_test_validates_non_live_provider_without_network(monkeypa
         def __init__(self, *_args, **_kwargs):
             raise AssertionError("OpenAI validation should not call the network")
 
-    monkeypatch.setattr(config.settings, "life_assistant_admin_enabled", True)
-    monkeypatch.setattr(config.settings, "life_assistant_admin_token", "secret")
+    monkeypatch.setattr(config.settings, "crabby_admin_enabled", True)
+    monkeypatch.setattr(config.settings, "crabby_admin_token", "secret")
     monkeypatch.setattr(config.settings, "llm_provider", "openai")
     monkeypatch.setattr(config.settings, "llm_model", "gpt-5.4-mini")
     monkeypatch.setattr(config.settings, "llm_api_key", "provider-secret")
@@ -333,7 +333,7 @@ def test_admin_profile_test_validates_non_live_provider_without_network(monkeypa
     with TestClient(_build_admin_app()) as client:
         response = client.post(
             "/admin/profile/test",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
 
     assert response.status_code == 200
@@ -350,8 +350,8 @@ def test_admin_reload_settings_refreshes_settings_from_env_file(monkeypatch, tmp
         "\n".join(
             [
                 "LLM_MODEL=before-reload",
-                "LIFE_ASSISTANT_ADMIN_ENABLED=true",
-                "LIFE_ASSISTANT_ADMIN_TOKEN=secret",
+                "CRABBY_ADMIN_ENABLED=true",
+                "CRABBY_ADMIN_TOKEN=secret",
             ]
         )
         + "\n",
@@ -365,8 +365,8 @@ def test_admin_reload_settings_refreshes_settings_from_env_file(monkeypatch, tmp
         "\n".join(
             [
                 "LLM_MODEL=after-reload",
-                "LIFE_ASSISTANT_ADMIN_ENABLED=true",
-                "LIFE_ASSISTANT_ADMIN_TOKEN=secret",
+                "CRABBY_ADMIN_ENABLED=true",
+                "CRABBY_ADMIN_TOKEN=secret",
             ]
         )
         + "\n",
@@ -376,7 +376,7 @@ def test_admin_reload_settings_refreshes_settings_from_env_file(monkeypatch, tmp
     with TestClient(_build_admin_app()) as client:
         response = client.post(
             "/admin/reload-settings",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
 
     assert response.status_code == 200
@@ -394,8 +394,8 @@ def test_admin_reload_settings_does_not_reload_mcp(monkeypatch, tmp_path: Path):
         "\n".join(
             [
                 "LLM_MODEL=after-reload",
-                "LIFE_ASSISTANT_ADMIN_ENABLED=true",
-                "LIFE_ASSISTANT_ADMIN_TOKEN=secret",
+                "CRABBY_ADMIN_ENABLED=true",
+                "CRABBY_ADMIN_TOKEN=secret",
             ]
         )
         + "\n",
@@ -407,7 +407,7 @@ def test_admin_reload_settings_does_not_reload_mcp(monkeypatch, tmp_path: Path):
     with TestClient(_build_admin_app()) as client:
         response = client.post(
             "/admin/reload-settings",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
 
     assert response.status_code == 200
@@ -444,8 +444,8 @@ def test_admin_reload_settings_refreshes_persona_registry(monkeypatch, tmp_path:
     env_path.write_text(
         "\n".join(
             [
-                "LIFE_ASSISTANT_ADMIN_ENABLED=true",
-                "LIFE_ASSISTANT_ADMIN_TOKEN=secret",
+                "CRABBY_ADMIN_ENABLED=true",
+                "CRABBY_ADMIN_TOKEN=secret",
                 f"PERSONAS_DIR={first_dir}",
             ]
         )
@@ -461,14 +461,14 @@ def test_admin_reload_settings_refreshes_persona_registry(monkeypatch, tmp_path:
     with TestClient(app) as client:
         first_reload = client.post(
             "/admin/reload-settings",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
         before = client.get("/personas")
         env_path.write_text(
             "\n".join(
                 [
-                    "LIFE_ASSISTANT_ADMIN_ENABLED=true",
-                    "LIFE_ASSISTANT_ADMIN_TOKEN=secret",
+                    "CRABBY_ADMIN_ENABLED=true",
+                    "CRABBY_ADMIN_TOKEN=secret",
                     f"PERSONAS_DIR={second_dir}",
                 ]
             )
@@ -477,7 +477,7 @@ def test_admin_reload_settings_refreshes_persona_registry(monkeypatch, tmp_path:
         )
         reload_response = client.post(
             "/admin/reload-settings",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
         after = client.get("/personas")
 
@@ -534,11 +534,11 @@ def test_admin_reload_refreshes_mcp_runtime_from_config_file(monkeypatch, tmp_pa
     with TestClient(app) as client:
         response = client.post(
             "/admin/reload",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
         status_response = client.get(
             "/admin/mcp/status",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
 
     assert response.status_code == 200
@@ -589,11 +589,11 @@ def test_admin_reload_rolls_back_on_invalid_config(monkeypatch, tmp_path: Path):
     with TestClient(app) as client:
         response = client.post(
             "/admin/reload",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
         status_response = client.get(
             "/admin/mcp/status",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
 
     assert response.status_code == 400
@@ -645,7 +645,7 @@ def test_admin_reload_rolls_back_on_duplicate_tool_name(monkeypatch, tmp_path: P
     with TestClient(app) as client:
         response = client.post(
             "/admin/reload",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
 
     assert response.status_code == 400
@@ -701,11 +701,11 @@ def test_admin_reload_rolls_back_when_any_server_connection_fails(monkeypatch, t
     with TestClient(app) as client:
         response = client.post(
             "/admin/reload",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
         status_response = client.get(
             "/admin/mcp/status",
-            headers={"X-Life-Assistant-Admin-Token": "secret"},
+            headers={"X-Crabby-Admin-Token": "secret"},
         )
 
     assert response.status_code == 400

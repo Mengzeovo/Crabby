@@ -92,7 +92,7 @@ async def _process_auto_save(session: Session, registry: ToolRegistry) -> None:
         "然后记录一条简短日记。\n"
         "</reasoning>\n"
         "工具调用:\n"
-        "1. mempalace_kg_add({\"facts\": [\"LifeAssistantAgent 为了简化部署，使用 SQLite 作为 session 存储，而不是 Redis\", \"server/memory/__init__.py 负责 SQLite session 存储\"]})\n"
+        "1. mempalace_kg_add({\"facts\": [\"Crabby 为了简化部署，使用 SQLite 作为 session 存储，而不是 Redis\", \"server/memory/__init__.py 负责 SQLite session 存储\"]})\n"
         "2. mempalace_diary_write({\"content\": \"将 session 存储架构从 Redis 迁移到 SQLite，以简化部署；已更新 memory 初始化文件。\"})\n"
         "</example>\n\n"
         "<example>\n"

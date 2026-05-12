@@ -1,5 +1,5 @@
 /**
- * API client for the Life Assistant Agent backend.
+ * API client for the Crabby backend.
  * Supports both REST (fallback) and WebSocket (streaming).
  */
 
@@ -833,7 +833,7 @@ export class AgentClient {
       const resp = await fetch(`${this.baseUrl}/admin/reload`, {
         method: "POST",
         headers: {
-          "X-Life-Assistant-Admin-Token": adminToken,
+          "X-Crabby-Admin-Token": adminToken,
         },
       });
       if (!resp.ok) {
@@ -854,7 +854,7 @@ export class AgentClient {
       const resp = await fetch(`${this.baseUrl}/admin/reload-settings`, {
         method: "POST",
         headers: {
-          "X-Life-Assistant-Admin-Token": adminToken,
+          "X-Crabby-Admin-Token": adminToken,
         },
       });
       if (!resp.ok) {
@@ -874,7 +874,7 @@ export class AgentClient {
     try {
       const resp = await fetch(`${this.baseUrl}/admin/mcp/status`, {
         headers: {
-          "X-Life-Assistant-Admin-Token": adminToken,
+          "X-Crabby-Admin-Token": adminToken,
         },
       });
       if (!resp.ok) {
@@ -900,7 +900,7 @@ export class AgentClient {
       const resp = await fetch(`${this.baseUrl}/admin/profile/test`, {
         method: "POST",
         headers: {
-          "X-Life-Assistant-Admin-Token": adminToken,
+          "X-Crabby-Admin-Token": adminToken,
         },
       });
       if (!resp.ok) {
@@ -934,7 +934,7 @@ export class AgentClient {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        "X-Life-Assistant-Admin-Token": adminToken,
+        "X-Crabby-Admin-Token": adminToken,
       },
       body: JSON.stringify({ profile, activate }),
     });
@@ -967,7 +967,7 @@ export class AgentClient {
   ): Promise<BackendLlmProfilesResult> {
     try {
       const headers = new Headers(init.headers);
-      headers.set("X-Life-Assistant-Admin-Token", adminToken);
+      headers.set("X-Crabby-Admin-Token", adminToken);
       const resp = await fetch(`${this.baseUrl}${path}`, {
         ...init,
         headers,

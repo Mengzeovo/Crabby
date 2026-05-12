@@ -10,10 +10,10 @@ import {
 } from "../config/backendConfig";
 import { normalizeLlmProviderId } from "../config/llmProviders";
 import { resolvePluginRuntimeLayout } from "../runtime/backendRuntime";
-import type LifeAssistantPlugin from "../main";
+import type CrabbyPlugin from "../main";
 import type { LlmProfile } from "../settings";
 
-export type LifeAssistantSettingsToolAction =
+export type CrabbySettingsToolAction =
   | "inspect"
   | "set_runtime_value"
   | "save_profile"
@@ -22,8 +22,8 @@ export type LifeAssistantSettingsToolAction =
   | "sync_profiles_from_backend"
   | "sync_backend_vault_path";
 
-export interface LifeAssistantSettingsToolInput {
-  action: LifeAssistantSettingsToolAction;
+export interface CrabbySettingsToolInput {
+  action: CrabbySettingsToolAction;
   key?: string;
   value?: string;
   profile_id?: string;
@@ -31,7 +31,7 @@ export interface LifeAssistantSettingsToolInput {
   activate?: boolean;
 }
 
-interface LifeAssistantSettingsToolResult {
+interface CrabbySettingsToolResult {
   ok: boolean;
   message: string;
   settings?: Record<string, unknown>;
@@ -45,15 +45,15 @@ const RUNTIME_KEYS = new Set([
   "runtimeManifestUrl",
 ]);
 
-export async function performLifeAssistantSettingsAction(
-  plugin: LifeAssistantPlugin,
-  input: LifeAssistantSettingsToolInput,
-): Promise<LifeAssistantSettingsToolResult> {
+export async function performCrabbySettingsAction(
+  plugin: CrabbyPlugin,
+  input: CrabbySettingsToolInput,
+): Promise<CrabbySettingsToolResult> {
   switch (input.action) {
     case "inspect":
       return {
         ok: true,
-        message: "Loaded current Life Assistant plugin settings.",
+        message: "Loaded current Crabby plugin settings.",
         settings: buildSettingsSnapshot(plugin),
       };
     case "set_runtime_value":
@@ -71,15 +71,15 @@ export async function performLifeAssistantSettingsAction(
     default:
       return {
         ok: false,
-        message: `Unknown life_assistant_settings action: ${String(input.action ?? "")}`,
+        message: `Unknown crabby_settings action: ${String(input.action ?? "")}`,
         settings: buildSettingsSnapshot(plugin),
       };
   }
 }
 
-export function normalizeLifeAssistantSettingsInput(
+export function normalizeCrabbySettingsInput(
   input: unknown,
-): LifeAssistantSettingsToolInput {
+): CrabbySettingsToolInput {
   if (!input || typeof input !== "object") {
     return { action: "inspect" };
   }
@@ -94,7 +94,7 @@ export function normalizeLifeAssistantSettingsInput(
   };
 }
 
-function normalizeAction(value: unknown): LifeAssistantSettingsToolAction {
+function normalizeAction(value: unknown): CrabbySettingsToolAction {
   const action = normalizeString(value);
   switch (action) {
     case "inspect":
@@ -111,9 +111,9 @@ function normalizeAction(value: unknown): LifeAssistantSettingsToolAction {
 }
 
 async function setRuntimeValue(
-  plugin: LifeAssistantPlugin,
-  input: LifeAssistantSettingsToolInput,
-): Promise<LifeAssistantSettingsToolResult> {
+  plugin: CrabbyPlugin,
+  input: CrabbySettingsToolInput,
+): Promise<CrabbySettingsToolResult> {
   const key = normalizeString(input.key);
   if (!RUNTIME_KEYS.has(key)) {
     return {
@@ -141,9 +141,9 @@ async function setRuntimeValue(
 }
 
 async function saveProfile(
-  plugin: LifeAssistantPlugin,
-  input: LifeAssistantSettingsToolInput,
-): Promise<LifeAssistantSettingsToolResult> {
+  plugin: CrabbyPlugin,
+  input: CrabbySettingsToolInput,
+): Promise<CrabbySettingsToolResult> {
   const profile = normalizeProfile(input.profile);
   if (!profile) {
     return {
@@ -178,9 +178,9 @@ async function saveProfile(
 }
 
 async function deleteProfile(
-  plugin: LifeAssistantPlugin,
-  input: LifeAssistantSettingsToolInput,
-): Promise<LifeAssistantSettingsToolResult> {
+  plugin: CrabbyPlugin,
+  input: CrabbySettingsToolInput,
+): Promise<CrabbySettingsToolResult> {
   const profileId = normalizeString(input.profile_id);
   if (!profileId) {
     return {
@@ -214,9 +214,9 @@ async function deleteProfile(
 }
 
 async function activateProfile(
-  plugin: LifeAssistantPlugin,
-  input: LifeAssistantSettingsToolInput,
-): Promise<LifeAssistantSettingsToolResult> {
+  plugin: CrabbyPlugin,
+  input: CrabbySettingsToolInput,
+): Promise<CrabbySettingsToolResult> {
   const profileId = normalizeString(input.profile_id);
   if (!profileId) {
     return {
@@ -250,8 +250,8 @@ async function activateProfile(
 }
 
 async function syncProfilesFromBackend(
-  plugin: LifeAssistantPlugin,
-): Promise<LifeAssistantSettingsToolResult> {
+  plugin: CrabbyPlugin,
+): Promise<CrabbySettingsToolResult> {
   const client = new AgentClient(plugin.settings.backendUrl);
   const result = await fetchLlmProfilesFromBackend(plugin.settings, client);
   if (!result.ok) {
@@ -272,8 +272,8 @@ async function syncProfilesFromBackend(
 }
 
 async function syncBackendVaultPath(
-  plugin: LifeAssistantPlugin,
-): Promise<LifeAssistantSettingsToolResult> {
+  plugin: CrabbyPlugin,
+): Promise<CrabbySettingsToolResult> {
   const result = await plugin.ensureBackendVaultPathSynced();
   return {
     ok: result.ok,
@@ -283,7 +283,7 @@ async function syncBackendVaultPath(
   };
 }
 
-function buildSettingsSnapshot(plugin: LifeAssistantPlugin): Record<string, unknown> {
+function buildSettingsSnapshot(plugin: CrabbyPlugin): Record<string, unknown> {
   let pluginDataPath = "";
   let runtimeStatus: unknown = null;
   try {

@@ -61,7 +61,7 @@ Current private target: macOS Apple Silicon (`darwin arm64`), version `0.1.0`.
 
 ```bash
 git clone <your-repo>
-cd LifeAssistantAgent
+cd Crabby
 ```
 
 ### 2. Build The Backend Runtime
@@ -78,7 +78,7 @@ cd ..
 Expected backend binary:
 
 ```text
-dist/backend-runtime/0.1.0/darwin/life-assistant-backend
+dist/backend-runtime/0.1.0/darwin/crabby-backend
 ```
 
 ### 3. Install Plugin Dependencies
@@ -98,13 +98,13 @@ python scripts/package-obsidian-release.py --platform darwin --arch arm64
 Output:
 
 ```text
-dist/obsidian-plugin/life-assistant-agent-0.1.0-darwin-arm64.zip
+dist/obsidian-plugin/crabby-0.1.0-darwin-arm64.zip
 ```
 
 The zip contains:
 
 ```text
-life-assistant-agent/
+crabby/
   manifest.json
   main.js
   runtime/
@@ -112,7 +112,7 @@ life-assistant-agent/
     backend/
       0.1.0/
         darwin/
-          life-assistant-backend
+          crabby-backend
 ```
 
 `runtime/state.json` stores the backend executable path relative to the plugin runtime directory, so the plugin folder can move with the vault across machines.
@@ -120,7 +120,7 @@ life-assistant-agent/
 ## Manual Installation In Obsidian
 
 1. Locate the target vault.
-2. Unzip `life-assistant-agent-0.1.0-darwin-arm64.zip` into:
+2. Unzip `crabby-0.1.0-darwin-arm64.zip` into:
 
 ```text
 <YourVault>/.obsidian/plugins/
@@ -129,21 +129,21 @@ life-assistant-agent/
 The final structure must be:
 
 ```text
-<YourVault>/.obsidian/plugins/life-assistant-agent/manifest.json
-<YourVault>/.obsidian/plugins/life-assistant-agent/main.js
-<YourVault>/.obsidian/plugins/life-assistant-agent/runtime/state.json
+<YourVault>/.obsidian/plugins/crabby/manifest.json
+<YourVault>/.obsidian/plugins/crabby/main.js
+<YourVault>/.obsidian/plugins/crabby/runtime/state.json
 ```
 
 3. On macOS, ensure the backend binary is executable if the unzip tool did not preserve permissions:
 
 ```bash
-chmod +x "<YourVault>/.obsidian/plugins/life-assistant-agent/runtime/backend/0.1.0/darwin/life-assistant-backend"
+chmod +x "<YourVault>/.obsidian/plugins/crabby/runtime/backend/0.1.0/darwin/crabby-backend"
 ```
 
 4. Restart Obsidian.
 5. Open `Settings -> Community plugins`.
 6. Disable Restricted mode if needed.
-7. Enable `Life Assistant Agent`.
+7. Enable `Crabby`.
 
 The plugin will read `runtime/state.json`, resolve the relative backend executable path, and start the bundled backend.
 

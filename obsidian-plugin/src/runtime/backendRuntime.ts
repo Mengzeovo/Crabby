@@ -19,7 +19,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { App, FileSystemAdapter, Platform } from "obsidian";
 
 import { AgentClient } from "../api/client";
-import type { LifeAssistantSettings } from "../settings";
+import type { CrabbySettings } from "../settings";
 import {
   ADMIN_RELOAD_HEADER,
   isTruthyEnvValue,
@@ -36,7 +36,7 @@ import {
   serializeRuntimeExecutablePath,
 } from "./runtimeState";
 
-const PLUGIN_ID = "life-assistant-agent";
+const PLUGIN_ID = "crabby";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8000;
 const HEALTH_TIMEOUT_MS = 15000;
@@ -125,7 +125,7 @@ interface ExistingBackend {
 
 export function resolvePluginRuntimeLayout(app: App): RuntimeLayout {
   if (!Platform.isDesktopApp) {
-    throw new Error("Life Assistant Agent 后端运行时需要 Obsidian 桌面版。");
+    throw new Error("Crabby 后端运行时需要 Obsidian 桌面版。");
   }
 
   const adapter = app.vault.adapter;
@@ -167,7 +167,7 @@ export class BackendRuntimeManager {
 
   constructor(
     private app: App,
-    private settings: LifeAssistantSettings,
+    private settings: CrabbySettings,
   ) {
     this.layout = resolvePluginRuntimeLayout(app);
   }
@@ -192,10 +192,10 @@ export class BackendRuntimeManager {
 
     const token = this.ensureAdminToken();
     upsertEnvFile(this.layout.envPath, {
-      LIFE_ASSISTANT_ADMIN_ENABLED: "true",
-      LIFE_ASSISTANT_ADMIN_TOKEN: token,
+      CRABBY_ADMIN_ENABLED: "true",
+      CRABBY_ADMIN_TOKEN: token,
       ...this.getHostWatchdogEnv(),
-      LIFE_ASSISTANT_BACKEND_RELOADER_PARENT: "false",
+      CRABBY_BACKEND_RELOADER_PARENT: "false",
       VAULT_PATH: this.getVaultBasePath(),
       HOST: DEFAULT_HOST,
       PROMPTS_DIR: this.layout.promptsDir,
@@ -278,10 +278,10 @@ export class BackendRuntimeManager {
     );
     const adminToken = this.ensureAdminToken();
     upsertEnvFile(this.layout.envPath, {
-      LIFE_ASSISTANT_ADMIN_ENABLED: "true",
-      LIFE_ASSISTANT_ADMIN_TOKEN: adminToken,
+      CRABBY_ADMIN_ENABLED: "true",
+      CRABBY_ADMIN_TOKEN: adminToken,
       ...this.getHostWatchdogEnv(),
-      LIFE_ASSISTANT_BACKEND_RELOADER_PARENT: reloaderParentValue,
+      CRABBY_BACKEND_RELOADER_PARENT: reloaderParentValue,
       VAULT_PATH: this.getVaultBasePath(),
       HOST: DEFAULT_HOST,
       PORT: String(port),
@@ -303,7 +303,7 @@ export class BackendRuntimeManager {
       DATA_DIR: this.layout.dataDir,
       LOG_DIR: this.layout.logsDir,
       ...this.getHostWatchdogEnv(),
-      LIFE_ASSISTANT_BACKEND_RELOADER_PARENT: reloaderParentValue,
+      CRABBY_BACKEND_RELOADER_PARENT: reloaderParentValue,
       VAULT_PATH: this.getVaultBasePath(),
       HOST: DEFAULT_HOST,
       PORT: String(port),
@@ -424,7 +424,7 @@ export class BackendRuntimeManager {
     }
 
     const executableName =
-      asset.executableName ?? (process.platform === "win32" ? "life-assistant-backend.exe" : "life-assistant-backend");
+      asset.executableName ?? (process.platform === "win32" ? "crabby-backend.exe" : "crabby-backend");
     const installDir = join(
       this.layout.runtimeDir,
       "backend",
@@ -523,10 +523,10 @@ export class BackendRuntimeManager {
         ? withDevHostPortArgs(launch.args, DEFAULT_HOST, existingBackend.port)
         : launch.args;
     upsertEnvFile(this.layout.envPath, {
-      LIFE_ASSISTANT_ADMIN_ENABLED: "true",
-      LIFE_ASSISTANT_ADMIN_TOKEN: token,
+      CRABBY_ADMIN_ENABLED: "true",
+      CRABBY_ADMIN_TOKEN: token,
       ...this.getHostWatchdogEnv(),
-      LIFE_ASSISTANT_BACKEND_RELOADER_PARENT: getReloaderParentValue(launchArgs),
+      CRABBY_BACKEND_RELOADER_PARENT: getReloaderParentValue(launchArgs),
       VAULT_PATH: this.getVaultBasePath(),
       HOST: DEFAULT_HOST,
       PORT: String(existingBackend.port),
@@ -683,11 +683,11 @@ export class BackendRuntimeManager {
 
   private getHostWatchdogEnv(): Record<string, string> {
     return {
-      LIFE_ASSISTANT_HOST_HEARTBEAT_FILE: this.layout.heartbeatPath,
-      LIFE_ASSISTANT_HOST_HEARTBEAT_TIMEOUT_SECONDS: String(
+      CRABBY_HOST_HEARTBEAT_FILE: this.layout.heartbeatPath,
+      CRABBY_HOST_HEARTBEAT_TIMEOUT_SECONDS: String(
         HOST_HEARTBEAT_TIMEOUT_SECONDS,
       ),
-      LIFE_ASSISTANT_HOST_PID: String(process.pid),
+      CRABBY_HOST_PID: String(process.pid),
     };
   }
 
@@ -736,13 +736,13 @@ export class BackendRuntimeManager {
   }
 
   private ensureAdminToken(): string {
-    const existingEnabled = readEnvValue(this.layout.envPath, "LIFE_ASSISTANT_ADMIN_ENABLED");
-    const existingToken = readEnvValue(this.layout.envPath, "LIFE_ASSISTANT_ADMIN_TOKEN");
+    const existingEnabled = readEnvValue(this.layout.envPath, "CRABBY_ADMIN_ENABLED");
+    const existingToken = readEnvValue(this.layout.envPath, "CRABBY_ADMIN_TOKEN");
     const token = existingToken?.trim() || randomBytes(24).toString("hex");
     if (!isTruthyEnvValue(existingEnabled) || !existingToken) {
       upsertEnvFile(this.layout.envPath, {
-        LIFE_ASSISTANT_ADMIN_ENABLED: "true",
-        LIFE_ASSISTANT_ADMIN_TOKEN: token,
+        CRABBY_ADMIN_ENABLED: "true",
+        CRABBY_ADMIN_TOKEN: token,
       });
     }
     return token;

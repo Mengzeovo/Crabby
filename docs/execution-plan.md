@@ -1,4 +1,4 @@
-# 执行计划 — Life Assistant Agent
+# 执行计划 — Crabby
 
 > 将 `implementation-checklist.md` 的改动项 + `architecture.md` 的 MVP 路线图整合为可操作的细化步骤。
 > 
@@ -184,7 +184,7 @@ docs/
 | 任务 | 产出文件 | 说明 | 状态 |
 |------|---------|------|------|
 | 嵌入生成 | `server/indexing/embedder.py` | Markdown → 分块（按标题/段落）→ 调用 embedding API → 返回 `EmbeddedChunk` 列表；缺少 key 时明确报错 | ✅ |
-| 向量存储 | `server/indexing/store.py` | LanceDB 封装：初始化表、upsert/delete/rename、search。存储路径：`.LifeAssistantAgent/vector-db/` | ✅ |
+| 向量存储 | `server/indexing/store.py` | LanceDB 封装：初始化表、upsert/delete/rename、search。存储路径：`.Crabby/vector-db/` | ✅ |
 | 全量构建 | `server/indexing/builder.py` | 后台异步构建、进度状态与失败降级；同步/后台共享核心逻辑 | ✅ |
 | 文件监听 | `server/indexing/watcher.py` | watchdog 监听白名单目录变更。防抖（500ms）+ 批量更新 | ✅ |
 | 上下文度量 | `server/llm/context_meter.py` | CJK 感知 Token 估算 + 结构化上下文用量报告 | ✅ |
@@ -233,7 +233,7 @@ docs/
 | 任务 | 产出文件 | 说明 |
 |------|---------|------|
 | Action 数据模型 | `server/tools/pending_action/models.py` | `PendingAction` Pydantic 模型（id, type, title, payload, status, expires_at 等）|
-| 队列管理 | `server/tools/pending_action/queue.py` | 队列 CRUD：push / list / update_status。持久化到 `.LifeAssistantAgent/pending-actions/queue.json` |
+| 队列管理 | `server/tools/pending_action/queue.py` | 队列 CRUD：push / list / update_status。持久化到 `.Crabby/pending-actions/queue.json` |
 | EnqueueAction 工具 | `server/tools/pending_action/tool.py` | Agent 调用此工具把建议推入队列 |
 | Suggest 工具组 | `server/tools/suggest/edit.py`, `create.py`, `move.py` | SuggestEdit / SuggestCreate / SuggestMove，内部都调用 EnqueueAction |
 | 插件 ActionPanel | `obsidian-plugin/src/pending-actions/ActionPanel.ts` | 侧边栏面板：展示待办建议列表，每项有"执行"/"忽略"按钮 |

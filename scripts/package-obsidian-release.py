@@ -46,8 +46,8 @@ def host_arch_key() -> str:
 
 def executable_name(platform_key: str) -> str:
     if platform_key == "win32":
-        return "life-assistant-backend.exe"
-    return "life-assistant-backend"
+        return "crabby-backend.exe"
+    return "crabby-backend"
 
 
 def read_json(path: Path) -> dict:

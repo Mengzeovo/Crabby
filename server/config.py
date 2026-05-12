@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 SERVER_DIR = Path(__file__).resolve().parent
@@ -97,12 +98,48 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = json.dumps(DEFAULT_CORS_ALLOWED_ORIGINS)
 
     # Local admin plane
-    life_assistant_admin_enabled: bool = False
-    life_assistant_admin_token: str = ""
-    life_assistant_host_heartbeat_file: str = ""
-    life_assistant_host_heartbeat_timeout_seconds: int = 0
-    life_assistant_host_pid: int = 0
-    life_assistant_backend_reloader_parent: bool = False
+    crabby_admin_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "CRABBY_ADMIN_ENABLED",
+            "LIFE_ASSISTANT_ADMIN_ENABLED",
+        ),
+    )
+    crabby_admin_token: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "CRABBY_ADMIN_TOKEN",
+            "LIFE_ASSISTANT_ADMIN_TOKEN",
+        ),
+    )
+    crabby_host_heartbeat_file: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "CRABBY_HOST_HEARTBEAT_FILE",
+            "LIFE_ASSISTANT_HOST_HEARTBEAT_FILE",
+        ),
+    )
+    crabby_host_heartbeat_timeout_seconds: int = Field(
+        default=0,
+        validation_alias=AliasChoices(
+            "CRABBY_HOST_HEARTBEAT_TIMEOUT_SECONDS",
+            "LIFE_ASSISTANT_HOST_HEARTBEAT_TIMEOUT_SECONDS",
+        ),
+    )
+    crabby_host_pid: int = Field(
+        default=0,
+        validation_alias=AliasChoices(
+            "CRABBY_HOST_PID",
+            "LIFE_ASSISTANT_HOST_PID",
+        ),
+    )
+    crabby_backend_reloader_parent: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "CRABBY_BACKEND_RELOADER_PARENT",
+            "LIFE_ASSISTANT_BACKEND_RELOADER_PARENT",
+        ),
+    )
 
     @property
     def cors_allowed_origins_list(self) -> list[str]:

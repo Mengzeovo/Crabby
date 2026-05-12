@@ -22,7 +22,7 @@ from llm.profile_probe import test_current_profile
 from mcp_runtime import MCPReloadError, get_mcp_runtime_status, reload_mcp_servers
 from runtime_config import reload_agent_config
 
-ADMIN_TOKEN_HEADER = "X-Life-Assistant-Admin-Token"
+ADMIN_TOKEN_HEADER = "X-Crabby-Admin-Token"
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -82,8 +82,8 @@ class LLMProfileSaveRequest(BaseModel):
 
 def _ensure_admin_reload_enabled() -> None:
     if (
-        not settings.life_assistant_admin_enabled
-        or not settings.life_assistant_admin_token
+        not settings.crabby_admin_enabled
+        or not settings.crabby_admin_token
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
@@ -92,7 +92,7 @@ def _validate_admin_token(token: str | None) -> None:
     _ensure_admin_reload_enabled()
     if token is None or not secrets.compare_digest(
         token,
-        settings.life_assistant_admin_token,
+        settings.crabby_admin_token,
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 

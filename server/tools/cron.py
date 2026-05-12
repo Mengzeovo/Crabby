@@ -15,6 +15,9 @@ from pydantic import BaseModel, Field
 
 from tools.base import Context, Tool, ToolResult
 
+CRABBY_VAULT_DIR = ".Crabby"
+LEGACY_CRABBY_VAULT_DIR = ".LifeAssistantAgent"
+
 
 class CronJob(BaseModel):
     id: str
@@ -29,12 +32,15 @@ class CronJob(BaseModel):
 
 
 class CronManager:
-    """负责管理 Vault 内的 .LifeAssistantAgent/data/cron_jobs.json"""
+    """负责管理 Vault 内的 .Crabby/data/cron_jobs.json"""
 
     @classmethod
     def get_file(cls, vault_path: Path) -> Path:
-        file_path = vault_path / ".LifeAssistantAgent" / "data" / "cron_jobs.json"
+        file_path = vault_path / CRABBY_VAULT_DIR / "data" / "cron_jobs.json"
+        legacy_path = vault_path / LEGACY_CRABBY_VAULT_DIR / "data" / "cron_jobs.json"
         file_path.parent.mkdir(parents=True, exist_ok=True)
+        if not file_path.exists() and legacy_path.exists():
+            file_path.write_bytes(legacy_path.read_bytes())
         return file_path
 
     @classmethod

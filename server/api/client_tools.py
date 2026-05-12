@@ -125,12 +125,12 @@ class ObsidianClientToolManager:
             ),
         )
 
-    async def life_assistant_settings(
+    async def crabby_settings(
         self,
         input_payload: dict[str, Any],
     ) -> dict[str, Any]:
         return await self.request(
-            "life_assistant_settings",
+            "crabby_settings",
             input_payload,
             disconnected_message=(
                 "Obsidian plugin settings bridge is not connected. "

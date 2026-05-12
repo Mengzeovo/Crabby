@@ -187,7 +187,7 @@ function createChatWindow(): BrowserWindow {
     show: false,
     backgroundColor: "#f4ede0",
     autoHideMenuBar: true,
-    title: "Life Assistant Chat",
+    title: "Crabby Chat",
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -405,7 +405,7 @@ function broadcastSnapshot(snapshot: ConversationSnapshot): void {
 
   if (tray) {
     const suffix = snapshot.unreadCount > 0 ? ` (${snapshot.unreadCount})` : "";
-    tray.setToolTip(`Life Assistant Pet${suffix}`);
+    tray.setToolTip(`Crabby Pet${suffix}`);
   }
 
   if (snapshot.bubble.visible) {

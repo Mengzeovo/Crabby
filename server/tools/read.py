@@ -96,7 +96,7 @@ class ReadTool(Tool):
         2. 读取文件全部内容（UTF-8 编码）
         3. 若指定了 offset/limit，按行范围切片
         4. 若内容超过 max_result_chars，截断输出并将
-           完整内容缓存到 .LifeAssistantAgent/cache/tool-results/
+           完整内容缓存到 .Crabby/cache/tool-results/
 
         Args:
             params: ReadInput 实例。
@@ -127,7 +127,7 @@ class ReadTool(Tool):
             truncated = text[: self.max_result_chars]
 
             # 将完整内容缓存到本地文件，供后续按需读取
-            cache_dir = ctx.vault_path / ".LifeAssistantAgent" / "cache" / "tool-results"
+            cache_dir = ctx.vault_path / ".Crabby" / "cache" / "tool-results"
             cache_dir.mkdir(parents=True, exist_ok=True)
             h = hashlib.sha256(text.encode()).hexdigest()[:12]
             cache_file = cache_dir / f"{h}.txt"

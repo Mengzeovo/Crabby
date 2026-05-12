@@ -7,16 +7,16 @@ import type {
   BackendLlmProfilesResponse,
   ReloadConfigResult,
 } from "../api/client";
-import type { LifeAssistantSettings, LlmProfile } from "../settings";
+import type { CrabbySettings, LlmProfile } from "../settings";
 import {
   getLlmProviderPreset,
   isLlmProviderId,
   type LlmProviderId,
 } from "./llmProviders";
 
-export const ADMIN_RELOAD_HEADER = "X-Life-Assistant-Admin-Token";
-const ADMIN_ENABLED_KEY = "LIFE_ASSISTANT_ADMIN_ENABLED";
-const ADMIN_TOKEN_KEY = "LIFE_ASSISTANT_ADMIN_TOKEN";
+export const ADMIN_RELOAD_HEADER = "X-Crabby-Admin-Token";
+const ADMIN_ENABLED_KEY = "CRABBY_ADMIN_ENABLED";
+const ADMIN_TOKEN_KEY = "CRABBY_ADMIN_TOKEN";
 const VAULT_PATH_KEY = "VAULT_PATH";
 const ENV_ASSIGNMENT = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/;
 const PROVIDER_API_KEY_KEYS = [
@@ -60,7 +60,7 @@ export interface BackendProfileResult extends LocalConfigResult {
 }
 
 export function resolveBackendEnvPath(
-  settings: Pick<LifeAssistantSettings, "backendEnvPath" | "backendPath">,
+  settings: Pick<CrabbySettings, "backendEnvPath" | "backendPath">,
 ): BackendEnvPathResolution {
   const backendEnvPath = settings.backendEnvPath?.trim();
   if (backendEnvPath) {
@@ -94,7 +94,7 @@ export function readEnvValue(envPath: string, key: string): string | null {
 }
 
 export function resolveBackendAdminToken(
-  settings: Pick<LifeAssistantSettings, "backendEnvPath" | "backendPath">,
+  settings: Pick<CrabbySettings, "backendEnvPath" | "backendPath">,
 ): { ok: boolean; adminToken?: string; envPath?: string; message: string } {
   const resolution = resolveBackendEnvPath(settings);
   if (!resolution.ok || !resolution.envPath) {
@@ -331,7 +331,7 @@ export function readSavedProfilesFromEnv(envPath: string): LlmProfile[] {
 
 export function mergeSavedProfilesFromEnv(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     | "backendEnvPath"
     | "backendPath"
     | "llmProfiles"
@@ -394,7 +394,7 @@ export function mergeSavedProfilesFromEnv(
 
 export async function fetchLlmProfilesFromBackend(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     "backendEnvPath" | "backendPath" | "llmProfiles" | "activeProfileId"
   >,
   client: Pick<AgentClient, "listLlmProfiles">,
@@ -410,7 +410,7 @@ export async function fetchLlmProfilesFromBackend(
 
 export async function saveLlmProfileToBackend(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     "backendEnvPath" | "backendPath" | "llmProfiles" | "activeProfileId"
   >,
   profile: LlmProfile,
@@ -438,7 +438,7 @@ export async function saveLlmProfileToBackend(
 
 export async function activateLlmProfileOnBackend(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     "backendEnvPath" | "backendPath" | "llmProfiles" | "activeProfileId"
   >,
   profileId: string,
@@ -455,7 +455,7 @@ export async function activateLlmProfileOnBackend(
 
 export async function deleteLlmProfileFromBackend(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     "backendEnvPath" | "backendPath" | "llmProfiles" | "activeProfileId"
   >,
   profileId: string,
@@ -471,7 +471,7 @@ export async function deleteLlmProfileFromBackend(
 }
 
 function applyBackendProfileResult(
-  settings: Pick<LifeAssistantSettings, "llmProfiles" | "activeProfileId">,
+  settings: Pick<CrabbySettings, "llmProfiles" | "activeProfileId">,
   result: {
     ok: boolean;
     status: number | null;
@@ -500,7 +500,7 @@ function applyBackendProfileResult(
 }
 
 function applyBackendProfileState(
-  settings: Pick<LifeAssistantSettings, "llmProfiles" | "activeProfileId">,
+  settings: Pick<CrabbySettings, "llmProfiles" | "activeProfileId">,
   data: BackendLlmProfilesResponse,
 ): void {
   settings.llmProfiles = data.profiles.map(fromBackendLlmProfile);
@@ -611,7 +611,7 @@ function inferProviderFromProfile(
 }
 
 export function getBackendEnvPathInputValue(
-  settings: Pick<LifeAssistantSettings, "backendEnvPath" | "backendPath">,
+  settings: Pick<CrabbySettings, "backendEnvPath" | "backendPath">,
 ): string {
   const backendEnvPath = settings.backendEnvPath?.trim();
   if (backendEnvPath) {
@@ -622,7 +622,7 @@ export function getBackendEnvPathInputValue(
 }
 
 export async function saveProfileSnapshotLocally(
-  settings: Pick<LifeAssistantSettings, "backendEnvPath" | "backendPath">,
+  settings: Pick<CrabbySettings, "backendEnvPath" | "backendPath">,
   profile: Pick<
     LlmProfile,
     | "id"
@@ -658,7 +658,7 @@ export async function saveProfileSnapshotLocally(
 }
 
 export async function applyActiveProfileLocally(
-  settings: Pick<LifeAssistantSettings, "backendEnvPath" | "backendPath">,
+  settings: Pick<CrabbySettings, "backendEnvPath" | "backendPath">,
   profile: Pick<
     LlmProfile,
     | "id"
@@ -735,7 +735,7 @@ export async function applyActiveProfileLocally(
 
 export async function switchActiveProfileLocally(
   settings: Pick<
-    LifeAssistantSettings,
+    CrabbySettings,
     "backendEnvPath" | "backendPath" | "activeProfileId"
   >,
   profile: Pick<
@@ -762,7 +762,7 @@ export async function switchActiveProfileLocally(
 }
 
 export async function syncVaultPathLocally(
-  settings: Pick<LifeAssistantSettings, "backendEnvPath" | "backendPath">,
+  settings: Pick<CrabbySettings, "backendEnvPath" | "backendPath">,
   vaultPath: string,
   client: Pick<AgentClient, "reloadSettings">,
 ): Promise<LocalConfigResult> {

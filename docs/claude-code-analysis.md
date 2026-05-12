@@ -1,6 +1,6 @@
-# Claude Code 源码分析 — Life Assistant Agent 可借鉴设计
+# Claude Code 源码分析 — Crabby 可借鉴设计
 
-> 基于 `0-LifeAssistantAgent/claude-code/` 源码的深度分析，提炼出对我们项目有价值的设计模式和架构决策。
+> 基于 `0-Crabby/claude-code/` 源码的深度分析，提炼出对我们项目有价值的设计模式和架构决策。
 
 ---
 
@@ -222,7 +222,7 @@ Claude Code 把记忆拆成一个文件一件事（原子化），每个文件�
 **建议改进我们的记忆存储：**
 
 ```
-.LifeAssistantAgent/memory/
+.Crabby/memory/
 ├── INDEX.md                        # 索引 (始终注入上下文，≤200 行)
 ├── .consolidate-lock               # Dream 锁文件
 ├── profile/
@@ -532,7 +532,7 @@ paths: ["src/**/*.ts"]
 **建议在 Phase 4+ 加入场景化行为：**
 
 ```
-.LifeAssistantAgent/behaviors/
+.Crabby/behaviors/
 ├── daily-review.md          # 日记回顾行为
 ├── task-management.md       # 任务管理行为
 └── knowledge-capture.md     # 知识抓取行为
@@ -625,7 +625,7 @@ Worker 遇到受限操作
 | **"读完再指派" 原则** | Agent 在给用户建议前，应该先真正理解上下文 |
 | 权限冒泡 | 子 Agent 的操作权限上报给主流程 / 用户确认 |
 
-**短期不需要：** 我们的 Life Assistant Agent 是单用户单 Agent 系统，多 Agent 协作是远期参考。但 Coordinator 的四阶段思维模式可以用于 Agent 处理复杂任务的内部推理框架。
+**短期不需要：** 我们的 Crabby 是单用户单 Agent 系统，多 Agent 协作是远期参考。但 Coordinator 的四阶段思维模式可以用于 Agent 处理复杂任务的内部推理框架。
 
 ---
 

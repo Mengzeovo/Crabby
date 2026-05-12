@@ -56,8 +56,8 @@ async function testBackendConfig(mod) {
       "OPENAI_API_KEY=old-openai-key",
       "OPENAI_BASE_URL=https://old.example/v1",
       "OLLAMA_BASE_URL=http://localhost:11434",
-      "LIFE_ASSISTANT_ADMIN_ENABLED=true",
-      "LIFE_ASSISTANT_ADMIN_TOKEN=reload-secret",
+      "CRABBY_ADMIN_ENABLED=true",
+      "CRABBY_ADMIN_TOKEN=reload-secret",
       "",
     ].join("\n"),
     "utf8",
@@ -254,7 +254,7 @@ async function testBackendConfig(mod) {
   };
   assert.equal(mod.mergeSavedProfilesFromEnv(fallbackActiveSettings), true);
   assert.equal(fallbackActiveSettings.activeProfileId, "profile1");
-  assert.equal(mod.readEnvValue(envPath, "LIFE_ASSISTANT_ADMIN_TOKEN"), "reload-secret");
+  assert.equal(mod.readEnvValue(envPath, "CRABBY_ADMIN_TOKEN"), "reload-secret");
   assert.equal(mod.isTruthyEnvValue("true"), true);
   assert.equal(mod.isTruthyEnvValue("0"), false);
 
@@ -341,8 +341,8 @@ async function testMcpConfig(mod) {
   fs.writeFileSync(
     envPath,
     [
-      "LIFE_ASSISTANT_ADMIN_ENABLED=true",
-      "LIFE_ASSISTANT_ADMIN_TOKEN=reload-secret",
+      "CRABBY_ADMIN_ENABLED=true",
+      "CRABBY_ADMIN_TOKEN=reload-secret",
       "",
     ].join("\n"),
     "utf8",
@@ -672,10 +672,10 @@ function testDefaultConfigTemplates(mod) {
 function testRuntimeStatePaths(mod) {
   const runtimeDir = path.join(
     os.tmpdir(),
-    "LifeAssistantVault",
+    "CrabbyVault",
     ".obsidian",
     "plugins",
-    "life-assistant-agent",
+    "crabby",
     "runtime",
   );
   const executablePath = path.join(
@@ -683,7 +683,7 @@ function testRuntimeStatePaths(mod) {
     "backend",
     "0.1.0",
     "darwin",
-    "life-assistant-backend",
+    "crabby-backend",
   );
 
   const statePath = mod.serializeRuntimeExecutablePath(
@@ -692,7 +692,7 @@ function testRuntimeStatePaths(mod) {
   );
   assert.equal(
     statePath,
-    path.join("backend", "0.1.0", "darwin", "life-assistant-backend"),
+    path.join("backend", "0.1.0", "darwin", "crabby-backend"),
   );
   assert.equal(
     mod.resolveRuntimeExecutablePath(runtimeDir, statePath),
@@ -705,9 +705,9 @@ function testRuntimeStatePaths(mod) {
   assert.equal(
     mod.resolveRuntimeExecutablePath(
       runtimeDir,
-      path.join("..cache", "life-assistant-backend"),
+      path.join("..cache", "crabby-backend"),
     ),
-    path.join(runtimeDir, "..cache", "life-assistant-backend"),
+    path.join(runtimeDir, "..cache", "crabby-backend"),
   );
   assert.equal(
     mod.resolveRuntimeExecutablePath(runtimeDir, path.join("..", "outside")),

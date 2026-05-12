@@ -33,7 +33,7 @@ claude-code/
 claude-code.7z
 
 # Agent runtime data
-.LifeAssistantAgent/
+.Crabby/
 server/data/*
 !server/data/mcp_servers.example.json
 

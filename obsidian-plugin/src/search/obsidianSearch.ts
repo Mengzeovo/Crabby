@@ -11,6 +11,7 @@ import {
 
 const BLOCKED_DIRS = new Set([
   ".obsidian",
+  ".Crabby",
   ".LifeAssistantAgent",
   ".git",
   "node_modules",
@@ -50,7 +51,7 @@ export async function buildSearchDocuments(app: App): Promise<SearchDocument[]> 
         );
       }
     } catch (error) {
-      console.warn("[Life Assistant] Failed to read searchable file", file.path, error);
+      console.warn("[Crabby] Failed to read searchable file", file.path, error);
     }
   }
 

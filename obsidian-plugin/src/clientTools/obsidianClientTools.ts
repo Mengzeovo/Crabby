@@ -1,8 +1,8 @@
-import type LifeAssistantPlugin from "../main";
+import type CrabbyPlugin from "../main";
 import {
-  normalizeLifeAssistantSettingsInput,
-  performLifeAssistantSettingsAction,
-} from "./lifeAssistantSettingsTool";
+  normalizeCrabbySettingsInput,
+  performCrabbySettingsAction,
+} from "./crabbySettingsTool";
 import { performObsidianSearch } from "../search/obsidianSearch";
 import type { SearchInput } from "../search/searchEngine";
 
@@ -19,7 +19,7 @@ export class ObsidianClientToolBridge {
   private stopped = true;
 
   constructor(
-    private readonly plugin: LifeAssistantPlugin,
+    private readonly plugin: CrabbyPlugin,
     private readonly getBackendUrl: () => string,
   ) {}
 
@@ -98,10 +98,10 @@ export class ObsidianClientToolBridge {
           this.plugin.app,
           normalizeSearchInput(request.input),
         );
-      } else if (request.tool === "life_assistant_settings") {
-        result = await performLifeAssistantSettingsAction(
+      } else if (request.tool === "crabby_settings") {
+        result = await performCrabbySettingsAction(
           this.plugin,
-          normalizeLifeAssistantSettingsInput(request.input),
+          normalizeCrabbySettingsInput(request.input),
         );
       } else {
         throw new Error(`Unknown client tool: ${request.tool}`);

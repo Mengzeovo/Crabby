@@ -25,7 +25,14 @@ from tools.base import Context, Tool, ToolResult
 TASK_RE = re.compile(r"^\s*- \[( |x|-)\] (.+)$", re.MULTILINE)
 
 # Agent 不可扫描的目录
-BLOCKED_DIRS = {".git", ".obsidian", ".LifeAssistantAgent", "node_modules", ".venv"}
+BLOCKED_DIRS = {
+    ".git",
+    ".obsidian",
+    ".Crabby",
+    ".LifeAssistantAgent",
+    "node_modules",
+    ".venv",
+}
 
 
 class TaskQueryInput(BaseModel):

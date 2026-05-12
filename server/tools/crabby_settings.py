@@ -1,4 +1,4 @@
-"""Dedicated self-management tool for the Life Assistant Obsidian plugin."""
+"""Dedicated self-management tool for the Crabby Obsidian plugin."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from api.client_tools import ObsidianClientToolError, obsidian_client_tools
 from tools.base import Context, Tool, ToolResult
 
 
-class LifeAssistantProfileInput(BaseModel):
+class CrabbyProfileInput(BaseModel):
     id: str = Field(description="Stable profile id.")
     name: str = Field(description="Human-readable profile name.")
     provider: str = Field(description="Provider id such as openai or anthropic.")
@@ -46,7 +46,7 @@ class LifeAssistantProfileInput(BaseModel):
     )
 
 
-class LifeAssistantSettingsInput(BaseModel):
+class CrabbySettingsInput(BaseModel):
     action: Literal[
         "inspect",
         "set_runtime_value",
@@ -82,7 +82,7 @@ class LifeAssistantSettingsInput(BaseModel):
         default="",
         description="Profile id for `delete_profile` or `activate_profile`.",
     )
-    profile: LifeAssistantProfileInput | None = Field(
+    profile: CrabbyProfileInput | None = Field(
         default=None,
         description="Profile payload used by `save_profile`.",
     )
@@ -92,29 +92,29 @@ class LifeAssistantSettingsInput(BaseModel):
     )
 
 
-class LifeAssistantSettingsTool(Tool):
-    name = "life_assistant_settings"
+class CrabbySettingsTool(Tool):
+    name = "crabby_settings"
     description = (
-        "Inspect and manage the Life Assistant Obsidian plugin's own settings. "
+        "Inspect and manage the Crabby Obsidian plugin's own settings. "
         "Use this for self-governance and configuration evolution, not for note "
         "search. It can inspect current plugin settings, update runtime paths/URLs, "
         "sync backend vault state, and create/update/delete/activate backend-owned "
         "LLM profiles through the connected Obsidian plugin."
     )
-    input_schema = LifeAssistantSettingsInput
+    input_schema = CrabbySettingsInput
     is_read_only = False
     max_result_chars = 20_000
 
     async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
-        assert isinstance(params, LifeAssistantSettingsInput)
+        assert isinstance(params, CrabbySettingsInput)
 
         try:
-            payload = await obsidian_client_tools.life_assistant_settings(
+            payload = await obsidian_client_tools.crabby_settings(
                 params.model_dump(exclude_none=True),
             )
         except ObsidianClientToolError as exc:
             return ToolResult(
-                output=f"Life Assistant settings tool failed: {exc}",
+                output=f"Crabby settings tool failed: {exc}",
                 metadata={"connected": False, "action": params.action},
             )
 
@@ -131,7 +131,7 @@ class LifeAssistantSettingsTool(Tool):
 
     def _format_payload(self, payload: dict[str, Any], action: str) -> str:
         if not payload:
-            return f"life_assistant_settings completed action `{action}` with no payload."
+            return f"crabby_settings completed action `{action}` with no payload."
 
         lines: list[str] = []
         message = str(payload.get("message") or "").strip()

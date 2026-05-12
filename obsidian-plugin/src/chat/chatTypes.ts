@@ -11,7 +11,7 @@ import type {
   SessionInfo,
   SystemNotificationEvent,
 } from "../api/client";
-import type LifeAssistantPlugin from "../main";
+import type CrabbyPlugin from "../main";
 
 export type ChatRole = "user" | "assistant" | "status";
 
@@ -62,7 +62,7 @@ export interface ChatCommonDeps {
   app: App;
   component: Component;
   client: AgentClient;
-  plugin: LifeAssistantPlugin;
+  plugin: CrabbyPlugin;
   elements: ChatElements;
   state: ChatViewState;
 }

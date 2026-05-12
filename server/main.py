@@ -37,7 +37,7 @@ from tools.registry import create_default_registry
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Life Assistant Agent", version="0.1.0")
+app = FastAPI(title="Crabby", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allowed_origins_list,

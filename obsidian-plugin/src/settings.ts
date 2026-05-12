@@ -27,7 +27,7 @@ import {
   saveMcpConfigLocally,
   validateMcpConfigText,
 } from "./config/mcpConfig";
-import type LifeAssistantPlugin from "./main";
+import type CrabbyPlugin from "./main";
 
 export interface LlmProfile {
   id: string;
@@ -43,7 +43,7 @@ export interface LlmProfile {
   reasoningSplit: boolean;
 }
 
-export interface LifeAssistantSettings {
+export interface CrabbySettings {
   backendUrl: string;
   backendEnvPath: string;
   backendMcpConfigPath: string;
@@ -91,7 +91,7 @@ function getEffectiveProfileCapabilities(
   return { activePreset, capabilities, modelPreset };
 }
 
-export const DEFAULT_SETTINGS: LifeAssistantSettings = {
+export const DEFAULT_SETTINGS: CrabbySettings = {
   backendUrl: "http://127.0.0.1:8000",
   backendEnvPath: "",
   backendMcpConfigPath: "",
@@ -150,8 +150,8 @@ function formatMcpRuntimeSummary(status: MCPRuntimeStatus): string {
   return lines.join("\n");
 }
 
-export class LifeAssistantSettingTab extends PluginSettingTab {
-  constructor(app: App, private plugin: LifeAssistantPlugin) {
+export class CrabbySettingTab extends PluginSettingTab {
+  constructor(app: App, private plugin: CrabbyPlugin) {
     super(app, plugin);
   }
 
@@ -159,7 +159,7 @@ export class LifeAssistantSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Life Assistant 设置" });
+    containerEl.createEl("h2", { text: "Crabby 设置" });
 
     this.renderRuntimeSection(containerEl);
     this.renderMcpSection(containerEl);
@@ -336,7 +336,7 @@ export class LifeAssistantSettingTab extends PluginSettingTab {
     const backendUrl = () =>
       this.plugin.settings.backendUrl || DEFAULT_SETTINGS.backendUrl;
 
-    const settingsWithDraftPath = (): LifeAssistantSettings => ({
+    const settingsWithDraftPath = (): CrabbySettings => ({
       ...this.plugin.settings,
       backendMcpConfigPath: draftMcpConfigPath,
     });
@@ -459,7 +459,7 @@ export class LifeAssistantSettingTab extends PluginSettingTab {
       .setDesc("一般不需要设置。仅在 mcp_servers.json 不在默认的 server/data/ 位置时手动填写。")
       .addText((text) => {
         text
-          .setPlaceholder("D:\\path\\to\\LifeAssistantAgent\\server\\data\\mcp_servers.json")
+          .setPlaceholder("D:\\path\\to\\Crabby\\server\\data\\mcp_servers.json")
           .setValue(draftMcpConfigPath)
           .onChange((value) => {
             draftMcpConfigPath = value.trim();
@@ -735,11 +735,11 @@ export class LifeAssistantSettingTab extends PluginSettingTab {
 
       const adminToken = readEnvValue(
         envResolution.envPath,
-        "LIFE_ASSISTANT_ADMIN_TOKEN",
+        "CRABBY_ADMIN_TOKEN",
       )?.trim();
       if (!adminToken) {
         statusEl.setText(
-          `无法测试当前 Profile：${envResolution.envPath} 缺少 LIFE_ASSISTANT_ADMIN_TOKEN。`,
+          `无法测试当前 Profile：${envResolution.envPath} 缺少 CRABBY_ADMIN_TOKEN。`,
         );
         return;
       }

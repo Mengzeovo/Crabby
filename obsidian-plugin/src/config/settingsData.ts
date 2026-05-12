@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import type { LifeAssistantSettings, LlmProfile } from "../settings";
+import type { CrabbySettings, LlmProfile } from "../settings";
 import { normalizeLlmProviderId } from "./llmProviders";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,7 +67,7 @@ function normalizeProfile(profile: unknown): LlmProfile | null {
 
 function normalizeBackendEnvPath(
   source: Record<string, unknown>,
-  defaults: LifeAssistantSettings,
+  defaults: CrabbySettings,
 ): string {
   const backendEnvPath = normalizeString(
     source.backendEnvPath,
@@ -94,9 +94,9 @@ export function needsBackendEnvPathMigration(loaded: unknown): boolean {
 }
 
 export function hydrateSettings(
-  defaults: LifeAssistantSettings,
+  defaults: CrabbySettings,
   loaded: unknown,
-): LifeAssistantSettings {
+): CrabbySettings {
   const source = isRecord(loaded) ? loaded : {};
   const backendEnvPath = normalizeBackendEnvPath(source, defaults);
 
