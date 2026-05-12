@@ -270,9 +270,6 @@ export function createChatTranscript(
       repositionDots();
 
       const bubble = msgEl.createDiv({ cls: "chat-msg-bubble" });
-      if (messageId && forkHandler) {
-        renderForkAction(bubble, messageId, content, "user");
-      }
       renderUserAttachments(bubble, attachments);
       if (content) {
         const textEl = bubble.createDiv({ cls: "chat-msg-text" });
@@ -331,12 +328,6 @@ export function createChatTranscript(
     }
 
     userRef.msgEl.dataset.messageId = messageId;
-    const bubble = userRef.msgEl.querySelector(".chat-msg-bubble") as HTMLElement | null;
-    if (!bubble) {
-      return false;
-    }
-
-    renderForkAction(bubble, messageId, state.messages[messageIndex].content, "user");
     return true;
   }
 

@@ -137,9 +137,12 @@ async def shutdown() -> None:
 
 
 if __name__ == "__main__":
+    import sys
+
+    is_frozen = getattr(sys, "frozen", False)
     uvicorn.run(
-        "main:app",
+        app if is_frozen else "main:app",
         host=settings.host,
         port=settings.port,
-        reload=True,
+        reload=not is_frozen,
     )
