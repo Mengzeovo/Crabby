@@ -1,0 +1,181 @@
+"""Edit tool — 修改 Vault 中的文件内容。
+
+本工具用于实现文件内容的精确局部替换，替代易错的 Bash sed/echo。
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+from tools.base import Context, Tool, ToolResult
+
+
+def _is_within_path(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _detect_newline(text: str) -> str:
+    crlf_count = text.count("\r\n")
+    remainder = text.replace("\r\n", "")
+    lf_count = remainder.count("\n")
+    cr_count = remainder.count("\r")
+
+    if crlf_count == 0 and lf_count == 0 and cr_count == 0:
+        return "\n"
+
+    counts = [
+        (crlf_count, "\r\n"),
+        (lf_count, "\n"),
+        (cr_count, "\r"),
+    ]
+    return max(counts, key=lambda item: item[0])[1]
+
+
+def _normalize_newlines(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _read_text_raw(path: Path) -> str:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return handle.read()
+
+
+def _write_text_with_newline(path: Path, text: str, newline: str) -> None:
+    with path.open("w", encoding="utf-8", newline=newline) as handle:
+        handle.write(text)
+
+
+class EditInput(BaseModel):
+    """Edit 工具的输入参数。"""
+
+    file_path: str = Field(
+        description="Vault-relative path to the file to edit (e.g. 'Home.md')",
+    )
+    old_string: str = Field(
+        description="The exact string to be replaced. Must precisely match the file contents including whitespace/indentation.",
+    )
+    new_string: str = Field(
+        description="The new string to replace old_string with.",
+    )
+    replace_all: bool = Field(
+        default=False,
+        description="If multiple matches exist, set true to replace all. If false and multiple matches found, the tool will return an error.",
+    )
+
+
+class EditTool(Tool):
+    """精确修改 Vault 中指定文件内容的工具。
+
+    功能特点：
+    - 精准的原始字符串替换（基于纯文本，无需正则表达式）
+    - 对于多处匹配，需要用户/Agent 明确授权 replace_all
+    - 禁止路径逃逸出 Vault 根目录
+    """
+
+    name = "edit"
+    description = (
+        "修改 Vault 中指定文件的内容。\n"
+        "你需要提供准确的 old_string 以及要替换成的 new_string。\n"
+        "如果 old_string 存在多处而你需要全部替换，请设置 replace_all=true。"
+    )
+    input_schema = EditInput
+    is_read_only = False
+
+    def check_permission(self, params: BaseModel, ctx: Context) -> bool:
+        """检查权限：只能修改 Vault 下的文件，并且遵从 restricted 模式限制。"""
+        assert isinstance(params, EditInput)
+
+        if ctx.permission_level == "restricted":
+            # 限制模式下，只允许写 memory 等特殊目录（或者干脆拒绝）
+            return False
+
+        # 检查路径逃逸：解析后的路径必须仍在你给定的 Vault 下
+        vault = ctx.vault_path.resolve()
+        resolved = (vault / params.file_path).resolve()
+        return _is_within_path(resolved, vault)
+
+    async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
+        """执行编辑替换操作。"""
+        assert isinstance(params, EditInput)
+        vault = ctx.vault_path.resolve()
+        full_path = (vault / params.file_path).resolve()
+
+        if not _is_within_path(full_path, vault):
+            return ToolResult(output="错误：路径不能超出 Vault 根目录")
+
+        # 判断文件是否存在
+        if not full_path.is_file():
+            # 支持创建新文件，仅当 old_string 为空时
+            if params.old_string == "":
+                try:
+                    full_path.parent.mkdir(parents=True, exist_ok=True)
+                    newline = _detect_newline(params.new_string)
+                    _write_text_with_newline(
+                        full_path,
+                        _normalize_newlines(params.new_string),
+                        newline,
+                    )
+                    return ToolResult(output=f"成功创建并写入新文件: {params.file_path}")
+                except Exception as e:
+                    return ToolResult(output=f"创建新文件失败: {e}")
+            return ToolResult(output=f"文件不存在: {params.file_path} 返回创建请保持 old_string 为空。")
+
+        # 读取文件
+        try:
+            raw_text = _read_text_raw(full_path)
+        except UnicodeDecodeError:
+            return ToolResult(output="错误: 无法读写二进制格式或非 UTF-8 编码的文件。")
+
+        newline = _detect_newline(raw_text)
+        text = _normalize_newlines(raw_text)
+        old_string = _normalize_newlines(params.old_string)
+        new_string = _normalize_newlines(params.new_string)
+
+        if old_string == "":
+            if text.strip() != "":
+                return ToolResult(output="文件已存在且不为空，无法通过传入空的 old_string 进行覆盖建档操作。")
+            # 空文件的情况，用 new_string 覆盖
+            if raw_text == "":
+                newline = _detect_newline(params.new_string)
+            _write_text_with_newline(full_path, new_string, newline)
+            return ToolResult(output=f"文件 {params.file_path} 更新成功（从空文件吸入内容）。")
+
+        if old_string not in text:
+            return ToolResult(
+                output=(
+                    f"错误: 指定的 old_string 在文件中未找到。请检查缩进、换行或空格是否准确匹配。\n"
+                    f"提供的 old_string:\n{params.old_string}"
+                )
+            )
+
+        match_count = text.count(old_string)
+        if match_count > 1 and not params.replace_all:
+            return ToolResult(
+                output=(
+                    f"错误: 找到了 {match_count} 处匹配项，但 replace_all 为 false。\n"
+                    f"如果您想替换所有出现的位置，请将 replace_all 设为 true；或者提供更长的 old_string 以确保唯一匹配唯一项。"
+                )
+            )
+
+        if params.replace_all:
+            new_text = text.replace(old_string, new_string)
+        else:
+            new_text = text.replace(old_string, new_string, 1)
+
+        # 写入变更
+        try:
+            _write_text_with_newline(full_path, new_text, newline)
+        except Exception as e:
+            return ToolResult(output=f"写入文件失败: {e}")
+
+        msg = f"文件 {params.file_path} 成功更新。"
+        if params.replace_all and match_count > 1:
+            msg += f" (已替换所有 {match_count} 处匹配)"
+
+        return ToolResult(output=msg)

@@ -1,0 +1,19 @@
+{
+  "name": "life-assistant-agent",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "esbuild src/main.ts --bundle --outfile=main.js --format=cjs --platform=node --external:obsidian --sourcemap --watch",
+    "dev:active": "node scripts/dev-active.js",
+    "build": "esbuild src/main.ts --bundle --outfile=main.js --format=cjs --platform=node --external:obsidian --minify",
+    "test:chat-content": "node scripts/test-chat-assistant-content.js",
+    "test:chat-styles": "node scripts/test-chat-styles.js",
+    "test:config": "node scripts/test-backend-config.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "esbuild": "^0.21",
+    "obsidian": "^1.6",
+    "typescript": "^5.5"
+  }
+}

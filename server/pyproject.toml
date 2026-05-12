@@ -1,0 +1,42 @@
+[project]
+name = "life-assistant-agent"
+version = "0.1.0"
+description = "Local AI assistant built on Obsidian Vault"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "httpx>=0.27,<1",
+    "pydantic>=2.0,<3",
+    "pydantic-settings>=2.0,<3",
+    "mcp>=1.0",
+    "pyyaml>=6.0",
+    "beautifulsoup4>=4.14.3",
+    "markdownify>=1.2.2",
+    "croniter>=6.2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["api*", "llm*", "mcp_client*", "memory*", "personas*", "tools*", "skills*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]

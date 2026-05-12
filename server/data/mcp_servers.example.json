@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "mempalace": {
+      "transport": "sse",
+      "url": "http://127.0.0.1:8001/sse"
+    },
+    "MiniMax": {
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["minimax-coding-plan-mcp", "-y"],
+      "env": {
+        "MINIMAX_API_KEY": "${MINIMAX_API_KEY}",
+        "MINIMAX_API_HOST": "https://api.minimaxi.com"
+      }
+    }
+  }
+}

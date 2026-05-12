@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' file: data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Life Assistant Chat</title>
+    <link rel="stylesheet" href="./styles/chat.css" />
+  </head>
+  <body>
+    <main class="chat-shell">
+      <header class="chat-header">
+        <div>
+          <p class="chat-kicker">Desktop Pet</p>
+          <h1 id="chatTitle">New chat</h1>
+        </div>
+        <div id="connectionBadge" class="connection-badge">Connecting</div>
+      </header>
+
+      <section id="transcript" class="chat-transcript" aria-live="polite"></section>
+
+      <footer class="chat-footer">
+        <div id="contextMeter" class="context-meter" hidden></div>
+        <div class="composer">
+          <textarea
+            id="chatInput"
+            class="chat-input"
+            rows="1"
+            placeholder="Say something. The pet will route it through the existing backend."
+          ></textarea>
+          <button id="sendButton" class="send-button" type="button">Send</button>
+        </div>
+      </footer>
+    </main>
+    <script src="./chat.js"></script>
+  </body>
+  </html>

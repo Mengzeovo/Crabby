@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' file: data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notification Bubble</title>
+    <link rel="stylesheet" href="./styles/bubble.css" />
+  </head>
+  <body>
+    <main id="bubbleCard" class="bubble-card" tabindex="0">
+      <p class="bubble-kicker">Desktop Pet</p>
+      <p id="bubbleMessage" class="bubble-message">Background task finished.</p>
+      <button id="bubbleAction" class="bubble-action" type="button">Open Chat</button>
+    </main>
+    <script src="./bubble.js"></script>
+  </body>
+  </html>

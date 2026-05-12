@@ -1,0 +1,59 @@
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+body {
+  padding: 10px;
+}
+
+.bubble-card {
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgba(72, 48, 31, 0.12);
+  border-radius: 22px;
+  padding: 16px 18px;
+  background:
+    radial-gradient(circle at top right, rgba(255, 164, 124, 0.32), transparent 30%),
+    linear-gradient(180deg, rgba(255, 251, 245, 0.98), rgba(255, 237, 215, 0.98));
+  box-shadow: 0 22px 48px rgba(74, 39, 17, 0.2);
+}
+
+.bubble-kicker {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #8a6c59;
+}
+
+.bubble-message {
+  margin: 0;
+  color: #2f241d;
+  line-height: 1.5;
+}
+
+.bubble-action {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ff9257, #ff6f3d);
+  color: white;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}

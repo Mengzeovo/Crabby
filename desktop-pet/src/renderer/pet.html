@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' file: data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Desktop Pet</title>
+    <link rel="stylesheet" href="./styles/pet.css" />
+  </head>
+  <body>
+    <main class="pet-shell">
+      <button id="petButton" class="pet-button" type="button" aria-label="Open chat">
+        <span class="pet-aura"></span>
+        <span class="pet-avatar-wrap">
+          <img id="petAvatar" class="pet-avatar" alt="Desktop pet avatar" />
+        </span>
+        <span id="petState" class="pet-state">Connecting</span>
+        <span id="petUnread" class="pet-unread" hidden>0</span>
+      </button>
+    </main>
+    <script src="./pet.js"></script>
+  </body>
+  </html>

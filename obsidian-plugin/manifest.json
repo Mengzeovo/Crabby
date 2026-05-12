@@ -1,0 +1,9 @@
+{
+  "id": "life-assistant-agent",
+  "name": "Life Assistant Agent",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Local AI assistant that reads your vault and provides intelligent suggestions.",
+  "author": "mengze",
+  "isDesktopOnly": true
+}

@@ -1,0 +1,129 @@
+"""Application configuration via environment variables."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+from pydantic_settings import BaseSettings
+
+SERVER_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SERVER_DIR.parent
+ENV_FILE = Path(os.environ.get("ENV_FILE") or PROJECT_ROOT / ".env").resolve()
+DATA_DIR = Path(os.environ.get("DATA_DIR") or SERVER_DIR / "data").resolve()
+LOG_DIR = Path(os.environ.get("LOG_DIR") or SERVER_DIR / "logs").resolve()
+MCP_CONFIG_FILE = Path(
+    os.environ.get("MCP_CONFIG_FILE") or DATA_DIR / "mcp_servers.json",
+).resolve()
+DEFAULT_CORS_ALLOWED_ORIGINS = [
+    "app://obsidian.md",
+    "http://127.0.0.1",
+    "http://localhost",
+]
+
+
+def _parse_json_list(raw: str | list[str] | None, *, fallback: list[str]) -> list[str]:
+    if raw is None:
+        return list(fallback)
+    if isinstance(raw, list):
+        return list(raw)
+
+    text = raw.strip()
+    if not text:
+        return list(fallback)
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        parsed = [item.strip() for item in text.split(",") if item.strip()]
+
+    if not isinstance(parsed, list):
+        return list(fallback)
+
+    return [str(item) for item in parsed if str(item).strip()]
+
+
+class Settings(BaseSettings):
+    # Vault
+    vault_path: Path = Path(__file__).resolve().parents[1].parent
+
+    # LLM
+    llm_provider: str = "anthropic"  # "anthropic" | "openai" | "ollama"
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    ollama_base_url: str = "http://localhost:11434"
+    llm_api_key: str = ""
+    llm_base_url: str = ""
+    deepseek_api_key: str = ""
+    dashscope_api_key: str = ""
+    bailian_coding_plan_api_key: str = ""
+    moonshot_api_key: str = ""
+    kimi_api_key: str = ""
+    kimi_base_url: str = ""
+    minimax_api_key: str = ""
+    zai_api_key: str = ""
+    llm_model: str = "claude-sonnet-4-20250514"
+    llm_supports_vision: bool = False
+    llm_thinking_mode: str = ""
+    llm_thinking_budget_tokens: int = 1024
+    llm_reasoning_effort: str = ""
+    llm_reasoning_split: bool = False
+
+    # Tooling
+    bash_enabled: bool = True
+    bash_timeout: int = 30
+    bash_max_timeout: int = 120
+
+    # Hooks
+    auto_save_interval: int = 15
+
+    # Skills
+    skills_enabled: bool = True
+    skills_dir: str = ""
+
+    # Prompts
+    prompts_dir: str = ""
+
+    # Personas
+    personas_enabled: bool = True
+    personas_dir: str = ""
+    persona_router_threshold: float = 0.75
+
+    # Server
+    host: str = "127.0.0.1"
+    port: int = 8000
+    cors_allowed_origins: str = json.dumps(DEFAULT_CORS_ALLOWED_ORIGINS)
+
+    # Local admin plane
+    life_assistant_admin_enabled: bool = False
+    life_assistant_admin_token: str = ""
+    life_assistant_host_heartbeat_file: str = ""
+    life_assistant_host_heartbeat_timeout_seconds: int = 0
+    life_assistant_host_pid: int = 0
+    life_assistant_backend_reloader_parent: bool = False
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        """Return the allowed business API CORS origins."""
+        return _parse_json_list(
+            self.cors_allowed_origins,
+            fallback=DEFAULT_CORS_ALLOWED_ORIGINS,
+        )
+
+    model_config = {
+        "env_file": str(ENV_FILE),
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
+
+
+settings = Settings()
+
+
+def reload_settings() -> None:
+    """Hot-reload settings from the mounted .env file."""
+    new_settings = Settings()
+    for field in sorted(Settings.model_fields.keys()):
+        setattr(settings, field, getattr(new_settings, field))

@@ -1,0 +1,57 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs and environments
+.vscode/
+.idea/
+.env
+
+# Scratch directory for temporary files
+scratch/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env
+
+# Node / Obsidian plugin
+node_modules/
+obsidian-plugin/dist/
+
+# Reference source (large, not our code)
+claude-code/
+claude-code.7z
+
+# Agent runtime data
+.LifeAssistantAgent/
+server/data/*
+!server/data/mcp_servers.example.json
+
+# Claude / AI config
+.claude/
+
+# Test artifacts
+server/_test_result*.json
+.pytest_cache/
+.pytest_tmp/
+.pytest-tmp/
+.tmp/
+
+# Generated Obsidian plugin source map
+obsidian-plugin/main.js.map
+
+# PM2 logs
+logs/
+
+
+reference/
