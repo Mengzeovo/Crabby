@@ -209,6 +209,9 @@ def build_system_prompt(
             f"- 用途: {active_persona.description}\n\n"
             f"{active_persona.body}\n"
         )
+        methods = active_persona.methods.strip()
+        if methods:
+            dynamic += f"\n## 当前人格方法论摘要\n{methods}\n"
 
     if all_skills:
         static_parts.append(prompt_segments["skill_intro.md"])

@@ -550,8 +550,22 @@ function testDefaultConfigTemplates(mod) {
       "secretary/PERSONA.md",
     ],
   );
+  assert.deepEqual(
+    personaTemplateKeys.filter((key) => key.endsWith("/METHODS.md")).sort(),
+    [
+      "archivist/METHODS.md",
+      "mentor/METHODS.md",
+      "philosopher/METHODS.md",
+      "researcher/METHODS.md",
+      "secretary/METHODS.md",
+    ],
+  );
   assert.equal(
     mod.DEFAULT_PERSONA_TEMPLATES["secretary/PERSONA.md"].includes("id: secretary"),
+    true,
+  );
+  assert.equal(
+    mod.DEFAULT_PERSONA_TEMPLATES["researcher/METHODS.md"].includes("方法论压缩"),
     true,
   );
   assert.equal(
@@ -599,6 +613,86 @@ function testDefaultConfigTemplates(mod) {
   });
   assert.equal(
     fs.existsSync(path.join(managedPersonasDir, "secretary", "PERSONA.md")),
+    true,
+  );
+  assert.equal(
+    fs.existsSync(path.join(managedPersonasDir, "secretary", "METHODS.md")),
+    true,
+  );
+
+  const clutteredPersonasDir = path.join(tempDir, "cluttered-personas");
+  fs.mkdirSync(clutteredPersonasDir, { recursive: true });
+  fs.writeFileSync(path.join(clutteredPersonasDir, ".DS_Store"), "", "utf8");
+  fs.mkdirSync(path.join(clutteredPersonasDir, "sources"), { recursive: true });
+  const seededClutteredPersonas =
+    mod.seedOrMigrateDefaultPersonas(clutteredPersonasDir);
+  assert.deepEqual(seededClutteredPersonas, {
+    seeded: true,
+    migrated: false,
+  });
+  assert.equal(
+    fs.existsSync(path.join(clutteredPersonasDir, "secretary", "PERSONA.md")),
+    true,
+  );
+  assert.equal(
+    fs.existsSync(path.join(clutteredPersonasDir, "secretary", "METHODS.md")),
+    true,
+  );
+
+  const partialDefaultPersonasDir = path.join(tempDir, "partial-default-personas");
+  fs.mkdirSync(path.join(partialDefaultPersonasDir, "mentor"), {
+    recursive: true,
+  });
+  fs.writeFileSync(
+    path.join(partialDefaultPersonasDir, "mentor", "PERSONA.md"),
+    mod.DEFAULT_PERSONA_TEMPLATES["mentor/PERSONA.md"],
+    "utf8",
+  );
+  const seededPartialDefaultPersonas =
+    mod.seedOrMigrateDefaultPersonas(partialDefaultPersonasDir);
+  assert.deepEqual(seededPartialDefaultPersonas, {
+    seeded: true,
+    migrated: false,
+  });
+  assert.equal(
+    fs.existsSync(path.join(partialDefaultPersonasDir, "secretary", "PERSONA.md")),
+    true,
+  );
+  assert.equal(
+    fs.readFileSync(
+      path.join(partialDefaultPersonasDir, "mentor", "PERSONA.md"),
+      "utf8",
+    ),
+    mod.DEFAULT_PERSONA_TEMPLATES["mentor/PERSONA.md"],
+  );
+  assert.equal(
+    fs.existsSync(path.join(partialDefaultPersonasDir, "mentor", "METHODS.md")),
+    true,
+  );
+
+  const missingMethodsDir = path.join(tempDir, "missing-methods-personas");
+  for (const personaId of [
+    "archivist",
+    "mentor",
+    "philosopher",
+    "researcher",
+    "secretary",
+  ]) {
+    fs.mkdirSync(path.join(missingMethodsDir, personaId), { recursive: true });
+    fs.writeFileSync(
+      path.join(missingMethodsDir, personaId, "PERSONA.md"),
+      mod.DEFAULT_PERSONA_TEMPLATES[`${personaId}/PERSONA.md`],
+      "utf8",
+    );
+  }
+  const seededMissingMethods =
+    mod.seedOrMigrateDefaultPersonas(missingMethodsDir);
+  assert.deepEqual(seededMissingMethods, {
+    seeded: true,
+    migrated: false,
+  });
+  assert.equal(
+    fs.existsSync(path.join(missingMethodsDir, "researcher", "METHODS.md")),
     true,
   );
 
@@ -666,6 +760,14 @@ function testDefaultConfigTemplates(mod) {
   assert.equal(
     fs.existsSync(path.join(customPersonasDir, "feynman", "PERSONA.md")),
     true,
+  );
+  assert.equal(
+    fs.existsSync(path.join(customPersonasDir, "secretary", "PERSONA.md")),
+    false,
+  );
+  assert.equal(
+    fs.existsSync(path.join(customPersonasDir, "secretary", "METHODS.md")),
+    false,
   );
 }
 

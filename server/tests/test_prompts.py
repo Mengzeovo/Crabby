@@ -88,6 +88,7 @@ def test_system_prompt_injects_active_persona() -> None:
         title="档案官",
         description="整理知识资产",
         body="- 维护用户知识资产的结构、命名、分类、链接和检索路径。",
+        methods="### 方法论压缩\n\n用原子笔记和反向链接保持知识可复用。",
     )
 
     prompt = build_system_prompt(active_persona=persona)
@@ -95,6 +96,21 @@ def test_system_prompt_injects_active_persona() -> None:
     assert "## 当前人格" in prompt
     assert "人格: 档案官" in prompt
     assert "维护用户知识资产" in prompt
+    assert "## 当前人格方法论摘要" in prompt
+    assert "原子笔记和反向链接" in prompt
+
+
+def test_system_prompt_skips_empty_persona_methods() -> None:
+    persona = Persona(
+        id="archivist",
+        title="档案官",
+        description="整理知识资产",
+        body="- 维护用户知识资产的结构、命名、分类、链接和检索路径。",
+    )
+
+    prompt = build_system_prompt(active_persona=persona)
+
+    assert "## 当前人格方法论摘要" not in prompt
 
 
 def test_system_prompt_replaces_persona_slot() -> None:

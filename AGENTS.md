@@ -1,6 +1,6 @@
 # Agent Handoff
 
-Last rewritten: 2026-05-12
+Last rewritten: 2026-05-13
 
 This file is the fast entry point for agents and maintainers taking over the
 Crabby repository. It should reflect the current repo, not old plans or memory
@@ -274,6 +274,19 @@ npm run start
   `personas/` or `PERSONAS_DIR`.
 - Current checked-in personas are `secretary`, `archivist`, `researcher`,
   `philosopher`, and `mentor`.
+- Default persona directories contain `PERSONA.md`, `METHODS.md`, and
+  optional `sources/` reference material.
+- Default persona prompts use consistent sections for role positioning,
+  responsibility boundaries, tool habits, default workflow, minimum output
+  commitments, output style, and methodology sources.
+- `METHODS.md` is a short runtime methodology summary loaded with the active
+  persona into the final system prompt. It is not included in Auto routing
+  catalogs.
+- `sources/*.md` files are long-form maintenance/reference material and are not
+  loaded into runtime prompts by default.
+- Persona boundaries should tell the assistant to declare scope and suggest
+  switching personas; they should not imply that the current turn will
+  automatically hand off to another persona.
 - Persona modes are Auto, Manual, and None.
 - Auto mode routes through an LLM classifier over loaded persona metadata/body
   and current/recent user context. High-confidence results lock one active

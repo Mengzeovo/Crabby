@@ -50,8 +50,20 @@ def parse_persona_file(filepath: Path) -> Persona | None:
         routing_hints=_to_str_list(meta.get("routing_hints")),
         examples=_to_str_list(meta.get("examples")),
         body=body.strip(),
+        methods=_read_methods_file(filepath),
         source_path=str(filepath),
     )
+
+
+def _read_methods_file(persona_file: Path) -> str:
+    methods_file = persona_file.with_name("METHODS.md")
+    try:
+        if not methods_file.is_file():
+            return ""
+        return methods_file.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        logger.warning("Failed to read persona methods file %s: %s", methods_file, exc)
+        return ""
 
 
 def _split_frontmatter(text: str) -> tuple[str | None, str]:

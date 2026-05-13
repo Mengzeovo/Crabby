@@ -14,6 +14,7 @@ class Persona(BaseModel):
     routing_hints: list[str] = Field(default_factory=list)
     examples: list[str] = Field(default_factory=list)
     body: str = ""
+    methods: str = ""
     source_path: str = ""
 
 

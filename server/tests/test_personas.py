@@ -19,6 +19,10 @@ from personas.router import (
 
 def test_parse_persona_file(tmp_path: Path) -> None:
     persona_file = tmp_path / "PERSONA.md"
+    (tmp_path / "METHODS.md").write_text(
+        "### 方法论压缩\n\n用简单解释检查理解。\n",
+        encoding="utf-8",
+    )
     persona_file.write_text(
         "---\n"
         "id: mentor\n"
@@ -41,6 +45,25 @@ def test_parse_persona_file(tmp_path: Path) -> None:
     assert persona.routing_hints == ["explain"]
     assert persona.examples == ["explain this to me"]
     assert "Persona Body" in persona.body
+    assert "用简单解释检查理解" in persona.methods
+
+
+def test_parse_persona_file_allows_missing_methods(tmp_path: Path) -> None:
+    persona_file = tmp_path / "PERSONA.md"
+    persona_file.write_text(
+        "---\n"
+        "id: mentor\n"
+        "title: 导师\n"
+        "description: Teach things clearly\n"
+        "---\n\n"
+        "# Persona Body\n",
+        encoding="utf-8",
+    )
+
+    persona = parse_persona_file(persona_file)
+
+    assert persona is not None
+    assert persona.methods == ""
 
 
 def test_persona_registry_discovers_personas(tmp_path: Path) -> None:
@@ -67,13 +90,15 @@ def test_default_persona_assets_are_five_core_personas() -> None:
     registry = PersonaRegistry()
 
     assert registry.discover(repo_personas_dir) == 5
-    assert {persona.id for persona in registry.list_personas()} == {
+    personas = registry.list_personas()
+    assert {persona.id for persona in personas} == {
         "secretary",
         "archivist",
         "researcher",
         "philosopher",
         "mentor",
     }
+    assert all(persona.methods for persona in personas)
 
 
 def test_parse_route_result_handles_fenced_or_plain_json() -> None:
@@ -108,20 +133,33 @@ def test_persona_model_defaults_are_auto_safe() -> None:
 
     assert persona.routing_hints == []
     assert persona.examples == []
+    assert persona.methods == ""
 
 
 def test_persona_catalog_is_sorted_by_id_for_cache_stability() -> None:
     catalog = _build_persona_catalog(
         [
-            Persona(id="mentor", title="导师", description="Teach"),
-            Persona(id="archivist", title="档案官", description="Archive"),
-            Persona(id="secretary", title="秘书", description="Plan"),
+            Persona(id="mentor", title="导师", description="Teach", methods="MENTOR_METHODS"),
+            Persona(
+                id="archivist",
+                title="档案官",
+                description="Archive",
+                methods="ARCHIVIST_METHODS",
+            ),
+            Persona(
+                id="secretary",
+                title="秘书",
+                description="Plan",
+                methods="SECRETARY_METHODS",
+            ),
         ]
     )
 
     payload = json.loads(catalog)
 
     assert [item["id"] for item in payload] == ["archivist", "mentor", "secretary"]
+    assert all("methods" not in item for item in payload)
+    assert "METHODS" not in catalog
 
 
 @pytest.mark.asyncio
@@ -185,6 +223,7 @@ async def test_persona_router_sends_all_personas_to_llm(monkeypatch) -> None:
     ]
     for persona in personas:
         persona.body = f"FULL_BODY_FOR_{persona.id}"
+        persona.methods = f"METHODS_FOR_{persona.id}"
         persona.source_path = f"/tmp/{persona.id}/PERSONA.md"
 
     result = await PersonaRouter(threshold=0.75).route(
@@ -203,6 +242,7 @@ async def test_persona_router_sends_all_personas_to_llm(monkeypatch) -> None:
         assert persona.id in content
         assert persona.body in content
         assert persona.source_path in content
+        assert persona.methods not in content
     assert content.count('"id":') == 5
     assert "关键词预筛" not in content
     assert "feynman" not in content
