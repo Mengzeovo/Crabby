@@ -201,6 +201,10 @@ Cron jobs 存在 Vault 内：
 - [docs/execution-plan.md](docs/execution-plan.md)：发布路线图。
 - [AGENTS.md](AGENTS.md)：维护者和 agent 接手说明。
 
+## License
+
+MIT License. See [LICENSE](LICENSE).
+
 ## 常见排障
 
 - **打包时找不到后端二进制**：先运行 backend runtime 构建命令，或给 `scripts/package-obsidian-release.py` 传入 `--backend-binary <path>`。

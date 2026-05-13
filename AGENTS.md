@@ -62,6 +62,7 @@ workflows. It is not a cloud multi-user SaaS.
   `runtime/state.json`, and a prebuilt backend binary.
 - `README.md`: release-facing overview, dev commands, packaging, install,
   first-run setup, runtime data, and troubleshooting.
+- `LICENSE`: MIT License for the repository.
 - `.env`: local secrets and runtime settings. Do not commit real secrets.
 - `.env.example`: example environment configuration.
 
