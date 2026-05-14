@@ -184,6 +184,9 @@ npm run build
 npm run dev
 ```
 
+`npm run test:config` is expected to pass on Windows and GitHub Actions
+`ubuntu-latest`; keep path assertions platform-neutral.
+
 Manual-install release packaging:
 
 ```bash

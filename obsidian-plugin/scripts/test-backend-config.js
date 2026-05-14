@@ -451,12 +451,15 @@ function testSettingsData(mod) {
     llmProfiles: [],
     activeProfileId: "",
   };
+  const backendEnvPathInput = "D:\\Code\\.env";
+  const backendMcpConfigPathInput = "D:\\Code\\server\\data\\mcp_servers.json";
+  const legacyBackendPathInput = "D:\\legacy-backend";
 
   const hydrated = mod.hydrateSettings(defaults, {
     backendUrl: "  http://localhost:9000  ",
-    backendEnvPath: "  D:\\Code\\.env  ",
-    backendMcpConfigPath: "  D:\\Code\\server\\data\\mcp_servers.json  ",
-    backendPath: "D:\\legacy-backend",
+    backendEnvPath: `  ${backendEnvPathInput}  `,
+    backendMcpConfigPath: `  ${backendMcpConfigPathInput}  `,
+    backendPath: legacyBackendPathInput,
     llmProfiles: [
       {
         id: "profile-openai",
@@ -476,10 +479,10 @@ function testSettingsData(mod) {
   });
 
   assert.equal(hydrated.backendUrl, "http://localhost:9000");
-  assert.equal(hydrated.backendEnvPath, "D:\\Code\\.env");
+  assert.equal(hydrated.backendEnvPath, path.resolve(backendEnvPathInput));
   assert.equal(
     hydrated.backendMcpConfigPath,
-    "D:\\Code\\server\\data\\mcp_servers.json",
+    backendMcpConfigPathInput,
   );
   assert.equal(hydrated.runtimeManifestUrl, "");
   assert.equal(hydrated.backendPath, "");
@@ -512,11 +515,11 @@ function testSettingsData(mod) {
   assert.equal(unknownProvider.llmProfiles[0].apiKey, "vendor-secret");
 
   const migratedLegacy = mod.hydrateSettings(defaults, {
-    backendPath: "D:\\legacy-backend",
+    backendPath: legacyBackendPathInput,
   });
   assert.equal(
     migratedLegacy.backendEnvPath,
-    path.resolve("D:\\legacy-backend", ".env"),
+    path.resolve(legacyBackendPathInput, ".env"),
   );
   assert.equal(migratedLegacy.backendPath, "");
 }
@@ -933,13 +936,15 @@ function testObsidianVaultResolution() {
   process.env.APPDATA = tempDir;
   delete process.env.VAULT_PATH;
 
+  const expectedOpenVaultPath = path.resolve("E:\\Vault-B");
   const fromObsidian = obsidianVault.resolveVaultForDeploy();
-  assert.equal(fromObsidian.vaultPath, path.resolve("E:\\Vault-B"));
+  assert.equal(fromObsidian.vaultPath, expectedOpenVaultPath);
   assert.equal(fromObsidian.source, "obsidian-open");
 
-  process.env.VAULT_PATH = "F:\\ManualVault";
+  const explicitVaultPath = "F:\\ManualVault";
+  process.env.VAULT_PATH = explicitVaultPath;
   const fromEnv = obsidianVault.resolveVaultForDeploy();
-  assert.equal(fromEnv.vaultPath, path.resolve("F:\\ManualVault"));
+  assert.equal(fromEnv.vaultPath, path.resolve(explicitVaultPath));
   assert.equal(fromEnv.source, "env");
 
   if (previousAppData === undefined) {
