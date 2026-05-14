@@ -10,6 +10,7 @@ import type {
   PersonaState,
   SessionInfo,
   SystemNotificationEvent,
+  ToolCallPayload,
 } from "../api/client";
 import type CrabbyPlugin from "../main";
 
@@ -99,8 +100,8 @@ export interface ChatTranscriptController {
   ): void;
   updateLastUserMessageId(messageId?: string | null): boolean;
   beginTool(name: string, id: string): void;
-  completeTool(name: string, output: string): void;
-  renderHistoricalTool(name: string, output: string): void;
+  completeTool(payload: ToolCallPayload): void;
+  renderHistoricalTool(payload: ToolCallPayload): void;
   clearConversationUi(): void;
   clearToolTracking(): void;
   removeTransientUi(): void;

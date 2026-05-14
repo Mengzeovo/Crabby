@@ -1,6 +1,10 @@
 import { Notice } from "obsidian";
 
-import { shouldFallbackToRest, type SystemNotificationEvent } from "../api/client";
+import {
+  shouldFallbackToRest,
+  type SystemNotificationEvent,
+  type ToolCallPayload,
+} from "../api/client";
 import {
   buildAssistantContent,
   createStreamingAssistantContentRenderer,
@@ -53,6 +57,9 @@ export function createChatTurnRunner(
       if (backfillUserMessageId) {
         transcript.updateLastUserMessageId(resp.user_message_id ?? undefined);
       }
+      resp.tool_calls?.forEach((toolCall) => {
+        transcript.renderHistoricalTool(toolCall);
+      });
       transcript.appendMessage(
         "assistant",
         resp.reply,
@@ -228,8 +235,8 @@ export function createChatTurnRunner(
           transcript.beginTool(name, id);
         },
 
-        onToolResult: (name: string, output: string) => {
-          transcript.completeTool(name, output);
+        onToolResult: (payload: ToolCallPayload) => {
+          transcript.completeTool(payload);
         },
 
         onWarning: (message: string) => {

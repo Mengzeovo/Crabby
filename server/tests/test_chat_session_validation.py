@@ -143,7 +143,20 @@ def test_chat_tool_iteration_limit_returns_user_message_id(
         }
 
     async def fake_execute_tool_call(*args, **kwargs):
-        return "echo: hello", {"name": "echo"}
+        tool_id = kwargs.get("tool_id")
+        return "echo: hello", {
+            "id": tool_id,
+            "tool_use_id": tool_id,
+            "name": "echo",
+            "tool": "echo",
+            "output": "echo: hello",
+            "metadata": {"exit_code": 0},
+            "status": "success",
+            "is_error": False,
+            "is_truncated": False,
+            "cache_path": None,
+            "elapsed_ms": 1,
+        }
 
     monkeypatch.setattr(rest_api, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(rest_api, "execute_tool_call", fake_execute_tool_call)
@@ -161,7 +174,23 @@ def test_chat_tool_iteration_limit_returns_user_message_id(
     body = response.json()
     assert body["message_id"] is None
     assert body["user_message_id"].startswith("m_")
+    assert body["tool_calls"] == [
+        {
+            "id": "toolu_1",
+            "tool_use_id": "toolu_1",
+            "name": "echo",
+            "tool": "echo",
+            "output": "echo: hello",
+            "metadata": {"exit_code": 0},
+            "status": "success",
+            "is_error": False,
+            "is_truncated": False,
+            "cache_path": None,
+            "elapsed_ms": 1,
+        }
+    ]
 
     session = store.get("session-1")
     assert session is not None
     assert session.messages[0]["message_id"] == body["user_message_id"]
+    assert session.messages[2]["content"][0]["ui"] == body["tool_calls"][0]

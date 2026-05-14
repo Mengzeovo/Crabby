@@ -83,5 +83,7 @@ async def test_execute_edit_rejects_prefix_sibling_path_escape(tmp_path: Path) -
     )
 
     assert "权限不足" in llm_text
-    assert ui_payload["error"] == llm_text
+    assert ui_payload["status"] == "error"
+    assert ui_payload["is_error"] is True
+    assert ui_payload["metadata"]["error"] == llm_text
     assert not (sibling / "outside.md").exists()

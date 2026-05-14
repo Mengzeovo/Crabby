@@ -11,8 +11,10 @@ import pytest
 
 import tools.bash as bash_module
 from api import websocket as websocket_api
+from llm.tool_executor import execute_tool_call
 from tools.base import Context
 from tools.bash import BashTool
+from tools.registry import ToolRegistry
 
 
 @pytest.fixture
@@ -163,6 +165,49 @@ class TestCommandExecution:
             or "not" in result.output.lower()
             or "无法" in result.output.lower()
         )
+
+    @pytest.mark.asyncio
+    async def test_execute_payload_marks_nonzero_exit_as_error(self, ctx: Context):
+        registry = ToolRegistry()
+        registry.register(BashTool())
+        command = (
+            "Write-Error 'visible failure'; exit 7"
+            if sys.platform == "win32"
+            else "printf 'visible failure' >&2; exit 7"
+        )
+
+        _llm_text, ui_payload = await execute_tool_call(
+            registry,
+            "bash",
+            {"command": command},
+            ctx=ctx,
+            tool_id="toolu_fail",
+        )
+
+        assert ui_payload["id"] == "toolu_fail"
+        assert ui_payload["name"] == "bash"
+        assert ui_payload["status"] == "error"
+        assert ui_payload["is_error"] is True
+        assert ui_payload["metadata"]["exit_code"] == 7
+        assert "visible failure" in ui_payload["output"]
+
+    @pytest.mark.asyncio
+    async def test_execute_payload_marks_blocked_command_as_error(self, ctx: Context):
+        registry = ToolRegistry()
+        registry.register(BashTool())
+
+        _llm_text, ui_payload = await execute_tool_call(
+            registry,
+            "bash",
+            {"command": "rm -rf /tmp/test"},
+            ctx=ctx,
+            tool_id="toolu_blocked",
+        )
+
+        assert ui_payload["id"] == "toolu_blocked"
+        assert ui_payload["status"] == "error"
+        assert ui_payload["is_error"] is True
+        assert ui_payload["metadata"]["blocked"] is True
 
     @pytest.mark.asyncio
     async def test_timeout(self, tool: BashTool, ctx: Context):

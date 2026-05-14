@@ -93,6 +93,52 @@ def test_session_list_uses_real_user_turn_count(tmp_path):
     assert listed[0]["turn_count"] == 1
 
 
+def test_tool_result_ui_payload_is_not_sent_to_model(tmp_path):
+    store = SessionStore(storage_dir=tmp_path)
+    session = store.create("tool-ui")
+    session.add_assistant_message(
+        [
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "bash",
+                "input": {"command": "exit 7"},
+            }
+        ]
+    )
+    session.add_tool_result(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "toolu_1",
+                "content": "[exit code: 7]",
+                "ui": {
+                    "id": "toolu_1",
+                    "name": "bash",
+                    "output": "[exit code: 7]",
+                    "status": "error",
+                    "metadata": {"exit_code": 7},
+                },
+            }
+        ]
+    )
+    store.persist(session)
+
+    ui_messages = store.get_ui_messages("tool-ui", "root")
+    model_messages = store.get_model_messages("tool-ui", None, "root")
+
+    assert ui_messages is not None
+    assert ui_messages[1]["content"][0]["ui"]["status"] == "error"
+    assert model_messages is not None
+    assert model_messages[1]["content"] == [
+        {
+            "type": "tool_result",
+            "tool_use_id": "toolu_1",
+            "content": "[exit code: 7]",
+        }
+    ]
+
+
 def test_session_persists_actual_usage_total(tmp_path):
     store = SessionStore(storage_dir=tmp_path)
     session = store.create("usage")

@@ -53,17 +53,19 @@ async def run_agent_turn(
             tool_input = block["input"]
             tool_id = block["id"]
 
-            llm_text, _ui_payload = await execute_tool_call(
+            llm_text, ui_payload = await execute_tool_call(
                 registry,
                 tool_name,
                 tool_input,
                 ctx=ctx,
+                tool_id=tool_id,
             )
             tool_results.append(
                 {
                     "type": "tool_result",
                     "tool_use_id": tool_id,
                     "content": llm_text,
+                    "ui": ui_payload,
                 }
             )
 

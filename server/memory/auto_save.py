@@ -155,7 +155,13 @@ async def _process_auto_save(session: Session, registry: ToolRegistry) -> None:
             tool_input = block["input"]
             tool_id = block["id"]
 
-            llm_text, _ = await execute_tool_call(registry, tool_name, tool_input, ctx=ctx)
+            llm_text, _ = await execute_tool_call(
+                registry,
+                tool_name,
+                tool_input,
+                ctx=ctx,
+                tool_id=tool_id,
+            )
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": tool_id,

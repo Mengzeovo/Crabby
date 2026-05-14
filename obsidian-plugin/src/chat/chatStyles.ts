@@ -780,6 +780,12 @@ const CHAT_STYLES = `
   .chat-tool-block.done {
     background: var(--background-secondary);
   }
+  .chat-tool-block.error {
+    border-color: var(--text-error, #d14b4b);
+  }
+  .chat-tool-block.warning {
+    border-color: var(--text-warning, #d18b00);
+  }
   .chat-tool-header {
     display: flex !important;
     align-items: center !important;
@@ -817,6 +823,21 @@ const CHAT_STYLES = `
   }
   .chat-tool-block.running .chat-tool-name {
     color: var(--interactive-accent);
+  }
+  .chat-tool-status {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-size: 0.78em;
+    line-height: 1.4;
+    white-space: nowrap;
+  }
+  .chat-tool-block.error .chat-tool-icon,
+  .chat-tool-block.error .chat-tool-status {
+    color: var(--text-error, #d14b4b);
+  }
+  .chat-tool-block.warning .chat-tool-icon,
+  .chat-tool-block.warning .chat-tool-status {
+    color: var(--text-warning, #d18b00);
   }
   .chat-tool-preview {
     flex: 1;

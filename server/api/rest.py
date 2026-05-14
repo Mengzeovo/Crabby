@@ -483,6 +483,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                     tool_name,
                     tool_input,
                     ctx=ctx,
+                    tool_id=tool_id,
                 )
                 all_tool_calls.append(ui_payload)
                 tool_results.append(
@@ -490,6 +491,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                         "type": "tool_result",
                         "tool_use_id": tool_id,
                         "content": llm_text,
+                        "ui": ui_payload,
                     }
                 )
 

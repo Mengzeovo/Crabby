@@ -73,6 +73,26 @@ def _is_tool_result_content(content: Any) -> bool:
     )
 
 
+def _content_for_model(content: Any) -> Any:
+    """Strip UI-only fields before sending persisted messages to providers."""
+    if not isinstance(content, list):
+        return content
+
+    stripped: list[Any] = []
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "tool_result":
+            stripped.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": block.get("tool_use_id"),
+                    "content": block.get("content", ""),
+                }
+            )
+            continue
+        stripped.append(block)
+    return stripped
+
+
 def _clone_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return json.loads(json.dumps(messages, ensure_ascii=False))
 
@@ -436,7 +456,7 @@ class Session:
             converted.append(
                 {
                     "role": role,
-                    "content": message.get("content", ""),
+                    "content": _content_for_model(message.get("content", "")),
                 }
             )
         return converted

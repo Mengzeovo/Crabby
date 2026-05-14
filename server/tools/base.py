@@ -144,6 +144,7 @@ class Tool(ABC):
             "output": result.output,
             "metadata": result.metadata,
             "is_truncated": result.is_truncated,
+            "cache_path": result.cache_path,
         }
 
     # -- Schema 导出 --------------------------------------------------------

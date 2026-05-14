@@ -1,6 +1,6 @@
 # Agent Handoff
 
-Last rewritten: 2026-05-13
+Last rewritten: 2026-05-14
 
 This file is the fast entry point for agents and maintainers taking over the
 Crabby repository. It should reflect the current repo, not old plans or memory
@@ -100,6 +100,9 @@ Important backend files and folders:
 - `server/llm/profile_probe.py`: validates/tests active profiles.
 - `server/llm/agent_runner.py`: shared non-streaming agent runner for REST,
   fallback WebSocket paths, cron, and other background turns.
+- `server/llm/tool_executor.py`: validates, runs, and formats tool calls,
+  including standardized UI payloads with tool IDs, status, metadata,
+  truncation/cache details, and elapsed time.
 - `server/llm/token_usage.py`: normalizes provider usage and accumulates
   per-turn/session totals.
 - `server/personas/`: persona loader, registry, router, runtime selection, and
@@ -170,6 +173,8 @@ Important plugin files and folders:
 - `obsidian-plugin/src/search/`: Obsidian-search-compatible DSL parsing and
   `.md` / `.canvas` search implementation.
 - `obsidian-plugin/scripts/`: repo-local verification scripts.
+- `obsidian-plugin/scripts/test-chat-tools.js`: verifies tool-result payload
+  normalization and chat transcript tool-block rendering behavior.
 - `obsidian-plugin/manifest.json`: plugin manifest.
 - `obsidian-plugin/main.js`: built plugin bundle.
 
@@ -251,10 +256,12 @@ npm run start
 11. LLM responses are normalized into text, reasoning, tool calls, stop
     reasons, and usage.
 12. Tool execution routes through built-in tools, connected MCP tools, and the
-    Obsidian client-tool bridge.
+    Obsidian client-tool bridge. Tool results include structured UI payloads
+    with `success`, `warning`, or `error` status.
 13. Responses include streamed events or structured REST output plus context
     stats, per-turn usage, cumulative session usage when available, and
-    assistant/user message IDs.
+    assistant/user message IDs. WebSocket `tool_result` events and REST
+    `tool_calls` carry the full tool UI payload, not a shortened preview.
 14. Cron jobs run in isolated sessions through the shared non-streaming agent
     runner and push completion notifications back to source sessions.
 15. WebSocket `error` events are reserved for transport/protocol failures.
@@ -273,6 +280,9 @@ npm run start
   `sha256(conversation_id:revision|...)` branch fingerprints.
 - Session history is not capped by `max_turns`; pruning/summarization is a
   future explicit feature.
+- Persisted `tool_result` blocks may contain a UI-only `ui` payload for
+  frontend restoration. Model-message materialization strips UI-only fields
+  before provider requests.
 
 ## Persona And Skill Rules
 
@@ -377,6 +387,11 @@ Use the smallest relevant verification set:
   lineage, and sibling exclusion, then full backend tests.
 - Bash tool change: `cd server && uv run pytest tests/test_bash.py`, then full
   backend tests and ruff.
+- Tool-result payload or chat tool-block rendering change:
+  `cd server && uv run pytest tests/test_bash.py tests/test_websocket_notifications.py tests/test_chat_session_validation.py tests/test_memory.py`,
+  `cd server && uv run ruff check .`,
+  `cd obsidian-plugin && npm run test:chat-tools`,
+  `npm run test:chat-styles`, `npx tsc --noEmit`, and `npm run build`.
 - Edit tool change: `cd server && uv run pytest tests/test_edit_tool.py`, then
   full backend tests and ruff.
 - Token accounting change:
@@ -401,8 +416,9 @@ Use the smallest relevant verification set:
 - Cron or agent-runner change: full backend tests, including
   `tests/test_cron.py` and `tests/test_agent_runner.py`.
 - Obsidian plugin change: plugin build; add `test:config` for config/runtime/search,
-  `test:chat-content` for assistant thought rendering, `test:chat-styles` for
-  stylesheet/hot-reload, and `npx tsc --noEmit` when TypeScript types changed.
+  `test:chat-content` for assistant thought rendering, `test:chat-tools` for
+  tool-result transcript rendering, `test:chat-styles` for stylesheet/hot-reload,
+  and `npx tsc --noEmit` when TypeScript types changed.
 - Chat turn ID propagation or live fork UI change:
   backend tests `tests/test_chat_session_validation.py`,
   `tests/test_websocket_notifications.py`, `tests/test_user_turn.py`, ruff,
@@ -438,6 +454,9 @@ Use the smallest relevant verification set:
   `session_id + conversation_id`.
 - Backend chat REST responses and WebSocket `done` events carry both
   `message_id` and `user_message_id`.
+- REST `tool_calls`, WebSocket `tool_result` events, and persisted tool-result
+  `ui` payloads share the same tool UI shape with ID, name, output, metadata,
+  status, truncation/cache fields, and elapsed time when available.
 - `obsidian-plugin/src/chat/chatStyles.ts` upserts the shared style tag on
   reload.
 - The backend system prompt dynamically injects runtime platform label,

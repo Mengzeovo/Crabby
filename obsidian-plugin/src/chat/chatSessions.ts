@@ -7,6 +7,7 @@ import type {
   MessageAttachment,
   SessionInfo,
   SessionMessage,
+  ToolCallPayload,
 } from "../api/client";
 import {
   buildAssistantContent,
@@ -445,7 +446,7 @@ export function createChatSessions(
       transcript.clearConversationUi();
       composer.clear();
 
-      const toolResults = new Map<string, string>();
+      const toolResults = new Map<string, ToolCallPayload>();
       for (const msg of rawMessages) {
         if (msg.role === "user" && Array.isArray(msg.content)) {
           for (const block of msg.content as Array<any>) {
@@ -454,7 +455,16 @@ export function createChatSessions(
                 typeof block.content === "string"
                   ? block.content
                   : JSON.stringify(block.content || "");
-              toolResults.set(block.tool_use_id, output);
+              const ui =
+                block.ui && typeof block.ui === "object"
+                  ? (block.ui as ToolCallPayload)
+                  : {};
+              toolResults.set(block.tool_use_id, {
+                id: block.tool_use_id,
+                tool_use_id: block.tool_use_id,
+                output,
+                ...ui,
+              });
             }
           }
         }
@@ -541,7 +551,7 @@ export function createChatSessions(
 
   function renderHistoricalAssistantMessage(
     msg: SessionMessage,
-    toolResults: Map<string, string>,
+    toolResults: Map<string, ToolCallPayload>,
   ): void {
     if (Array.isArray(msg.content)) {
       let reasoningText = "";
@@ -571,10 +581,14 @@ export function createChatSessions(
           visibleText += `${visibleText ? "\n" : ""}${block.text}`;
         } else if (block.type === "tool_use" && block.name) {
           flushAssistantContent();
-          transcript.renderHistoricalTool(
-            block.name,
-            toolResults.get(block.id) || "(no output)",
-          );
+          transcript.renderHistoricalTool({
+            id: block.id,
+            tool_use_id: block.id,
+            name: block.name,
+            tool: block.name,
+            output: "(no output)",
+            ...(toolResults.get(block.id) || {}),
+          });
         }
       }
       flushAssistantContent();

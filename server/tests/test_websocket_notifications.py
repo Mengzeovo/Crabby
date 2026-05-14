@@ -32,6 +32,22 @@ class EchoTool(Tool):
         return ToolResult(output=f"echo: {params.text}")
 
 
+class LongFailInput(BaseModel):
+    pass
+
+
+LONG_FAILURE_OUTPUT = "failure detail\n" + ("x" * 800)
+
+
+class LongFailTool(Tool):
+    name = "long_fail"
+    description = "Return a long failing tool result for tests."
+    input_schema = LongFailInput
+
+    async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
+        return ToolResult(output=LONG_FAILURE_OUTPUT, metadata={"exit_code": 7})
+
+
 def _build_ws_app(tmp_path: Path) -> tuple[FastAPI, SessionStore]:
     session_store = SessionStore(storage_dir=tmp_path / "sessions")
     attachment_store = AttachmentStore(storage_dir=tmp_path / "attachments")
@@ -233,6 +249,74 @@ def test_stream_usage_is_accumulated_across_tool_loop(monkeypatch, tmp_path: Pat
     }
     assert done["context"]["cumulative_usage"] == done["context"]["actual_usage"]
     assert any(event["type"] == "tool_result" for event in events)
+
+
+def test_tool_result_event_contains_full_payload(monkeypatch, tmp_path: Path):
+    responses = [
+        {
+            "stop_reason": "tool_use",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_long_fail",
+                    "name": "long_fail",
+                    "input": {},
+                }
+            ],
+        },
+        {
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": "final"}],
+        },
+    ]
+
+    async def fake_chat_completion_stream(*, messages, system, tools):
+        yield {"type": "done", "response": responses.pop(0)}
+
+    monkeypatch.setattr(
+        websocket_api,
+        "chat_completion_stream",
+        fake_chat_completion_stream,
+    )
+
+    session_store = SessionStore(storage_dir=tmp_path / "sessions")
+    attachment_store = AttachmentStore(storage_dir=tmp_path / "attachments")
+    registry = ToolRegistry()
+    registry.register(LongFailTool())
+    session_store.create("session-1")
+    websocket_api.set_registry(registry)
+    websocket_api.set_session_store(session_store)
+    websocket_api.set_skill_registry(SkillRegistry())
+    websocket_api.set_attachment_store(attachment_store)
+
+    app = FastAPI()
+    app.include_router(websocket_api.router)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/sessions/session-1/conversations/root/ws") as ws:
+            ws.send_text(json.dumps({"type": "message", "content": "hello"}))
+            events = _collect_until_done(ws)
+
+    tool_result = next(event for event in events if event["type"] == "tool_result")
+    assert tool_result["id"] == "toolu_long_fail"
+    assert tool_result["tool_use_id"] == "toolu_long_fail"
+    assert tool_result["name"] == "long_fail"
+    assert tool_result["status"] == "error"
+    assert tool_result["is_error"] is True
+    assert tool_result["metadata"]["exit_code"] == 7
+    assert tool_result["output"] == LONG_FAILURE_OUTPUT
+    assert len(tool_result["output"]) > 500
+
+    persisted = session_store.get("session-1")
+    assert persisted is not None
+    tool_message = next(
+        message
+        for message in persisted.messages
+        if message["role"] == "user" and isinstance(message.get("content"), list)
+    )
+    block = tool_message["content"][0]
+    assert block["ui"]["status"] == "error"
+    assert block["ui"]["output"] == LONG_FAILURE_OUTPUT
 
 
 def test_tool_iteration_limit_emits_warning_then_done(monkeypatch, tmp_path: Path):

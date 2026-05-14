@@ -1,4 +1,8 @@
-import type { ActualTokenUsage, MessageAttachment } from "../api/client";
+import type {
+  ActualTokenUsage,
+  MessageAttachment,
+  ToolCallPayload,
+} from "../api/client";
 import { setTooltip } from "obsidian";
 import {
   createAssistantIdentityHeader,
@@ -18,6 +22,114 @@ function getFirstNonEmptyLine(output: string): string | undefined {
     .trim()
     .split("\n")
     .find((line) => line.trim());
+}
+
+export function getToolPayloadName(payload: ToolCallPayload): string {
+  return payload.name || payload.tool || "tool";
+}
+
+export function getToolPayloadId(payload: ToolCallPayload): string | undefined {
+  return payload.id || payload.tool_use_id || undefined;
+}
+
+export function normalizeToolPayload(
+  payloadOrName: ToolCallPayload | string,
+  output = "",
+): ToolCallPayload {
+  if (typeof payloadOrName === "string") {
+    return {
+      name: payloadOrName,
+      tool: payloadOrName,
+      output,
+      status: "success",
+      metadata: {},
+    };
+  }
+  return {
+    ...payloadOrName,
+    output: typeof payloadOrName.output === "string" ? payloadOrName.output : "",
+    metadata:
+      payloadOrName.metadata && typeof payloadOrName.metadata === "object"
+        ? payloadOrName.metadata
+        : {},
+  };
+}
+
+export function toolStatus(payload: ToolCallPayload): string {
+  if (payload.is_error) {
+    return "error";
+  }
+  if (payload.status) {
+    return payload.status;
+  }
+  const metadata = payload.metadata || {};
+  const exitCode = metadata.exit_code;
+  if (
+    metadata.blocked === true ||
+    metadata.timeout === true ||
+    (typeof exitCode === "number" && exitCode !== 0) ||
+    (typeof exitCode === "string" && exitCode.trim() !== "" && exitCode !== "0")
+  ) {
+    return "error";
+  }
+  const warnings = metadata.warnings;
+  if (
+    payload.is_truncated ||
+    (Array.isArray(warnings) && warnings.length > 0) ||
+    (typeof warnings === "string" && warnings.trim() !== "") ||
+    (!!warnings && !Array.isArray(warnings) && typeof warnings !== "string")
+  ) {
+    return "warning";
+  }
+  return "success";
+}
+
+export function toolStatusIcon(status: string): string {
+  if (status === "error") {
+    return "x";
+  }
+  if (status === "warning") {
+    return "!";
+  }
+  return "check";
+}
+
+export function toolStatusLabel(status: string): string {
+  if (status === "error") {
+    return "failed";
+  }
+  if (status === "warning") {
+    return "warning";
+  }
+  return "done";
+}
+
+export function formatToolMeta(payload: ToolCallPayload): string {
+  const parts: string[] = [];
+  const metadata = payload.metadata || {};
+  const exitCode = metadata.exit_code;
+  if (exitCode !== undefined && exitCode !== null) {
+    parts.push(`exit ${String(exitCode)}`);
+  }
+  if (payload.elapsed_ms !== undefined && payload.elapsed_ms !== null) {
+    parts.push(`${Math.round(payload.elapsed_ms)}ms`);
+  }
+  if (payload.is_truncated) {
+    parts.push("truncated");
+  }
+  return parts.join(" · ");
+}
+
+export function formatToolOutput(payload: ToolCallPayload): string {
+  const lines = [payload.output || "(no output)"];
+  if (payload.is_truncated) {
+    lines.push("");
+    lines.push("[result truncated]");
+    if (payload.cache_path) {
+      lines.push(`Full result cache: ${payload.cache_path}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 function formatCompactTokens(tokens: number): string {
@@ -243,6 +355,64 @@ export function createChatTranscript(
     if (terminal) {
       terminal.empty();
       terminal.setText(output || "(no output)");
+    }
+  }
+
+  function renderToolPayloadBlock(
+    wrapper: HTMLDivElement,
+    payloadOrName: ToolCallPayload | string,
+    legacyOutput = "",
+  ): void {
+    const payload = normalizeToolPayload(payloadOrName, legacyOutput);
+    const name = getToolPayloadName(payload);
+    const output = formatToolOutput(payload);
+    const status = toolStatus(payload);
+
+    wrapper.classList.remove("running");
+    wrapper.classList.add("done");
+    wrapper.classList.toggle("error", status === "error");
+    wrapper.classList.toggle("warning", status === "warning");
+    wrapper.classList.toggle("success", status !== "error" && status !== "warning");
+
+    const header = wrapper.querySelector(".chat-tool-header") as HTMLElement;
+    if (header) {
+      header.empty();
+
+      const iconEl = header.createSpan({ cls: "chat-tool-icon" });
+      iconEl.setText(toolStatusIcon(status));
+
+      const nameEl = header.createSpan({ cls: "chat-tool-name" });
+      nameEl.setText(name);
+
+      const meta = formatToolMeta(payload);
+      const statusEl = header.createSpan({ cls: "chat-tool-status" });
+      statusEl.setText(
+        meta ? `${toolStatusLabel(status)} · ${meta}` : toolStatusLabel(status),
+      );
+
+      const firstLine = getFirstNonEmptyLine(output);
+      if (firstLine) {
+        const preview = header.createSpan({ cls: "chat-tool-preview" });
+        preview.setText(
+          firstLine.slice(0, 72) + (firstLine.length > 72 ? "..." : ""),
+        );
+      }
+
+      const chevron = header.createSpan({
+        cls: "chat-tool-chevron",
+        text: ">",
+      });
+
+      header.addEventListener("click", () => {
+        wrapper.classList.toggle("expanded", !wrapper.classList.contains("expanded"));
+        chevron.setText(wrapper.classList.contains("expanded") ? "v" : ">");
+      });
+    }
+
+    const terminal = wrapper.querySelector(".chat-tool-terminal") as HTMLElement;
+    if (terminal) {
+      terminal.empty();
+      terminal.setText(output);
     }
   }
 
@@ -504,6 +674,64 @@ export function createChatTranscript(
     scrollToBottom(false);
   }
 
+  function completeToolPayload(payloadInput: ToolCallPayload): void {
+    const payload = normalizeToolPayload(payloadInput);
+    const name = getToolPayloadName(payload);
+    const toolId = getToolPayloadId(payload);
+    let wrapper: HTMLDivElement | undefined;
+
+    if (toolId && state.toolBlocks.has(toolId)) {
+      wrapper = state.toolBlocks.get(toolId);
+      state.toolBlocks.delete(toolId);
+      state.toolIdToName.delete(toolId);
+      if (state.toolBlocks.get(name) === wrapper) {
+        state.toolBlocks.delete(name);
+      }
+    }
+
+    if (!wrapper && state.toolBlocks.has(name)) {
+      wrapper = state.toolBlocks.get(name);
+      state.toolBlocks.delete(name);
+
+      for (const [id, mappedName] of state.toolIdToName) {
+        if (mappedName === name && state.toolBlocks.get(id) === wrapper) {
+          state.toolBlocks.delete(id);
+          state.toolIdToName.delete(id);
+          break;
+        }
+      }
+    }
+
+    if (!wrapper) {
+      const blocks = elements.messagesEl.querySelectorAll(
+        ".chat-tool-block.running",
+      );
+      if (blocks.length) {
+        wrapper = blocks[blocks.length - 1] as HTMLDivElement;
+      }
+    }
+
+    if (wrapper) {
+      renderToolPayloadBlock(wrapper, payload);
+    } else {
+      const fallback = elements.messagesEl.createDiv({ cls: "chat-msg status" });
+      fallback.setText(`${toolStatusLabel(toolStatus(payload))}: ${name}`);
+    }
+
+    scrollToBottom(false);
+  }
+
+  function renderHistoricalToolPayload(payloadInput: ToolCallPayload): void {
+    const payload = normalizeToolPayload(payloadInput);
+    const wrapper = elements.messagesEl.createDiv({
+      cls: "chat-tool-block done",
+    });
+    wrapper.createDiv({ cls: "chat-tool-header" });
+    wrapper.createDiv({ cls: "chat-tool-terminal" });
+    renderToolPayloadBlock(wrapper, payload);
+    scrollToBottom(false);
+  }
+
   function clearToolTracking(): void {
     state.toolBlocks.clear();
     state.toolIdToName.clear();
@@ -631,8 +859,8 @@ export function createChatTranscript(
     appendMessage,
     renderAssistantMessage,
     beginTool,
-    completeTool,
-    renderHistoricalTool,
+    completeTool: completeToolPayload,
+    renderHistoricalTool: renderHistoricalToolPayload,
     clearConversationUi,
     clearToolTracking,
     removeTransientUi,

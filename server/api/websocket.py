@@ -515,17 +515,19 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                         tool_input = block["input"]
                         tool_id = block["id"]
 
-                        llm_text, _ui_payload = await execute_tool_call(
+                        llm_text, ui_payload = await execute_tool_call(
                             _registry,
                             tool_name,
                             tool_input,
                             ctx=ctx,
+                            tool_id=tool_id,
                         )
                         tool_results.append(
                             {
                                 "type": "tool_result",
                                 "tool_use_id": tool_id,
                                 "content": llm_text,
+                                "ui": ui_payload,
                             }
                         )
 
@@ -533,8 +535,7 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                             ws,
                             {
                                 "type": "tool_result",
-                                "name": tool_name,
-                                "output": llm_text[:500],
+                                **ui_payload,
                             },
                         )
 

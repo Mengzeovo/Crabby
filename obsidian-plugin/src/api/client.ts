@@ -64,9 +64,25 @@ export interface ChatRequestPayload {
   manual_persona_id?: string | null;
 }
 
+export type ToolCallStatus = "success" | "warning" | "error" | string;
+
+export interface ToolCallPayload {
+  id?: string | null;
+  tool_use_id?: string | null;
+  name?: string;
+  tool?: string;
+  output?: string;
+  metadata?: Record<string, unknown>;
+  status?: ToolCallStatus;
+  is_error?: boolean;
+  is_truncated?: boolean;
+  cache_path?: string | null;
+  elapsed_ms?: number;
+}
+
 export interface ChatResponse {
   reply: string;
-  tool_calls: Record<string, unknown>[];
+  tool_calls: ToolCallPayload[];
   session_id: string;
   conversation_id: string;
   branch_fingerprint: string;
@@ -183,7 +199,7 @@ export interface StreamCallbacks {
   onReasoningDelta?: (text: string) => void;
   onTextDelta?: (text: string) => void;
   onToolStart?: (name: string, id: string) => void;
-  onToolResult?: (name: string, output: string) => void;
+  onToolResult?: (payload: ToolCallPayload) => void;
   onDone?: (
     sessionId: string,
     conversationId: string,
@@ -763,7 +779,7 @@ export class AgentClient {
         cb.onToolStart?.(data.name as string, data.id as string);
         break;
       case "tool_result":
-        cb.onToolResult?.(data.name as string, data.output as string);
+        cb.onToolResult?.(data as ToolCallPayload);
         break;
       case "warning":
         cb.onWarning?.(data.message as string);
