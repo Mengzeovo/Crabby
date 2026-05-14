@@ -113,7 +113,7 @@ Important backend files and folders:
 - `server/tools/crabby_settings.py`: self-management tool that talks to the
   Obsidian bridge and backend admin profile APIs.
 - `server/tools/cron.py`: cron create/list/delete tool and
-  `.Crabby/data/cron_jobs.json` persistence.
+  backend runtime `data/cron_jobs.json` persistence.
 - `server/memory/`: file-backed session manifest/conversation storage, legacy
   flat-session migration, active branch materialization/cache, ID validation,
   actual usage snapshots, pending notifications, and auto-save support.
@@ -338,7 +338,8 @@ npm run start
 ## Cron Behavior
 
 - Tools: `cron_create`, `cron_list`, `cron_delete`.
-- Persistence: `<vault>/.Crabby/data/cron_jobs.json`.
+- Persistence: `<vault>/.obsidian/plugins/crabby/data/cron_jobs.json` in
+  plugin-managed production runs, or `DATA_DIR/cron_jobs.json` generally.
 - Daemon scans once per second and consumes due jobs FIFO.
 - Execution waits for idle session activity, up to 30 minutes.
 - Each run uses a new isolated session and does not reuse source conversation

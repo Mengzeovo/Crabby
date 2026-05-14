@@ -180,15 +180,11 @@ crabby/
   config/personas/
   data/sessions/
   data/attachments/
+  data/cron_jobs.json
+  data/cache/tool-results/
   logs/
   runtime/state.json
   runtime/host-heartbeat.json
-```
-
-Cron jobs 存在 Vault 内：
-
-```text
-<YourVault>/.Crabby/data/cron_jobs.json
 ```
 
 ## 文档入口

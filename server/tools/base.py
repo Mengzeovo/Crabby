@@ -45,6 +45,9 @@ class Context(BaseModel):
     conversation_id: str | None = None
     """当前活跃的对话分支 ID（如有）。"""
 
+    runtime_data_path: Path | None = None
+    """后端运行时 data 目录，用于插件托管状态和缓存。"""
+
 
 # ---------------------------------------------------------------------------
 # ToolResult — 工具执行的标准化返回值

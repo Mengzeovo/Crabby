@@ -8,6 +8,10 @@ from tools.base import Context
 from tools.cron import CronCreateInput, CronCreateTool, CronJob, CronManager
 
 
+def _runtime_data(vault_path: Path) -> Path:
+    return vault_path / ".obsidian" / "plugins" / "crabby" / "data"
+
+
 def _job(expr: str, *, last_fired_at: str | None = None) -> CronJob:
     return CronJob(
         id="cron_test",
@@ -49,11 +53,13 @@ async def test_cron_create_accepts_seconds_at_beginning(tmp_path: Path):
         Context(vault_path=tmp_path, session_id="session-1", conversation_id="root"),
     )
 
-    jobs = CronManager.load(tmp_path)
+    jobs = CronManager.load(_runtime_data(tmp_path))
     assert len(jobs) == 1
     assert jobs[0].cron == "*/10 * * * * *"
     assert jobs[0].source_session_id == "session-1"
     assert result.metadata["job_id"] == jobs[0].id
+    assert CronManager.get_file(_runtime_data(tmp_path)).name == "cron_jobs.json"
+    assert not (tmp_path / ".Crabby").exists()
 
 
 async def test_cron_create_uses_conversation_id_as_legacy_fallback(tmp_path: Path):
@@ -62,7 +68,7 @@ async def test_cron_create_uses_conversation_id_as_legacy_fallback(tmp_path: Pat
         Context(vault_path=tmp_path, conversation_id="legacy-session"),
     )
 
-    jobs = CronManager.load(tmp_path)
+    jobs = CronManager.load(_runtime_data(tmp_path))
     assert jobs[0].source_session_id == "legacy-session"
 
 
@@ -73,4 +79,5 @@ async def test_cron_create_rejects_invalid_expression(tmp_path: Path):
     )
 
     assert "不是有效的 Cron 表达式" in result.output
-    assert CronManager.load(tmp_path) == []
+    assert CronManager.load(_runtime_data(tmp_path)) == []
+    assert not (tmp_path / ".Crabby").exists()

@@ -26,7 +26,7 @@ Routes / LLM Client / ToolRegistry / MCP / SessionStore / Cron
         v               v                  v
 LLM Provider        Local Vault        MCP Servers
 Anthropic/OpenAI    Notes/Canvas       stdio/sse
-Ollama/etc.         .Crabby data
+Ollama/etc.         plugin runtime data
 ```
 
 ## Repository Map
@@ -89,15 +89,11 @@ In a normal installed plugin, runtime state lives under the plugin folder:
   config/personas/
   data/sessions/
   data/attachments/
+  data/cron_jobs.json
+  data/cache/tool-results/
   logs/
   runtime/state.json
   runtime/host-heartbeat.json
-```
-
-Cron jobs live in the Vault:
-
-```text
-<vault>/.Crabby/data/cron_jobs.json
 ```
 
 The repository `prompts/` and `personas/` directories are defaults. In plugin-managed runs, the plugin seeds runtime copies into `config/prompts/` and `config/personas/`, then passes those paths to the backend through environment variables.
@@ -341,7 +337,7 @@ Cron jobs are managed by built-in tools and `server/cron_daemon.py`.
 
 Behavior:
 
-- Persisted at `<vault>/.Crabby/data/cron_jobs.json`.
+- Persisted at `<vault>/.obsidian/plugins/crabby/data/cron_jobs.json`.
 - Supports 5-field cron and 6-field seconds-first cron.
 - Scans once per second.
 - Queues due jobs FIFO.

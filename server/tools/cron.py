@@ -13,10 +13,8 @@ from pathlib import Path
 from croniter import croniter
 from pydantic import BaseModel, Field
 
+from runtime_paths import context_runtime_data_dir, cron_jobs_file
 from tools.base import Context, Tool, ToolResult
-
-CRABBY_VAULT_DIR = ".Crabby"
-LEGACY_CRABBY_VAULT_DIR = ".LifeAssistantAgent"
 
 
 class CronJob(BaseModel):
@@ -32,20 +30,17 @@ class CronJob(BaseModel):
 
 
 class CronManager:
-    """负责管理 Vault 内的 .Crabby/data/cron_jobs.json"""
+    """Manage cron jobs in the backend runtime data directory."""
 
     @classmethod
-    def get_file(cls, vault_path: Path) -> Path:
-        file_path = vault_path / CRABBY_VAULT_DIR / "data" / "cron_jobs.json"
-        legacy_path = vault_path / LEGACY_CRABBY_VAULT_DIR / "data" / "cron_jobs.json"
+    def get_file(cls, runtime_data_path: Path | None = None) -> Path:
+        file_path = cron_jobs_file(runtime_data_path)
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        if not file_path.exists() and legacy_path.exists():
-            file_path.write_bytes(legacy_path.read_bytes())
         return file_path
 
     @classmethod
-    def load(cls, vault_path: Path) -> list[CronJob]:
-        file_path = cls.get_file(vault_path)
+    def load(cls, runtime_data_path: Path | None = None) -> list[CronJob]:
+        file_path = cls.get_file(runtime_data_path)
         if not file_path.exists():
             return []
         try:
@@ -55,21 +50,21 @@ class CronManager:
             return []
 
     @classmethod
-    def save(cls, vault_path: Path, jobs: list[CronJob]) -> None:
-        file_path = cls.get_file(vault_path)
+    def save(cls, runtime_data_path: Path | None, jobs: list[CronJob]) -> None:
+        file_path = cls.get_file(runtime_data_path)
         data = [j.model_dump() for j in jobs]
         file_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
 
     @classmethod
     def add(
         cls,
-        vault_path: Path,
         cron: str,
         prompt: str,
         recurring: bool,
         source_session_id: str | None = None,
+        runtime_data_path: Path | None = None,
     ) -> str:
-        jobs = cls.load(vault_path)
+        jobs = cls.load(runtime_data_path)
         job_id = f"cron_{uuid.uuid4().hex[:8]}"
         job = CronJob(
             id=job_id,
@@ -80,31 +75,37 @@ class CronManager:
             source_session_id=source_session_id,
         )
         jobs.append(job)
-        cls.save(vault_path, jobs)
+        cls.save(runtime_data_path, jobs)
         return job_id
 
     @classmethod
-    def delete(cls, vault_path: Path, job_id: str) -> bool:
-        jobs = cls.load(vault_path)
+    def delete(cls, job_id: str, runtime_data_path: Path | None = None) -> bool:
+        jobs = cls.load(runtime_data_path)
         new_jobs = [j for j in jobs if j.id != job_id]
         if len(new_jobs) == len(jobs):
             return False
-        cls.save(vault_path, new_jobs)
+        cls.save(runtime_data_path, new_jobs)
         return True
 
     @classmethod
-    def update_last_fired(cls, vault_path: Path, job_id: str, *, clear: bool = False) -> None:
+    def update_last_fired(
+        cls,
+        job_id: str,
+        *,
+        runtime_data_path: Path | None = None,
+        clear: bool = False,
+    ) -> None:
         """更新指定 job 的 last_fired_at。
 
         Args:
             clear: 若为 True，清除 last_fired_at（允许重新触发，用于单次任务失败重试）。
         """
-        jobs = cls.load(vault_path)
+        jobs = cls.load(runtime_data_path)
         for j in jobs:
             if j.id == job_id:
                 j.last_fired_at = None if clear else datetime.now().isoformat()
                 break
-        cls.save(vault_path, jobs)
+        cls.save(runtime_data_path, jobs)
 
 
 class CronCreateInput(BaseModel):
@@ -138,11 +139,11 @@ class CronCreateTool(Tool):
             return ToolResult(output=f"格式错误：'{params.cron}' 不是有效的 Cron 表达式。")
 
         job_id = CronManager.add(
-            ctx.vault_path,
             params.cron,
             params.prompt,
             params.recurring,
             source_session_id=ctx.session_id or ctx.conversation_id,
+            runtime_data_path=context_runtime_data_dir(ctx),
         )
         kind = "循环" if params.recurring else "单次"
         return ToolResult(
@@ -162,7 +163,7 @@ class CronListTool(Tool):
     is_read_only = True
 
     async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
-        jobs = CronManager.load(ctx.vault_path)
+        jobs = CronManager.load(context_runtime_data_dir(ctx))
         if not jobs:
             return ToolResult(output="当前系统没有设置任何有效的定时任务。")
 
@@ -187,7 +188,10 @@ class CronDeleteTool(Tool):
 
     async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
         assert isinstance(params, CronDeleteInput)
-        success = CronManager.delete(ctx.vault_path, params.job_id)
+        success = CronManager.delete(
+            params.job_id,
+            runtime_data_path=context_runtime_data_dir(ctx),
+        )
         if success:
             return ToolResult(output=f"任务 {params.job_id} 已从追踪列表移除，将被停止调度。")
         else:

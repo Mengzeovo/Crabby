@@ -68,14 +68,14 @@ async def _cron_scanner(registry, session_store, vault_path: Path) -> None:
         try:
             from tools.cron import CronManager
 
-            jobs = CronManager.load(vault_path)
+            jobs = CronManager.load()
             now = datetime.now()
 
             for job in jobs:
                 if _should_fire(job, now):
                     logger.info("⏰ Cron 入队: [%s] %s", job.id, job.cron)
                     # 立即标记 last_fired_at 防止下一轮重复入队
-                    CronManager.update_last_fired(vault_path, job.id)
+                    CronManager.update_last_fired(job.id)
                     await _job_queue.put(job)
         except Exception:
             logger.exception("⏰ Cron Scanner 轮询出错")
@@ -252,7 +252,7 @@ async def _execute_cron_job(job, registry, session_store, vault_path: Path) -> N
 
         # 处理非循环任务：成功时自动删除
         if not job.recurring:
-            CronManager.delete(vault_path, job.id)
+            CronManager.delete(job.id)
             logger.info("⏰ 单次任务 %s 已执行并自动删除", job.id)
 
         # ★ 推送通知到来源会话（如果有的话），否则推送到隔离会话
@@ -273,7 +273,7 @@ async def _execute_cron_job(job, registry, session_store, vault_path: Path) -> N
 
         # ★ 单次任务失败时，清除 last_fired_at 允许下一轮重试
         if not job.recurring:
-            CronManager.update_last_fired(vault_path, job.id, clear=True)
+            CronManager.update_last_fired(job.id, clear=True)
             logger.info("⏰ 单次任务 %s 失败，已重置触发标记以允许重试", job.id)
     finally:
         stop_session_activity("cron_job")

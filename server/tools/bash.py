@@ -13,6 +13,7 @@ import sys
 
 from pydantic import BaseModel, Field
 
+from runtime_paths import tool_results_cache_dir
 from tools.base import Context, Tool, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -385,7 +386,7 @@ class BashTool(Tool):
         is_truncated = False
         cache_path = None
         if len(output) > self.max_result_chars:
-            cache_dir = ctx.vault_path / ".Crabby" / "cache" / "tool-results"
+            cache_dir = tool_results_cache_dir(ctx)
             cache_dir.mkdir(parents=True, exist_ok=True)
             digest = hashlib.sha256(output.encode("utf-8")).hexdigest()[:12]
             cache_file = cache_dir / f"bash-{digest}.txt"

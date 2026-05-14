@@ -6,7 +6,7 @@ import logging
 import time
 from typing import Any
 
-from config import settings
+from config import DATA_DIR, settings
 from tools.base import Context, ToolResult
 from tools.registry import ToolRegistry
 
@@ -23,6 +23,7 @@ def build_default_context(
         permission_level="normal",
         session_id=session_id,
         conversation_id=conversation_id,
+        runtime_data_path=DATA_DIR,
     )
 
 
