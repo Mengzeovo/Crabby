@@ -8,8 +8,14 @@ import {
 } from "../shared/constants";
 
 const builtinAvatarAssetMap = new Map<string, string>([
-  [LEGACY_AVATAR_ASSET, path.join("assets", "pet.svg")],
-  [CLASSIC_AVATAR_ASSET, path.join("assets", "pet.svg")],
+  [
+    LEGACY_AVATAR_ASSET,
+    path.join("assets", "Crabby", "face_normal_fullbody_transparent.png"),
+  ],
+  [
+    CLASSIC_AVATAR_ASSET,
+    path.join("assets", "Crabby", "face_normal_fullbody_transparent.png"),
+  ],
   [
     CRABBY_AVATAR_ASSET,
     path.join("assets", "Crabby", "face_normal_fullbody_transparent.png"),

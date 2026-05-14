@@ -57,9 +57,11 @@ workflows. It is not a cloud multi-user SaaS.
 - `reference/`: reference material.
 - `scripts/`: backend runtime build and release packaging helpers.
 - `scripts/build-backend-runtime.py`: builds a PyInstaller backend runtime.
+  Generated PyInstaller `.spec` files are ignored by git.
 - `scripts/package-obsidian-release.py`: builds a manual-install Obsidian
   plugin zip with `manifest.json`, `main.js`, relative production
-  `runtime/state.json`, and a prebuilt backend binary.
+  `runtime/state.json`, and a prebuilt backend binary. It resolves
+  `npm.cmd` on Windows when running the plugin build.
 - `README.md`: release-facing overview, dev commands, packaging, install,
   first-run setup, runtime data, and troubleshooting.
 - `LICENSE`: MIT License for the repository.
@@ -210,7 +212,7 @@ Important files and folders:
 - `desktop-pet/src/renderer/`: pet, chat, bubble, and settings views.
 - `desktop-pet/src/shared/`: shared types, constants, avatar data, and history
   helpers.
-- `desktop-pet/assets/`: runtime visual assets.
+- `desktop-pet/assets/`: runtime visual assets copied into `dist/assets/`.
 - `desktop-pet/dist/`: build output.
 
 Desktop Pet commands:

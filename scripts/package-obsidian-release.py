@@ -82,7 +82,9 @@ def ensure_version_matches(version: str, *, allow_mismatch: bool) -> None:
 def run_plugin_build(skip_plugin_build: bool) -> None:
     if skip_plugin_build:
         return
-    subprocess.run(["npm", "run", "build"], cwd=PLUGIN_DIR, check=True)
+    npm_name = "npm.cmd" if os.name == "nt" else "npm"
+    npm = shutil.which(npm_name) or npm_name
+    subprocess.run([npm, "run", "build"], cwd=PLUGIN_DIR, check=True)
 
 
 def default_backend_binary(version: str, platform_key: str) -> Path:

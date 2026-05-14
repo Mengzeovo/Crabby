@@ -100,7 +100,7 @@ async function build() {
   });
 
   await copyRendererStatics();
-  await copyRecursive(path.join(srcDir, "assets"), path.join(distDir, "assets"));
+  await copyRecursiveIfExists(path.join(srcDir, "assets"), path.join(distDir, "assets"));
   await copyRecursiveIfExists(path.join(rootDir, "assets"), path.join(distDir, "assets"));
 }
 
