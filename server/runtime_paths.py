@@ -20,7 +20,7 @@ def context_runtime_data_dir(ctx: Context) -> Path:
     if ctx.runtime_data_path is not None:
         return runtime_data_dir(ctx.runtime_data_path)
     return (
-        ctx.vault_path / ".obsidian" / "plugins" / "crabby" / "data"
+        ctx.vault_path / ".crabby" / "data"
     ).expanduser().resolve()
 
 

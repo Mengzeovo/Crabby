@@ -66,7 +66,7 @@ Crabby 当前状态：
 Crabby 可继续增强：
 
 ```text
-<vault>/.Crabby/memory/
+<vault>/.crabby/memory/
   INDEX.md
   profile/
   projects/

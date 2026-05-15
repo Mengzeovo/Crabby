@@ -66,7 +66,6 @@ workflows. It is not a cloud multi-user SaaS.
   first-run setup, runtime data, and troubleshooting.
 - `LICENSE`: MIT License for the repository.
 - `.env`: local secrets and runtime settings. Do not commit real secrets.
-- `.env.example`: example environment configuration.
 
 ## Backend Map
 
@@ -168,7 +167,7 @@ Important plugin files and folders:
   and persona templates. Persona seeding is based on discovered `PERSONA.md`
   files, so incidental files do not block first-run defaults.
 - `obsidian-plugin/src/runtime/runtimeDataMigration.ts`: migrates legacy
-  plugin-local `config/`, `data/`, and `logs/` into Vault-root `crabby/`
+  plugin-local `config/`, `data/`, and `logs/` into Vault-root `.crabby/`
   storage without overwriting existing target files.
 - `obsidian-plugin/src/runtime/runtimeState.ts`: serializes production backend
   executable paths relative to the installed plugin runtime directory and
@@ -316,11 +315,14 @@ npm run start
 
 ## Configuration Notes
 
-- General runtime configuration lives in `.env`.
-- Plugin-managed runtime config lives under
-  `<vault>/crabby/config/`.
-- Plugin-managed user data lives under `<vault>/crabby/data/`, and logs live
-  under `<vault>/crabby/logs/`.
+- All runtime configuration, secrets, and user data live under the vault, never in
+  the repository. The backend (whether in dev or production mode) reads its `.env`
+  from `<vault>/.crabby/config/.env`. All data lives under `<vault>/.crabby/`, with
+  `config/`, `data/`, and `logs/` subdirectories.
+- The plugin and backend derive vault paths from the `VAULT_PATH` environment
+  variable set by the plugin at startup. The backend falls back to the repo root
+  when `VAULT_PATH` is absent (e.g., bare `uv run python main.py` outside of
+  the plugin).
 - Plugin install/runtime assets stay under
   `<vault>/.obsidian/plugins/crabby/`, so the plugin folder can be replaced
   without deleting sessions or provider configuration.
@@ -361,7 +363,7 @@ npm run start
 ## Cron Behavior
 
 - Tools: `cron_create`, `cron_list`, `cron_delete`.
-- Persistence: `<vault>/crabby/data/cron_jobs.json` in
+- Persistence: `<vault>/.crabby/data/cron_jobs.json` in
   plugin-managed production runs, or `DATA_DIR/cron_jobs.json` generally.
 - Daemon scans once per second and consumes due jobs FIFO.
 - Execution waits for idle session activity, up to 30 minutes.
@@ -439,6 +441,9 @@ Use the smallest relevant verification set:
   `cd server && uv run pytest tests/test_websocket_notifications.py`,
   plugin `npx tsc --noEmit`, and plugin build.
 - Cross-module behavior: run relevant backend and client checks together.
+- CI uses Node 24-compatible GitHub Actions majors:
+  `actions/checkout@v6`, `actions/setup-python@v6`,
+  `actions/setup-node@v6`, and `astral-sh/setup-uv@v8`.
 
 ## Known Working Assumptions
 
@@ -465,6 +470,8 @@ Use the smallest relevant verification set:
 - REST `tool_calls`, WebSocket `tool_result` events, and persisted tool-result
   `ui` payloads share the same tool UI shape with ID, name, output, metadata,
   status, truncation/cache fields, and elapsed time when available.
+- Non-streaming agent-runner tool results persist that same `ui` payload while
+  `Session.get_messages()` strips it from model-bound messages.
 - `obsidian-plugin/src/chat/chatStyles.ts` upserts the shared style tag on
   reload.
 - The backend system prompt dynamically injects runtime platform label,

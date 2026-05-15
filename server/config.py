@@ -11,11 +11,23 @@ from pydantic_settings import BaseSettings
 
 SERVER_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SERVER_DIR.parent
-ENV_FILE = Path(os.environ.get("ENV_FILE") or PROJECT_ROOT / ".env").resolve()
-DATA_DIR = Path(os.environ.get("DATA_DIR") or SERVER_DIR / "data").resolve()
-LOG_DIR = Path(os.environ.get("LOG_DIR") or SERVER_DIR / "logs").resolve()
+
+# Resolve vault path: set by the Obsidian plugin at startup, or fall back to repo root
+_vaulthome = Path(os.environ.get("VAULT_PATH") or PROJECT_ROOT).resolve()
+
+# All runtime data lives under the vault, not the repo.
+# .env lives at vault/.crabby/config/.env in production, repo/.env in dev.
+CRABBY_SUBDIR = ".crabby"
+CRABBY_CONFIG_DIR = _vaulthome / CRABBY_SUBDIR / "config"
+CRABBY_DATA_DIR = _vaulthome / CRABBY_SUBDIR / "data"
+CRABBY_LOGS_DIR = _vaulthome / CRABBY_SUBDIR / "logs"
+
+ENV_FILE = CRABBY_CONFIG_DIR / ".env"
+DATA_DIR = Path(os.environ.get("DATA_DIR") or CRABBY_DATA_DIR).resolve()
+LOG_DIR = Path(os.environ.get("LOG_DIR") or CRABBY_LOGS_DIR).resolve()
 MCP_CONFIG_FILE = Path(
-    os.environ.get("MCP_CONFIG_FILE") or DATA_DIR / "mcp_servers.json",
+    os.environ.get("MCP_CONFIG_FILE")
+    or (CRABBY_CONFIG_DIR / "mcp_servers.json"),
 ).resolve()
 DEFAULT_CORS_ALLOWED_ORIGINS = [
     "app://obsidian.md",
@@ -47,7 +59,7 @@ def _parse_json_list(raw: str | list[str] | None, *, fallback: list[str]) -> lis
 
 class Settings(BaseSettings):
     # Vault
-    vault_path: Path = Path(__file__).resolve().parents[1].parent
+    vault_path: Path = _vaulthome
 
     # LLM
     llm_provider: str = "anthropic"  # "anthropic" | "openai" | "ollama"

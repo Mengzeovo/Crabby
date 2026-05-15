@@ -95,7 +95,7 @@ User-owned runtime data lives under the Vault root so the plugin folder can be
 replaced during upgrades:
 
 ```text
-<vault>/crabby/
+<vault>/.crabby/
   config/.env
   config/mcp_servers.json
   config/prompts/
@@ -108,10 +108,10 @@ replaced during upgrades:
 ```
 
 On startup, the plugin migrates legacy `<vault>/.obsidian/plugins/crabby/config`,
-`data`, and `logs` directories into `<vault>/crabby/` when possible. Existing
+`data`, and `logs` directories into `<vault>/.crabby/` when possible. Existing
 target files are kept, and conflicting legacy files are left in place.
 
-The repository `prompts/` and `personas/` directories are defaults. In plugin-managed runs, the plugin seeds runtime copies into `<vault>/crabby/config/prompts/` and `<vault>/crabby/config/personas/`, then passes those paths to the backend through environment variables.
+The repository `prompts/` and `personas/` directories are defaults. In plugin-managed runs, the plugin seeds runtime copies into `<vault>/.crabby/config/prompts/` and `<vault>/.crabby/config/personas/`, then passes those paths to the backend through environment variables.
 
 ## Backend
 
@@ -303,7 +303,7 @@ LLM tool call
 
 ## MCP
 
-MCP config is loaded from `MCP_CONFIG_FILE`, defaulting to a local data path in development. `server/data/mcp_servers.example.json` is the checked-in example.
+MCP config is loaded from `MCP_CONFIG_FILE`, defaulting to `<vault>/.crabby/config/mcp_servers.json`. `server/data/mcp_servers.example.json` is the checked-in template.
 
 MCP behavior:
 
@@ -352,7 +352,7 @@ Cron jobs are managed by built-in tools and `server/cron_daemon.py`.
 
 Behavior:
 
-- Persisted at `<vault>/crabby/data/cron_jobs.json`.
+- Persisted at `<vault>/.crabby/data/cron_jobs.json`.
 - Supports 5-field cron and 6-field seconds-first cron.
 - Scans once per second.
 - Queues due jobs FIFO.

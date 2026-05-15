@@ -28,7 +28,7 @@ TASK_RE = re.compile(r"^\s*- \[( |x|-)\] (.+)$", re.MULTILINE)
 BLOCKED_DIRS = {
     ".git",
     ".obsidian",
-    ".Crabby",
+    ".crabby",
     ".LifeAssistantAgent",
     "node_modules",
     ".venv",

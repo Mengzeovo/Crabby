@@ -9,7 +9,7 @@ from tools.cron import CronCreateInput, CronCreateTool, CronJob, CronManager
 
 
 def _runtime_data(vault_path: Path) -> Path:
-    return vault_path / ".obsidian" / "plugins" / "crabby" / "data"
+    return vault_path / ".crabby" / "data"
 
 
 def _job(expr: str, *, last_fired_at: str | None = None) -> CronJob:
@@ -59,7 +59,7 @@ async def test_cron_create_accepts_seconds_at_beginning(tmp_path: Path):
     assert jobs[0].source_session_id == "session-1"
     assert result.metadata["job_id"] == jobs[0].id
     assert CronManager.get_file(_runtime_data(tmp_path)).name == "cron_jobs.json"
-    assert not (tmp_path / ".Crabby").exists()
+    assert (tmp_path / ".crabby" / "data" / "cron_jobs.json").exists()
 
 
 async def test_cron_create_uses_conversation_id_as_legacy_fallback(tmp_path: Path):
@@ -80,4 +80,3 @@ async def test_cron_create_rejects_invalid_expression(tmp_path: Path):
 
     assert "不是有效的 Cron 表达式" in result.output
     assert CronManager.load(_runtime_data(tmp_path)) == []
-    assert not (tmp_path / ".Crabby").exists()

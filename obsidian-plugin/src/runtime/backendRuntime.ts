@@ -140,7 +140,7 @@ export function resolvePluginRuntimeLayout(app: App): RuntimeLayout {
 
   const vaultBasePath = adapter.getBasePath();
   const pluginDir = join(vaultBasePath, app.vault.configDir, "plugins", PLUGIN_ID);
-  const userDataDir = join(vaultBasePath, PLUGIN_ID);
+  const userDataDir = join(vaultBasePath, ".crabby");
   const configDir = join(userDataDir, "config");
   const dataDir = join(userDataDir, "data");
   const logsDir = join(userDataDir, "logs");
@@ -308,13 +308,12 @@ export class BackendRuntimeManager {
 
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      ENV_FILE: this.layout.envPath,
+      VAULT_PATH: this.getVaultBasePath(),
       MCP_CONFIG_FILE: this.layout.mcpConfigPath,
       DATA_DIR: this.layout.dataDir,
       LOG_DIR: this.layout.logsDir,
       ...this.getHostWatchdogEnv(),
       CRABBY_BACKEND_RELOADER_PARENT: reloaderParentValue,
-      VAULT_PATH: this.getVaultBasePath(),
       HOST: DEFAULT_HOST,
       PORT: String(port),
       PROMPTS_DIR: this.layout.promptsDir,

@@ -18,7 +18,7 @@ from tools.base import Context, Tool, ToolResult
 # Agent 绝不可搜索的目录（系统/配置/版本控制等）
 BLOCKED_DIRS = {
     ".obsidian",
-    ".Crabby",
+    ".crabby",
     ".LifeAssistantAgent",
     ".git",
     "node_modules",

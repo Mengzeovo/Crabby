@@ -22,6 +22,5 @@ async def test_read_truncated_output_caches_under_plugin_data(tmp_path: Path):
     cache_path = Path(result.cache_path)
     assert cache_path.is_file()
     assert cache_path.is_relative_to(
-        tmp_path / ".obsidian" / "plugins" / "crabby" / "data" / "cache"
+        tmp_path / ".crabby" / "data" / "cache"
     )
-    assert not (tmp_path / ".Crabby").exists()
