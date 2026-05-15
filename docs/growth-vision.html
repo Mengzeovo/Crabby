@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crabby 产品愿景与成长规划</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;700&display=swap');
+
+    :root {
+      --bg: #f8f6f3;
+      --surface: #ffffff;
+      --border: #e5e0d8;
+      --text-primary: #2c2825;
+      --text-secondary: #6b6560;
+      --text-muted: #9b9590;
+      --accent: #e07040;
+      --accent-light: #fef0ea;
+      --accent-dark: #c25a28;
+      --blue: #3b7dd8;
+      --blue-light: #eef4fd;
+      --green: #2e8b57;
+      --green-light: #eaf5ee;
+      --purple: #7c5cbf;
+      --purple-light: #f2effe;
+      --orange: #d97706;
+      --orange-light: #fffbeb;
+      --tag-bg: #f0ede8;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Noto Sans SC', sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      line-height: 1.75;
+      font-size: 16px;
+    }
+
+    .container {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+
+    /* Hero */
+    .hero {
+      background: var(--surface);
+      border-radius: 16px;
+      padding: 48px 48px 40px;
+      margin-bottom: 32px;
+      border: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--accent), var(--orange), var(--blue));
+    }
+    .hero-eyebrow {
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+    .hero h1 {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1.3;
+      margin-bottom: 8px;
+    }
+    .hero-date {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+    .hero-vision {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 18px;
+      line-height: 1.8;
+      color: var(--text-primary);
+      padding: 20px 24px;
+      background: var(--accent-light);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 8px 8px 0;
+      margin-bottom: 28px;
+    }
+    .hero-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--tag-bg);
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+    }
+    .hero-tag svg { width: 14px; height: 14px; }
+
+    /* Section nav */
+    .section-nav {
+      position: sticky;
+      top: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 32px;
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      align-items: center;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .section-nav-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+      margin-right: 8px;
+      white-space: nowrap;
+    }
+    .section-nav a {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-decoration: none;
+      padding: 4px 10px;
+      border-radius: 6px;
+      transition: all 0.15s;
+      border: 1px solid transparent;
+    }
+    .section-nav a:hover {
+      background: var(--accent-light);
+      color: var(--accent);
+      border-color: #f5d5c5;
+    }
+    .section-nav a.active {
+      background: var(--accent-light);
+      color: var(--accent-dark);
+      border-color: #f5d5c5;
+      font-weight: 600;
+    }
+    .nav-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot-red { background: #e05050; }
+    .dot-blue { background: var(--blue); }
+    .dot-green { background: var(--green); }
+    .dot-purple { background: var(--purple); }
+    .dot-orange { background: var(--orange); }
+
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin-bottom: 20px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .card-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .card-icon svg { width: 18px; height: 18px; }
+    .card-icon-red { background: #fef2f2; }
+    .card-icon-red svg { color: #e05050; }
+    .card-icon-blue { background: #eff6ff; }
+    .card-icon-blue svg { color: var(--blue); }
+    .card-icon-green { background: #f0fdf4; }
+    .card-icon-green svg { color: var(--green); }
+    .card-icon-purple { background: #faf5ff; }
+    .card-icon-purple svg { color: var(--purple); }
+    .card-icon-orange { background: #fffbeb; }
+    .card-icon-orange svg { color: var(--orange); }
+    .card-icon-accent { background: var(--accent-light); }
+    .card-icon-accent svg { color: var(--accent); }
+
+    h2.card-title {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    h3 {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 24px 0 10px;
+    }
+
+    h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin: 16px 0 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    p { margin-bottom: 12px; }
+    p:last-child { margin-bottom: 0; }
+
+    ul {
+      padding-left: 20px;
+      margin-bottom: 12px;
+    }
+    li { margin-bottom: 6px; }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      margin: 16px 0;
+    }
+    thead th {
+      background: var(--bg);
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 2px solid var(--border);
+    }
+    tbody td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #faf9f7; }
+
+    code {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      background: var(--tag-bg);
+      color: var(--accent-dark);
+      padding: 1px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    /* Priority badges */
+    .p-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 20px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      flex-shrink: 0;
+    }
+    .p-p0 { background: #fef2f2; color: #dc2626; }
+    .p-p1 { background: #fffbeb; color: #d97706; }
+    .p-p2 { background: #f0fdf4; color: #16a34a; }
+    .p-p3 { background: #eff6ff; color: #2563eb; }
+
+    /* Phase cards */
+    .phase-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .phase-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      position: relative;
+    }
+    .phase-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      border-radius: 12px 12px 0 0;
+    }
+    .phase-card.phase-1::before { background: #3b7dd8; }
+    .phase-card.phase-2::before { background: #e07040; }
+    .phase-card.phase-3::before { background: #2e8b57; }
+    .phase-card.phase-4::before { background: #7c5cbf; }
+
+    .phase-tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+    .phase-1 .phase-tag { background: #eff6ff; color: #1d4ed8; }
+    .phase-2 .phase-tag { background: #fff1eb; color: var(--accent-dark); }
+    .phase-3 .phase-tag { background: #eafff0; color: #15803d; }
+    .phase-4 .phase-tag { background: #f5f0ff; color: #6d28d9; }
+
+    .phase-title {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .phase-goal {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      line-height: 1.6;
+    }
+    .phase-items {
+      list-style: none;
+      padding: 0;
+    }
+    .phase-items li {
+      font-size: 13px;
+      color: var(--text-secondary);
+      padding: 3px 0 3px 14px;
+      position: relative;
+      margin-bottom: 0;
+    }
+    .phase-items li::before {
+      content: '→';
+      position: absolute;
+      left: 0;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    /* Differentiators */
+    .diff-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin: 16px 0;
+    }
+    .diff-card {
+      background: var(--accent-light);
+      border: 1px solid #f5d5c5;
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .diff-num {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .diff-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent-dark);
+      margin-bottom: 4px;
+    }
+    .diff-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* Principles */
+    .principles-list {
+      list-style: none;
+      padding: 0;
+    }
+    .principles-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0;
+    }
+    .principles-list li:last-child { border-bottom: none; }
+    .principle-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent-light);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .principle-text strong { color: var(--text-primary); }
+    .principle-text { font-size: 14px; color: var(--text-secondary); }
+
+    /* Tech changes */
+    .tech-changes {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-top: 12px;
+    }
+    .tech-changes-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+    }
+    .tech-changes ul {
+      margin: 0;
+    }
+    .tech-changes li {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    /* Status */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .status-bar svg { width: 12px; height: 12px; }
+
+    /* Current state */
+    .current-state {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 12px 0;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    /* Doc links */
+    .doc-links {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+    .doc-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+    .doc-link:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-light);
+    }
+    .doc-link svg { width: 14px; height: 14px; }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 32px 0 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* Gap indicator */
+    .gap-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-bottom: 16px;
+    }
+    .gap-large { background: #fef2f2; color: #dc2626; }
+    .gap-medium { background: #fffbeb; color: #d97706; }
+    .gap-small { background: #f0fdf4; color: #16a34a; }
+
+    /* Mobile */
+    @media (max-width: 640px) {
+      .container { padding: 20px 16px 60px; }
+      .hero { padding: 28px 20px 24px; }
+      .hero h1 { font-size: 24px; }
+      .card { padding: 20px 18px; }
+      .phase-grid { grid-template-columns: 1fr; }
+      .diff-grid { grid-template-columns: 1fr; }
+      .section-nav { position: static; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-eyebrow">产品愿景文档</div>
+    <h1>Crabby 产品愿景<br>与成长规划</h1>
+    <div class="hero-date">最后更新：2026-05-15</div>
+    <div class="hero-vision">
+      让每一个普通人都能用上 AI 工具，在工具的帮助下持续提升自己，达到超越平均水平的生产力和认知能力。
+    </div>
+    <div class="hero-tags">
+      <span class="hero-tag">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        本地优先 · Vault 集成
+      </span>
+      <span class="hero-tag">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        个人成长伙伴
+      </span>
+      <span class="hero-tag">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        研究员 + 导师 + 管家
+      </span>
+    </div>
+  </div>
+
+  <!-- Section Nav -->
+  <div class="section-nav">
+    <span class="section-nav-label">导航</span>
+    <a href="#dimension-1"><span class="nav-dot dot-red"></span>成长</a>
+    <a href="#dimension-2"><span class="nav-dot dot-blue"></span>调研</a>
+    <a href="#dimension-3"><span class="nav-dot dot-green"></span>生活</a>
+    <a href="#dimension-4"><span class="nav-dot dot-purple"></span>体验</a>
+    <a href="#phases"><span class="nav-dot dot-orange"></span>路线</a>
+    <a href="#principles">原则</a>
+    <a href="#related">关联文档</a>
+  </div>
+
+  <!-- Differentiators -->
+  <div class="diff-grid">
+    <div class="diff-card">
+      <div class="diff-num">01</div>
+      <div class="diff-title">能反馈用户、提升用户水平</div>
+      <div class="diff-desc">不是给答案，而是引导思考、暴露缺口、追踪进步</div>
+    </div>
+    <div class="diff-card">
+      <div class="diff-num">02</div>
+      <div class="diff-title">深度调研 + 通俗输出</div>
+      <div class="diff-desc">能做研究员的工作，也能把结论用普通人能理解的方式讲出来</div>
+    </div>
+    <div class="diff-card">
+      <div class="diff-num">03</div>
+      <div class="diff-title">帮助管理生活</div>
+      <div class="diff-desc">把知识转化为行动，把行动沉淀为习惯，把习惯固化为能力</div>
+    </div>
+  </div>
+
+  <!-- Dimension 1 -->
+  <div class="card" id="dimension-1">
+    <div class="card-header">
+      <div class="card-icon card-icon-red">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      </div>
+      <h2 class="card-title">维度一：用户反馈 / 成长</h2>
+    </div>
+    <span class="gap-indicator gap-large">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      差距最大 · 优先建设
+    </span>
+    <p><strong>目标：</strong>让 Crabby 成为一个"跨会话的学习档案员"，持续评估用户水平、给出反馈、追踪薄弱点。</p>
+
+    <h4>当前状态</h4>
+    <div class="current-state">
+      <code>mentor</code> 人格提供了方法论框架（费曼技巧、Socratic 追问、出题检查理解），Token 用量追踪已实现（单次会话内）。用户水平评估、薄弱点追踪、成长曲线均为空白。
+    </div>
+
+    <h4>需要补齐的能力</h4>
+    <table>
+      <thead>
+        <tr>
+          <th>能力</th>
+          <th>描述</th>
+          <th>优先级</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>学习档案（learning_profile）</td><td>持久化用户的知识掌握状态，包括掌握的知识点、薄弱点、上次练习时间</td><td><span class="p-badge p-p0">P0</span></td></tr>
+        <tr><td>错题本（mistake_log）</td><td>记录用户理解偏差和正确答案，供后续针对性复习</td><td><span class="p-badge p-p0">P0</span></td></tr>
+        <tr><td>成长可视化</td><td>跨会话的学习进度图、活跃度曲线、知识覆盖度统计</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>间隔重复引擎</td><td>基于遗忘曲线自动安排复习时机，由 Cron 触发</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>主动学习推荐</td><td>根据档案推荐下一个最适合学习的知识点</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>晨间简报（Morning Briefing）</td><td>每日 Cron 推送：今日复习计划、新知识推荐、习惯打卡状态</td><td><span class="p-badge p-p2">P2</span></td></tr>
+      </tbody>
+    </table>
+
+    <div class="tech-changes">
+      <div class="tech-changes-title">关键技术改动</div>
+      <ul>
+        <li><code>server/memory/session_store.py</code>：扩展 Session 数据模型，支持 learning_profile 和 mistake_log</li>
+        <li><code>server/personas/router.py</code>：扩展 Auto router 支持"学习目标路由"</li>
+        <li><code>server/cron_daemon.py</code>：支持间隔重复触发逻辑</li>
+        <li>新建 <code>server/tools/learning_profile.py</code>：get_profile、update_profile、get_mistakes、log_mistake 等工具</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Dimension 2 -->
+  <div class="card" id="dimension-2">
+    <div class="card-header">
+      <div class="card-icon card-icon-blue">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </div>
+      <h2 class="card-title">维度二：深度调研 + 通俗输出</h2>
+    </div>
+    <span class="gap-indicator gap-medium">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      差距中等 · 重点建设
+    </span>
+    <p><strong>目标：</strong>让 Crabby 成为一个普通人信得过的研究员——能深度挖掘信息，也能把结论讲清楚。</p>
+
+    <h4>当前状态</h4>
+    <div class="current-state">
+      <code>researcher</code> 人格已有完整方法论（置信度标注、证据分级、反例意识），<code>fetch</code> 工具可抓取网页，<code>obsidian_search</code> 支持 Obsidian 原生 DSL。调研结论不能跨会话记忆，没有结构化报告生成，多形式输出没有开关。
+    </div>
+
+    <h4>需要补齐的能力</h4>
+    <table>
+      <thead>
+        <tr><th>能力</th><th>描述</th><th>优先级</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>调研会话摘要持久化</td><td>调研结论自动写入 Vault 并能被后续会话读取</td><td><span class="p-badge p-p0">P0</span></td></tr>
+        <tr><td>结构化报告生成</td><td>基于调研结果生成标准报告（背景/方法/发现/结论/参考）</td><td><span class="p-badge p-p0">P0</span></td></tr>
+        <tr><td>并行多源抓取</td><td>支持传入 URL 列表并行抓取并聚合分析</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>引用管理</td><td>结构化存储引用来源，支持生成参考文献列表</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>输出格式开关</td><td>用户可通过 <code>!tl;dr</code>、<code>!simple</code>、<code>!detail</code> 等指令切换输出深度</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>类比生成保证</td><td>在 <code>mentor</code>/<code>philosopher</code> prompt 中显式约束类比输出</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>图表渲染支持</td><td>支持 Mermaid 等图表的渲染管线</td><td><span class="p-badge p-p2">P2</span></td></tr>
+        <tr><td>主动反向验证</td><td>研究员自动触发"假设检验"——找到可能推翻结论的证据</td><td><span class="p-badge p-p2">P2</span></td></tr>
+      </tbody>
+    </table>
+
+    <div class="tech-changes">
+      <div class="tech-changes-title">关键技术改动</div>
+      <ul>
+        <li><code>server/tools/fetch.py</code>：扩展为 async 多 URL 抓取</li>
+        <li><code>server/personas/researcher/PERSONA.md</code>：增强报告格式指导</li>
+        <li><code>server/memory/conversation_store.py</code>：新增 research_summary 字段</li>
+        <li><code>server/llm/prompts.py</code>：扩展格式偏好片段</li>
+        <li><code>obsidian-plugin/src/chat/chatAssistantContent.ts</code>：扩展渲染管线（Mermaid 支持）</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Dimension 3 -->
+  <div class="card" id="dimension-3">
+    <div class="card-header">
+      <div class="card-icon card-icon-green">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      </div>
+      <h2 class="card-title">维度三：生活管理</h2>
+    </div>
+    <span class="gap-indicator gap-small">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      差距较小 · 稳步增强
+    </span>
+    <p><strong>目标：</strong>让 Crabby 成为个人效率的核心枢纽——会话、任务、习惯、日程全部可追踪。</p>
+
+    <h4>当前状态</h4>
+    <div class="current-state">
+      Session/Conversation 二层模型成熟，Cron daemon 和 task_query 已实现，Obsidian 集成完整。会话标签、习惯追踪专用工具、日历集成为空白。
+    </div>
+
+    <h4>需要补齐的能力</h4>
+    <table>
+      <thead>
+        <tr><th>能力</th><th>描述</th><th>优先级</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>会话标签系统</td><td>支持给 Session 打标签（项目/主题），按标签过滤和管理</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>习惯追踪工具</td><td>专用 habit tracker，支持打卡、统计、streaks，可视化坚持天数</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>任务依赖管理</td><td>Cron 任务支持依赖链，前置任务完成后自动触发后续</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>会话合并</td><td>将两个相关 Session 的分支合并</td><td><span class="p-badge p-p2">P2</span></td></tr>
+        <tr><td>通用化 task_query</td><td>不依赖固定命名约定，支持自定义扫描路径和文件模式</td><td><span class="p-badge p-p2">P2</span></td></tr>
+        <tr><td>移动端入口</td><td>Desktop Pet 向移动端扩展，或 PWA 支持</td><td><span class="p-badge p-p3">P3</span></td></tr>
+      </tbody>
+    </table>
+
+    <div class="tech-changes">
+      <div class="tech-changes-title">关键技术改动</div>
+      <ul>
+        <li><code>server/memory/session_store.py</code>：Session 标签扩展</li>
+        <li><code>server/tools/task_query.py</code>：通用化扫描配置</li>
+        <li><code>server/tools/cron.py</code>：习惯追踪 Cron 模板</li>
+        <li><code>server/cron_daemon.py</code>：任务依赖队列</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Dimension 4 -->
+  <div class="card" id="dimension-4">
+    <div class="card-header">
+      <div class="card-icon card-icon-purple">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      </div>
+      <h2 class="card-title">维度四：产品体验与信任</h2>
+    </div>
+    <span class="gap-indicator gap-medium">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      用户留存关键
+    </span>
+    <p><strong>目标：</strong>让普通用户第一次使用就能上手，建立信任感。</p>
+
+    <h4>需要补齐的能力</h4>
+    <table>
+      <thead>
+        <tr><th>能力</th><th>描述</th><th>优先级</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>首次使用引导（Onboarding）</td><td>插件首次运行时引导用户配置 LLM、介绍核心功能</td><td><span class="p-badge p-p0">P0</span></td></tr>
+        <tr><td>示例工作流</td><td>内置几个常见场景的示例会话（调研、写日记、习惯追踪）</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>截图和视觉引导</td><td>配合 README 的安装和使用截图</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>进度指示器</td><td>在聊天中显示"正在搜索…""正在抓取…"等明确的进度反馈</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>错误可解释性</td><td>失败时给出人类可理解的原因和下一步建议</td><td><span class="p-badge p-p1">P1</span></td></tr>
+        <tr><td>数据导出</td><td>用户可以导出自己的学习档案和会话记录</td><td><span class="p-badge p-p2">P2</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Phase Plan -->
+  <div class="card" id="phases">
+    <div class="card-header">
+      <div class="card-icon card-icon-orange">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      </div>
+      <h2 class="card-title">分阶段实施计划</h2>
+    </div>
+
+    <div class="phase-grid">
+      <div class="phase-card phase-1">
+        <span class="phase-tag">Phase 1 · 版本 0.7</span>
+        <div class="phase-title">打牢基础</div>
+        <div class="phase-goal">让 Crabby 具备基本的"学习档案"能力，<code>mentor</code> 人格可以跨会话追踪用户表现。</div>
+        <ul class="phase-items">
+          <li>学习档案数据模型（Session 扩展）</li>
+          <li>错题本工具和记录逻辑</li>
+          <li><code>mentor</code> 人格增强：练习题后自动记录反馈</li>
+          <li>首次使用引导（Onboarding）</li>
+        </ul>
+      </div>
+
+      <div class="phase-card phase-2">
+        <span class="phase-tag">Phase 2 · 版本 0.8</span>
+        <div class="phase-title">调研能力升级</div>
+        <div class="phase-goal">让调研结论可以跨会话复用，输出格式可控制。</div>
+        <ul class="phase-items">
+          <li>调研会话摘要持久化</li>
+          <li>结构化报告生成工具</li>
+          <li><code>fetch</code> 多 URL 并行抓取</li>
+          <li>输出格式指令（<code>!tl;dr</code>、<code>!detail</code>）</li>
+        </ul>
+      </div>
+
+      <div class="phase-card phase-3">
+        <span class="phase-tag">Phase 3 · 版本 0.9</span>
+        <div class="phase-title">生活管理增强</div>
+        <div class="phase-goal">让会话和任务管理更系统。</div>
+        <ul class="phase-items">
+          <li>会话标签系统</li>
+          <li>习惯追踪 Cron 模板</li>
+          <li>任务扫描通用化</li>
+          <li>晨间简报 Cron</li>
+        </ul>
+      </div>
+
+      <div class="phase-card phase-4">
+        <span class="phase-tag">Phase 4 · 版本 1.0</span>
+        <div class="phase-title">成长闭环</div>
+        <div class="phase-goal">让所有能力串联成完整的个人成长闭环。</div>
+        <ul class="phase-items">
+          <li>间隔重复引擎</li>
+          <li>成长可视化面板</li>
+          <li>主动学习推荐</li>
+          <li>引用管理 · 数据导出</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Principles -->
+  <div class="card" id="principles">
+    <div class="card-header">
+      <div class="card-icon card-icon-accent">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
+      <h2 class="card-title">核心原则</h2>
+    </div>
+    <p>在实施过程中坚守以下原则：</p>
+    <ul class="principles-list">
+      <li>
+        <span class="principle-num">1</span>
+        <div class="principle-text"><strong>本地优先，不上云</strong> — 用户数据永远在本地 Vault，不需要账号</div>
+      </li>
+      <li>
+        <span class="principle-num">2</span>
+        <div class="principle-text"><strong>人类可读、可编辑、可删除</strong> — 所有自动生成的内容用户都可以修改和删除</div>
+      </li>
+      <li>
+        <span class="principle-num">3</span>
+        <div class="principle-text"><strong>不替用户做重大决定</strong> — 涉及写作、删除、整理的操作需要用户确认</div>
+      </li>
+      <li>
+        <span class="principle-num">4</span>
+        <div class="principle-text"><strong>不把 Vault 全量塞进模型</strong> — 上下文预算永远有限，按需检索</div>
+      </li>
+      <li>
+        <span class="principle-num">5</span>
+        <div class="principle-text"><strong>不自动大规模改写笔记</strong> — AI 的职责是建议，不是执行</div>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Related Docs -->
+  <div class="card" id="related">
+    <div class="card-header">
+      <div class="card-icon card-icon-purple">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      </div>
+      <h2 class="card-title">关联文档</h2>
+    </div>
+    <p>本文档是产品方向的源头，其他文档各司其职：</p>
+    <div class="doc-links">
+      <a href="execution-plan.html" class="doc-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        execution-plan.md — 发布路线图（版本号 + 验收标准）
+      </a>
+      <a href="技术路线.html" class="doc-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        技术路线.md — 架构决策和分层原则
+      </a>
+      <a href="../README.html" class="doc-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        README.md — 安装和使用首页
+      </a>
+      <a href="项目能力概览.html" class="doc-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+        项目能力概览.md — 产品能力清单
+      </a>
+    </div>
+  </div>
+
+  <div class="footer">
+    Crabby 产品愿景文档 · 2026 · 本地优先，数据不上云
+  </div>
+</div>
+</body>
+</html>

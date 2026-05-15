@@ -4,6 +4,7 @@ Thumbs.db
 
 # IDEs and environments
 .vscode/
+.vscode/settings.json
 .idea/
 .env
 
@@ -52,6 +53,9 @@ obsidian-plugin/main.js.map
 
 # PM2 logs
 logs/
+
+# Local-only scripts (contains hardcoded personal paths)
+scripts/build-and-deploy.py
 
 
 reference/

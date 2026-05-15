@@ -166,8 +166,10 @@ Crabby 当前已经具备发布给早期用户试用的主干能力：
 
 - `README.md`：发布首页、安装、开发、排障。
 - `docs/项目能力概览.md`：第一次了解项目的产品说明。
+- `docs/growth-vision.md`：产品愿景、差异化定位、四维能力差距分析和分阶段演进计划。
 - `docs/architecture.md`：架构导览。
 - `docs/技术路线.md`：维护者技术路线。
+- `docs/execution-plan.md`：发布路线图，把 growth-vision.md 的阶段计划映射到具体版本。
 - `docs/会话设计.md`：session/conversation 专题。
 - `docs/llm-provider-matrix.md`：provider preset。
 - `docs/claude-code-analysis.md`：设计参考资料。

@@ -13,7 +13,6 @@ import json
 import platform
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -51,21 +50,23 @@ def build_runtime(version: str) -> Path:
     pyinstaller_dist = ROOT / "dist" / "pyinstaller"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Use `uv run` to get a temporary venv with pyinstaller AND all server
+    # dependencies (needed by PyInstaller to trace imports in main.py).
+    # --no-project avoids picking up the root pyproject.toml (which does not exist).
     command = [
-        sys.executable,
-        "-m",
-        "PyInstaller",
+        "uv", "run",
+        "--no-project",
+        "--with", "pyinstaller",
+        "--extra", str(SERVER_DIR),
+        "--extra-dev",
+        "python", "-m", "PyInstaller",
         "--clean",
         "--noconfirm",
         "--onefile",
-        "--name",
-        "crabby-backend",
-        "--paths",
-        str(SERVER_DIR),
-        "--workpath",
-        str(work_dir),
-        "--distpath",
-        str(pyinstaller_dist),
+        "--name", "crabby-backend",
+        "--paths", str(SERVER_DIR),
+        "--workpath", str(work_dir),
+        "--distpath", str(pyinstaller_dist),
         str(SERVER_DIR / "main.py"),
     ]
     subprocess.run(command, cwd=ROOT, check=True)

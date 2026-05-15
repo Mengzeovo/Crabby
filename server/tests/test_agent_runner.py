@@ -77,12 +77,15 @@ async def test_run_agent_turn_executes_tool_then_final_reply(
         },
     ]
 
+    seen_messages: list[list[dict[str, Any]]] = []
+
     async def fake_chat_completion(
         *,
         messages: list[dict[str, Any]],
         system: str,
         tools: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
+        seen_messages.append(messages)
         return responses.pop(0)
 
     monkeypatch.setattr(agent_runner, "chat_completion", fake_chat_completion)
@@ -103,7 +106,26 @@ async def test_run_agent_turn_executes_tool_then_final_reply(
     assert session.messages[0]["role"] == "assistant"
     assert session.messages[0]["message_id"].startswith("m_")
     assert session.messages[1]["role"] == "user"
-    assert session.messages[1]["content"] == [
+    assert session.messages[1]["content"][0]["type"] == "tool_result"
+    assert session.messages[1]["content"][0]["tool_use_id"] == "toolu_1"
+    assert session.messages[1]["content"][0]["content"] == "echo: hello"
+    ui_payload = session.messages[1]["content"][0]["ui"]
+    assert isinstance(ui_payload["elapsed_ms"], int)
+    assert ui_payload["elapsed_ms"] >= 0
+    assert ui_payload == {
+        "id": "toolu_1",
+        "tool_use_id": "toolu_1",
+        "name": "echo",
+        "tool": "echo",
+        "output": "echo: hello",
+        "metadata": {},
+        "status": "success",
+        "is_error": False,
+        "is_truncated": False,
+        "cache_path": None,
+        "elapsed_ms": ui_payload["elapsed_ms"],
+    }
+    assert seen_messages[1][1]["content"] == [
         {
             "type": "tool_result",
             "tool_use_id": "toolu_1",
