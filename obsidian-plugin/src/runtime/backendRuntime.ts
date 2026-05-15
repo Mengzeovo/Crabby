@@ -32,6 +32,10 @@ import {
   seedOrMigrateDefaultPersonas,
 } from "./defaultConfigTemplates";
 import {
+  migrateRuntimeDataDirectories,
+  type RuntimeDataMigration,
+} from "./runtimeDataMigration";
+import {
   resolveRuntimeExecutablePath,
   serializeRuntimeExecutablePath,
 } from "./runtimeState";
@@ -49,6 +53,7 @@ const HOST_HEARTBEAT_TIMEOUT_SECONDS = 180;
 
 export interface RuntimeLayout {
   pluginDir: string;
+  userDataDir: string;
   configDir: string;
   envPath: string;
   mcpConfigPath: string;
@@ -135,13 +140,15 @@ export function resolvePluginRuntimeLayout(app: App): RuntimeLayout {
 
   const vaultBasePath = adapter.getBasePath();
   const pluginDir = join(vaultBasePath, app.vault.configDir, "plugins", PLUGIN_ID);
-  const configDir = join(pluginDir, "config");
-  const dataDir = join(pluginDir, "data");
-  const logsDir = join(pluginDir, "logs");
+  const userDataDir = join(vaultBasePath, PLUGIN_ID);
+  const configDir = join(userDataDir, "config");
+  const dataDir = join(userDataDir, "data");
+  const logsDir = join(userDataDir, "logs");
   const runtimeDir = join(pluginDir, "runtime");
 
   return {
     pluginDir,
+    userDataDir,
     configDir,
     envPath: join(configDir, ".env"),
     mcpConfigPath: join(configDir, "mcp_servers.json"),
@@ -177,7 +184,10 @@ export class BackendRuntimeManager {
   }
 
   async ensureRuntimeLayout(): Promise<RuntimeLayout> {
+    this.migrateLegacyRuntimeData();
+
     for (const path of [
+      this.layout.userDataDir,
       this.layout.configDir,
       this.layout.promptsDir,
       this.layout.personasDir,
@@ -666,6 +676,44 @@ export class BackendRuntimeManager {
         state.executablePath,
       ),
     };
+  }
+
+  private migrateLegacyRuntimeData(): void {
+    const legacyPluginDir = this.layout.pluginDir;
+    const migrations: RuntimeDataMigration[] = [
+      {
+        label: "config",
+        legacyPath: join(legacyPluginDir, "config"),
+        targetPath: this.layout.configDir,
+      },
+      {
+        label: "data",
+        legacyPath: join(legacyPluginDir, "data"),
+        targetPath: this.layout.dataDir,
+      },
+      {
+        label: "logs",
+        legacyPath: join(legacyPluginDir, "logs"),
+        targetPath: this.layout.logsDir,
+      },
+    ];
+
+    for (const migration of migrateRuntimeDataDirectories(migrations)) {
+      if (migration.status === "missing") {
+        continue;
+      }
+
+      this.appendRuntimeLog(
+        [
+          `legacy ${migration.label} migration: ${migration.status}`,
+          `from=${migration.legacyPath}`,
+          `to=${migration.targetPath}`,
+          `moved=${migration.movedEntries}`,
+          `skipped=${migration.skippedEntries}`,
+          `message=${migration.message}`,
+        ].join(" "),
+      );
+    }
   }
 
   private appendRuntimeLog(message: string): void {

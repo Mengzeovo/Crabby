@@ -104,6 +104,10 @@ Install by extracting the zip to:
 <YourVault>/.obsidian/plugins/crabby/
 ```
 
+User configuration, sessions, attachments, cron jobs, caches, and logs are stored
+outside the plugin install directory at `<YourVault>/crabby/`, so the plugin
+folder can be replaced during upgrades without deleting user data.
+
 Then restart Obsidian, open `Settings -> Community plugins`, disable Restricted Mode if needed, and enable **Crabby**. On macOS or Linux, make the backend executable if your unzip tool did not preserve permissions:
 
 ```bash
@@ -118,10 +122,21 @@ chmod +x "<YourVault>/.obsidian/plugins/crabby/runtime/backend/0.1.0/darwin/crab
 4. Click **Test Current Profile**.
 5. Open the Crabby chat view.
 
-Plugin-managed runtime files live under:
+Plugin install files live under:
 
 ```text
 <YourVault>/.obsidian/plugins/crabby/
+  manifest.json
+  main.js
+  runtime/state.json
+  runtime/host-heartbeat.json
+  runtime/backend/
+```
+
+Plugin-managed user data lives under:
+
+```text
+<YourVault>/crabby/
   config/.env
   config/mcp_servers.json
   config/prompts/
@@ -131,8 +146,6 @@ Plugin-managed runtime files live under:
   data/cron_jobs.json
   data/cache/tool-results/
   logs/
-  runtime/state.json
-  runtime/host-heartbeat.json
 ```
 
 Do not commit real API keys or private MCP configuration.
@@ -275,6 +288,17 @@ chmod +x "<YourVault>/.obsidian/plugins/crabby/runtime/backend/0.1.0/darwin/crab
 
 ```text
 <YourVault>/.obsidian/plugins/crabby/
+  manifest.json
+  main.js
+  runtime/state.json
+  runtime/host-heartbeat.json
+  runtime/backend/
+```
+
+插件托管的用户数据位于：
+
+```text
+<YourVault>/crabby/
   config/.env
   config/mcp_servers.json
   config/prompts/
@@ -284,8 +308,6 @@ chmod +x "<YourVault>/.obsidian/plugins/crabby/runtime/backend/0.1.0/darwin/crab
   data/cron_jobs.json
   data/cache/tool-results/
   logs/
-  runtime/state.json
-  runtime/host-heartbeat.json
 ```
 
 不要提交真实 API key 或私有 MCP 配置。

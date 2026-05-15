@@ -1,6 +1,6 @@
 # Agent Handoff
 
-Last rewritten: 2026-05-14
+Last rewritten: 2026-05-15
 
 This file is the fast entry point for agents and maintainers taking over the
 Crabby repository. It should reflect the current repo, not old plans or memory
@@ -167,6 +167,9 @@ Important plugin files and folders:
 - `obsidian-plugin/src/runtime/defaultConfigTemplates.ts`: seeds default prompt
   and persona templates. Persona seeding is based on discovered `PERSONA.md`
   files, so incidental files do not block first-run defaults.
+- `obsidian-plugin/src/runtime/runtimeDataMigration.ts`: migrates legacy
+  plugin-local `config/`, `data/`, and `logs/` into Vault-root `crabby/`
+  storage without overwriting existing target files.
 - `obsidian-plugin/src/runtime/runtimeState.ts`: serializes production backend
   executable paths relative to the installed plugin runtime directory and
   resolves relative/legacy absolute paths at launch.
@@ -315,7 +318,12 @@ npm run start
 
 - General runtime configuration lives in `.env`.
 - Plugin-managed runtime config lives under
-  `<vault>/.obsidian/plugins/crabby/config/`.
+  `<vault>/crabby/config/`.
+- Plugin-managed user data lives under `<vault>/crabby/data/`, and logs live
+  under `<vault>/crabby/logs/`.
+- Plugin install/runtime assets stay under
+  `<vault>/.obsidian/plugins/crabby/`, so the plugin folder can be replaced
+  without deleting sessions or provider configuration.
 - `PROMPTS_DIR` controls prompt fragments.
 - `PERSONAS_DIR` controls runtime personas.
 - Active LLM secrets/base URL can use generic `LLM_API_KEY` and
@@ -353,7 +361,7 @@ npm run start
 ## Cron Behavior
 
 - Tools: `cron_create`, `cron_list`, `cron_delete`.
-- Persistence: `<vault>/.obsidian/plugins/crabby/data/cron_jobs.json` in
+- Persistence: `<vault>/crabby/data/cron_jobs.json` in
   plugin-managed production runs, or `DATA_DIR/cron_jobs.json` generally.
 - Daemon scans once per second and consumes due jobs FIFO.
 - Execution waits for idle session activity, up to 30 minutes.

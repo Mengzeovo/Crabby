@@ -820,6 +820,77 @@ function testRuntimeStatePaths(mod) {
   );
 }
 
+function testRuntimeDataMigration(mod) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "laa-runtime-data-"));
+
+  const legacyConfig = path.join(
+    tempDir,
+    "Vault",
+    ".obsidian",
+    "plugins",
+    "crabby",
+    "config",
+  );
+  const targetConfig = path.join(tempDir, "Vault", "crabby", "config");
+  fs.mkdirSync(legacyConfig, { recursive: true });
+  fs.writeFileSync(path.join(legacyConfig, ".env"), "LLM_PROVIDER=openai\n", "utf8");
+
+  const moved = mod.migrateRuntimeDataDirectory({
+    label: "config",
+    legacyPath: legacyConfig,
+    targetPath: targetConfig,
+  });
+  assert.equal(moved.status, "moved");
+  assert.equal(fs.existsSync(legacyConfig), false);
+  assert.equal(fs.readFileSync(path.join(targetConfig, ".env"), "utf8"), "LLM_PROVIDER=openai\n");
+
+  const legacyData = path.join(
+    tempDir,
+    "Vault",
+    ".obsidian",
+    "plugins",
+    "crabby",
+    "data",
+  );
+  const targetData = path.join(tempDir, "Vault", "crabby", "data");
+  fs.mkdirSync(path.join(legacyData, "sessions"), { recursive: true });
+  fs.mkdirSync(path.join(targetData, "sessions"), { recursive: true });
+  fs.writeFileSync(
+    path.join(legacyData, "sessions", "new-session.json"),
+    "{}",
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(legacyData, "sessions", "conflict.json"),
+    "legacy",
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(targetData, "sessions", "conflict.json"),
+    "target",
+    "utf8",
+  );
+
+  const merged = mod.migrateRuntimeDataDirectory({
+    label: "data",
+    legacyPath: legacyData,
+    targetPath: targetData,
+  });
+  assert.equal(merged.status, "merged");
+  assert.equal(
+    fs.readFileSync(path.join(targetData, "sessions", "new-session.json"), "utf8"),
+    "{}",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(targetData, "sessions", "conflict.json"), "utf8"),
+    "target",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(legacyData, "sessions", "conflict.json"), "utf8"),
+    "legacy",
+  );
+}
+
 function testSearchEngine(mod) {
   const docs = [
     {
@@ -973,6 +1044,10 @@ async function main() {
     "runtime/runtimeState.ts",
     "runtime-state.cjs",
   );
+  const runtimeDataMigration = await loadModule(
+    "runtime/runtimeDataMigration.ts",
+    "runtime-data-migration.cjs",
+  );
   const searchEngine = await loadModule("search/searchEngine.ts", "search-engine.cjs");
 
   await testBackendConfig(backendConfig);
@@ -981,11 +1056,12 @@ async function main() {
   testLlmProviders(llmProviders);
   testDefaultConfigTemplates(defaultConfigTemplates);
   testRuntimeStatePaths(runtimeState);
+  testRuntimeDataMigration(runtimeDataMigration);
   testSearchEngine(searchEngine);
   testObsidianVaultResolution();
 
   console.log(
-    "backendConfig, llmProviders, mcpConfig, settingsData, runtime state, default template, and search tests passed",
+    "backendConfig, llmProviders, mcpConfig, settingsData, runtime state, runtime data migration, default template, and search tests passed",
   );
 }
 

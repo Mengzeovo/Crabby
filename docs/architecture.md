@@ -79,10 +79,23 @@ The backend watchdog exits orphaned managed backends when the host heartbeat bec
 
 ## Plugin-Managed Files
 
-In a normal installed plugin, runtime state lives under the plugin folder:
+In a normal installed plugin, install/runtime assets live under the plugin
+folder:
 
 ```text
 <vault>/.obsidian/plugins/crabby/
+  manifest.json
+  main.js
+  runtime/state.json
+  runtime/host-heartbeat.json
+  runtime/backend/
+```
+
+User-owned runtime data lives under the Vault root so the plugin folder can be
+replaced during upgrades:
+
+```text
+<vault>/crabby/
   config/.env
   config/mcp_servers.json
   config/prompts/
@@ -92,11 +105,13 @@ In a normal installed plugin, runtime state lives under the plugin folder:
   data/cron_jobs.json
   data/cache/tool-results/
   logs/
-  runtime/state.json
-  runtime/host-heartbeat.json
 ```
 
-The repository `prompts/` and `personas/` directories are defaults. In plugin-managed runs, the plugin seeds runtime copies into `config/prompts/` and `config/personas/`, then passes those paths to the backend through environment variables.
+On startup, the plugin migrates legacy `<vault>/.obsidian/plugins/crabby/config`,
+`data`, and `logs` directories into `<vault>/crabby/` when possible. Existing
+target files are kept, and conflicting legacy files are left in place.
+
+The repository `prompts/` and `personas/` directories are defaults. In plugin-managed runs, the plugin seeds runtime copies into `<vault>/crabby/config/prompts/` and `<vault>/crabby/config/personas/`, then passes those paths to the backend through environment variables.
 
 ## Backend
 
@@ -337,7 +352,7 @@ Cron jobs are managed by built-in tools and `server/cron_daemon.py`.
 
 Behavior:
 
-- Persisted at `<vault>/.obsidian/plugins/crabby/data/cron_jobs.json`.
+- Persisted at `<vault>/crabby/data/cron_jobs.json`.
 - Supports 5-field cron and 6-field seconds-first cron.
 - Scans once per second.
 - Queues due jobs FIFO.
