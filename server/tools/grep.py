@@ -21,6 +21,7 @@ from tools.base import Context, Tool, ToolResult
 BLOCKED_DIRS = {
     ".obsidian",
     ".crabby",
+    ".Crabby",
     ".LifeAssistantAgent",
     ".git",
     "node_modules",

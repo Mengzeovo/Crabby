@@ -29,6 +29,7 @@ BLOCKED_DIRS = {
     ".git",
     ".obsidian",
     ".crabby",
+    ".Crabby",
     ".LifeAssistantAgent",
     "node_modules",
     ".venv",

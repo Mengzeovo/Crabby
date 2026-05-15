@@ -12,6 +12,7 @@ import {
 const BLOCKED_DIRS = new Set([
   ".obsidian",
   ".crabby",
+  ".Crabby",
   ".LifeAssistantAgent",
   ".git",
   "node_modules",
