@@ -134,6 +134,22 @@ export class ChatView extends ItemView {
     const treeListEl = treePanelEl.createDiv({ cls: "conversation-tree-list" });
 
     const bodyArea = container.createDiv({ cls: "chat-body" });
+
+    if (this.plugin.settings.llmProfiles.length === 0) {
+      const banner = bodyArea.createDiv({ cls: "chat-no-profile-banner" });
+      banner.createDiv({ cls: "chat-no-profile-banner-icon" }).setText("!");
+      const bannerText = banner.createDiv({ cls: "chat-no-profile-banner-text" });
+      bannerText.createSpan({ text: "尚未配置 LLM，当前无法发送消息。" });
+      const bannerAction = banner.createEl("button", {
+        cls: "chat-no-profile-banner-btn",
+        text: "前往设置",
+      });
+      bannerAction.addEventListener("click", () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this.app as any).setting?.openTabById?.("crabby");
+      });
+    }
+
     const minimapEl = bodyArea.createDiv({ cls: "chat-minimap" });
     minimapEl.createDiv({ cls: "chat-minimap-line" });
     const messagesEl = bodyArea.createDiv({ cls: "chat-messages" });

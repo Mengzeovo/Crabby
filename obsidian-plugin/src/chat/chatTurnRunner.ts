@@ -107,6 +107,15 @@ export function createChatTurnRunner(
     }
     const backfillUserMessageId = !overrideText;
 
+    const profileApply = await plugin.applyLlmProfile();
+    if (!profileApply.ok) {
+      transcript.appendMessage(
+        "assistant",
+        `❌ ${profileApply.message}\n\n请在设置中配置 LLM 后再试。`,
+      );
+      return;
+    }
+
     const vaultSync = await plugin.ensureBackendVaultPathSynced(client);
     if (!vaultSync.ok) {
       transcript.appendMessage(
@@ -295,7 +304,8 @@ export function createChatTurnRunner(
           await sessions.syncCurrentSessionTitle(sessionId);
         },
 
-        onError: (message: string) => {
+        onError: (payload: { message: string; code: string }) => {
+          const message = payload.message;
           if (state.isAborted) {
             return;
           }
