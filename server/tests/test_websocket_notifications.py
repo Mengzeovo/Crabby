@@ -495,3 +495,121 @@ def test_websocket_rejects_unsafe_conversation_id(tmp_path: Path):
 
     assert exc_info.value.code == 1008
     assert not (tmp_path / "escape.json").exists()
+
+
+def test_streaming_tool_events_forwarded_to_websocket(monkeypatch, tmp_path: Path):
+    """WebSocket forwards tool_use_start/delta/end streaming events from the adapter."""
+    responses = [
+        {
+            "stop_reason": "tool_use",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "call_1",
+                    "name": "lookup",
+                    "input": {"q": "hello"},
+                }
+            ],
+        },
+        {
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": "lookup done"}],
+        },
+    ]
+
+    async def fake_chat_completion_stream(*, messages, system, tools):
+        resp = responses.pop(0)
+        if resp["stop_reason"] == "tool_use":
+            yield {"type": "tool_use_start", "id": "call_1", "name": "lookup", "index": 0}
+            yield {"type": "tool_use_delta", "arguments_delta": '{"q":', "index": 0}
+            yield {"type": "tool_use_delta", "arguments_delta": '"hello"}', "index": 0}
+            yield {"type": "tool_use_end", "index": 0}
+        yield {"type": "done", "response": resp}
+
+    monkeypatch.setattr(websocket_api, "chat_completion_stream", fake_chat_completion_stream)
+    monkeypatch.setattr(websocket_api.settings, "llm_provider", "deepseek")
+
+    app, store = _build_ws_app(tmp_path)
+    store.create("session-1")
+
+    tool_registry = websocket_api._registry
+    tool_registry.register(EchoTool())
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/sessions/session-1/conversations/root/ws") as ws:
+            ws.send_text(json.dumps({"type": "message", "content": "look up hello"}))
+            events = _collect_until_done(ws)
+
+    tool_start_events = [e for e in events if e["type"] == "tool_start"]
+    assert len(tool_start_events) == 1
+    assert tool_start_events[0]["id"] == "call_1"
+    assert tool_start_events[0]["name"] == "lookup"
+
+    delta_events = [e for e in events if e["type"] == "tool_use_delta"]
+    assert len(delta_events) == 2
+    assert delta_events[0]["arguments_delta"] == '{"q":'
+    assert delta_events[1]["arguments_delta"] == '"hello"}'
+
+    tool_end_events = [e for e in events if e["type"] == "tool_use_end"]
+    assert len(tool_end_events) == 1
+
+    tool_result_events = [e for e in events if e["type"] == "tool_result"]
+    assert len(tool_result_events) == 1
+
+    done_event = next(e for e in events if e["type"] == "done")
+    assert done_event["message_id"] is not None
+
+
+def test_streaming_tool_zero_args_emits_empty_delta(monkeypatch, tmp_path: Path):
+    """Zero-argument tool call still emits a tool_use_delta with empty string."""
+    responses = [
+        {
+            "stop_reason": "tool_use",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "call_2",
+                    "name": "no_args_tool",
+                    "input": {},
+                }
+            ],
+        },
+        {
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": "ok"}],
+        },
+    ]
+
+    async def fake_chat_completion_stream(*, messages, system, tools):
+        resp = responses.pop(0)
+        if resp["stop_reason"] == "tool_use":
+            yield {"type": "tool_use_start", "id": "call_2", "name": "no_args_tool", "index": 0}
+            yield {"type": "tool_use_delta", "arguments_delta": "", "index": 0}
+            yield {"type": "tool_use_end", "index": 0}
+        yield {"type": "done", "response": resp}
+
+    monkeypatch.setattr(websocket_api, "chat_completion_stream", fake_chat_completion_stream)
+    monkeypatch.setattr(websocket_api.settings, "llm_provider", "deepseek")
+
+    app, store = _build_ws_app(tmp_path)
+    store.create("session-1")
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/sessions/session-1/conversations/root/ws") as ws:
+            ws.send_text(json.dumps({"type": "message", "content": "run no args"}))
+            events = _collect_until_done(ws)
+
+    tool_start_events = [e for e in events if e["type"] == "tool_start"]
+    assert len(tool_start_events) == 1
+    assert tool_start_events[0]["id"] == "call_2"
+    assert tool_start_events[0]["name"] == "no_args_tool"
+
+    delta_events = [e for e in events if e["type"] == "tool_use_delta"]
+    assert len(delta_events) == 1
+    assert delta_events[0]["arguments_delta"] == ""
+
+    tool_end_events = [e for e in events if e["type"] == "tool_use_end"]
+    assert len(tool_end_events) == 1
+
+    done_event = next(e for e in events if e["type"] == "done")
+    assert done_event["message_id"] is not None

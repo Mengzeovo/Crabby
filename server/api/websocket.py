@@ -651,6 +651,16 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                                         "id": delta["id"],
                                     },
                                 )
+                            elif delta["type"] == "tool_use_delta":
+                                await _send(
+                                    ws,
+                                    {
+                                        "type": "tool_use_delta",
+                                        "arguments_delta": delta["arguments_delta"],
+                                    },
+                                )
+                            elif delta["type"] == "tool_use_end":
+                                await _send(ws, {"type": "tool_use_end"})
                             elif delta["type"] == "done":
                                 full_response = delta["response"]
 

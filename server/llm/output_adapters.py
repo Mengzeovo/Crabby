@@ -250,6 +250,15 @@ class OpenAICompatibleStreamAdapter:
                     "id": self.tool_calls_acc[idx]["id"],
                     "name": self.tool_calls_acc[idx]["name"],
                 })
+                # Always emit tool_use_delta on first appearance, even with empty args.
+                # Protocol requirement: front-end streaming layer always expects a
+                # tool_use_delta event after tool_start, regardless of whether the
+                # tool has arguments. Omitting this delta would break front-end state
+                # machines that track "waiting for args" vs "args received".
+                events.append({
+                    "type": "tool_use_delta",
+                    "arguments_delta": "",
+                })
             else:
                 tc = self.tool_calls_acc[idx]
                 if tc_delta.get("id"):

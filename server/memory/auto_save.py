@@ -9,6 +9,7 @@ from config import settings
 from llm.client import chat_completion
 from llm.tool_executor import build_default_context, execute_tool_call
 from memory import Session, SessionStore
+from llm.session_activity import start_session_activity, stop_session_activity
 from tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -189,53 +190,57 @@ async def _process_auto_save(
     )
     max_iterations: int = getattr(settings, "auto_save_max_iterations", 10)
 
-    for _ in range(max_iterations):
-        response = await chat_completion(
-            messages=agent_messages,
-            system=system_prompt,
-            tools=tools_schema,
-            max_tokens=2048,
-        )
-
-        content_blocks = response.get("content", [])
-        stop_reason = response.get("stop_reason", "end_turn")
-
-        agent_messages.append({"role": "assistant", "content": content_blocks})
-
-        if stop_reason != "tool_use":
-            break
-
-        tool_results = []
-        for block in content_blocks:
-            if block.get("type") != "tool_use":
-                continue
-
-            tool_name = block["name"]
-            tool_input = block["input"]
-            tool_id = block["id"]
-
-            llm_text, _ = await execute_tool_call(
-                registry,
-                tool_name,
-                tool_input,
-                ctx=ctx,
-                tool_id=tool_id,
+    start_session_activity("auto_save", session_id=session.id)
+    try:
+        for _ in range(max_iterations):
+            response = await chat_completion(
+                messages=agent_messages,
+                system=system_prompt,
+                tools=tools_schema,
+                max_tokens=2048,
             )
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tool_id,
-                "content": llm_text,
-            })
 
-        agent_messages.append({"role": "user", "content": tool_results})
-    else:
-        # Exhausted all iterations without a final non-tool response.
-        logger.warning(
-            "Auto-save for session %s exhausted %d iterations without a final response.",
-            session.id,
-            max_iterations,
-        )
-        return  # Don't send "complete" notification.
+            content_blocks = response.get("content", [])
+            stop_reason = response.get("stop_reason", "end_turn")
+
+            agent_messages.append({"role": "assistant", "content": content_blocks})
+
+            if stop_reason != "tool_use":
+                break
+
+            tool_results = []
+            for block in content_blocks:
+                if block.get("type") != "tool_use":
+                    continue
+
+                tool_name = block["name"]
+                tool_input = block["input"]
+                tool_id = block["id"]
+
+                llm_text, _ = await execute_tool_call(
+                    registry,
+                    tool_name,
+                    tool_input,
+                    ctx=ctx,
+                    tool_id=tool_id,
+                )
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tool_id,
+                    "content": llm_text,
+                })
+
+            agent_messages.append({"role": "user", "content": tool_results})
+        else:
+            # Exhausted all iterations without a final non-tool response.
+            logger.warning(
+                "Auto-save for session %s exhausted %d iterations without a final response.",
+                session.id,
+                max_iterations,
+            )
+            return  # Don't send "complete" notification.
+    finally:
+        stop_session_activity("auto_save", session_id=session.id)
 
     logger.info("Auto-save complete for session %s.", session.id)
 

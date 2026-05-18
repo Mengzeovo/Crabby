@@ -5,12 +5,14 @@
 - refcount > 0 表示 Agent 正忙，Cron Daemon 禁止触发
 - refcount == 0 表示空闲，Cron 可以安全触发
 - 可选注册心跳回调（如 WebSocket keepalive）
+- 支持 per-session refcount 和全局总计数
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from collections import defaultdict
 from typing import Callable
 
 logger = logging.getLogger(__name__)
@@ -19,8 +21,11 @@ logger = logging.getLogger(__name__)
 # 全局状态
 # ---------------------------------------------------------------------------
 
-_refcount: int = 0
-_active_reasons: dict[str, int] = {}  # reason → count
+# Per-session refcount: session_id -> active operation count
+# session_id="" represents callers that don't pass a session_id (backward compat)
+_refcount: dict[str, int] = defaultdict(int)
+# Per-session active reasons: session_id -> { reason -> count }
+_active_reasons: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 _heartbeat_callbacks: list[Callable[[], None]] = []
 _heartbeat_task: asyncio.Task | None = None
 
@@ -33,10 +38,11 @@ HEARTBEAT_INTERVAL_S = 30  # 心跳间隔（秒）
 
 
 async def _heartbeat_loop() -> None:
-    """周期性心跳循环，在 refcount > 0 时运行。"""
+    """周期性心跳循环，在全局总 refcount > 0 时运行。"""
     while True:
         await asyncio.sleep(HEARTBEAT_INTERVAL_S)
-        logger.debug("session_keepalive_heartbeat: refcount=%d", _refcount)
+        total = sum(_refcount.values())
+        logger.debug("session_keepalive_heartbeat: total_refcount=%d", total)
         for cb in _heartbeat_callbacks:
             try:
                 cb()
@@ -69,53 +75,63 @@ def _stop_heartbeat() -> None:
 # ---------------------------------------------------------------------------
 
 
-def start_session_activity(reason: str) -> None:
-    """标记一个活跃操作的开始。refcount 从 0→1 时启动心跳。
+def start_session_activity(reason: str, session_id: str = "") -> None:
+    """标记一个活跃操作的开始。全局总 refcount 从 0→1 时启动心跳。
 
     Args:
         reason: 活跃原因标识（如 'api_call', 'tool_exec', 'cron_job'）
+        session_id: 会话 ID，默认为空字符串（全局累积）。
+                   传入 session_id 时只影响该会话的计数器。
     """
-    global _refcount
-    _refcount += 1
-    _active_reasons[reason] = _active_reasons.get(reason, 0) + 1
+    prev_total = sum(_refcount.values())
+    _refcount[session_id] += 1
+    _active_reasons[session_id][reason] += 1
 
-    if _refcount == 1:
-        logger.debug("Session 进入忙碌: reason=%s", reason)
+    if prev_total == 0:
+        logger.debug("Session 进入忙碌: session_id=%r reason=%s", session_id, reason)
         if _heartbeat_callbacks:
             _start_heartbeat()
 
 
-def stop_session_activity(reason: str) -> None:
-    """标记一个活跃操作的结束。refcount 回到 0 时停止心跳。
+def stop_session_activity(reason: str, session_id: str = "") -> None:
+    """标记一个活跃操作的结束。全局总 refcount 回到 0 时停止心跳。
 
     Args:
         reason: 与 start_session_activity 对应的原因标识
+        session_id: 会话 ID，默认为空字符串（全局累积）。
     """
-    global _refcount
-    if _refcount > 0:
-        _refcount -= 1
+    if _refcount[session_id] > 0:
+        _refcount[session_id] -= 1
+        session_reasons = _active_reasons[session_id]
+        count = session_reasons.get(reason, 0) - 1
+        if count > 0:
+            session_reasons[reason] = count
+        else:
+            session_reasons.pop(reason, None)
 
-    count = _active_reasons.get(reason, 0) - 1
-    if count > 0:
-        _active_reasons[reason] = count
-    else:
-        _active_reasons.pop(reason, None)
-
-    if _refcount == 0:
-        logger.debug("Session 回到空闲: last_reason=%s", reason)
+    if sum(_refcount.values()) == 0:
+        logger.debug("Session 回到空闲: session_id=%r last_reason=%s", session_id, reason)
         _stop_heartbeat()
 
 
-def is_session_idle() -> bool:
-    """检查当前会话是否空闲（refcount == 0）。"""
-    return _refcount == 0
+def is_session_idle(session_id: str = "") -> bool:
+    """检查会话是否空闲。
+
+    Args:
+        session_id: 为空时检查全局总计数是否为零；
+                   指定 session_id 时只检查该会话的计数器。
+    """
+    if session_id:
+        return _refcount.get(session_id, 0) == 0
+    return sum(_refcount.values()) == 0
 
 
 def get_session_activity_info() -> dict:
     """获取当前活跃状态的诊断信息。"""
     return {
-        "refcount": _refcount,
-        "active_reasons": dict(_active_reasons),
+        "refcount": dict(_refcount),
+        "total_refcount": sum(_refcount.values()),
+        "active_reasons": {sid: dict(reasons) for sid, reasons in _active_reasons.items()},
         "heartbeat_running": _heartbeat_task is not None
         and not _heartbeat_task.done(),
     }

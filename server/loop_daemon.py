@@ -148,6 +148,8 @@ async def _execute_loop_job(job, registry, session_store, vault_path: Path) -> N
     from llm.tool_executor import build_default_context
     from tools.registry import get_search_service
 
+    # Loop jobs use empty session_id to participate in the global refcount,
+    # ensuring they wait for the system to be globally idle before running.
     start_session_activity("loop_job")
 
     try:

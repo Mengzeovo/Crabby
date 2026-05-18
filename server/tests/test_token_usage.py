@@ -405,8 +405,9 @@ def test_openai_stream_adapter_preserves_tool_call_events():
     )
     events.append(adapter.done_event())
 
-    assert events[:4] == [
+    assert events[:5] == [
         {"type": "tool_use_start", "id": "call_1", "name": "lookup"},
+        {"type": "tool_use_delta", "arguments_delta": ""},
         {"type": "tool_use_delta", "arguments_delta": '{"q"'},
         {"type": "tool_use_delta", "arguments_delta": ':"x"}'},
         {"type": "tool_use_end"},
