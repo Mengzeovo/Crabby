@@ -238,6 +238,8 @@ export interface MCPRuntimeStatus {
   last_reload_ok?: boolean | null;
   last_reload_error?: string | null;
   last_reload_at?: string | null;
+  vault_tools_enabled?: boolean;
+  vault_tools_tools?: string[];
 }
 
 export interface MCPStatusResult {

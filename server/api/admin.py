@@ -36,6 +36,8 @@ class MCPStatusResponse(BaseModel):
     last_reload_ok: bool | None = None
     last_reload_error: str | None = None
     last_reload_at: str | None = None
+    vault_tools_enabled: bool = False
+    vault_tools_tools: list[str] = Field(default_factory=list)
 
 
 class ProfileTestResponse(BaseModel):

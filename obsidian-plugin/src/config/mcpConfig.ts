@@ -441,6 +441,16 @@ export function formatMcpRuntimeStatus(status: MCPRuntimeStatus): string {
     }
   }
 
+  lines.push(`Vault 工具集：${status.vault_tools_enabled ? "已启用" : "未启用"}`);
+  if (status.vault_tools_enabled) {
+    const vt = status.vault_tools_tools ?? [];
+    if (vt.length === 0) {
+      lines.push("  已加载工具：无（vault/.crabby/tools/ 目录为空或未创建）");
+    } else {
+      lines.push(`  已加载工具：${vt.join("、")}`);
+    }
+  }
+
   lines.push(
     `最近一次重载：${
       status.last_reload_ok === undefined || status.last_reload_ok === null

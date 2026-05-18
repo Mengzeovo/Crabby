@@ -42,6 +42,8 @@ class MCPRuntimeStatus:
     last_reload_ok: bool | None = None
     last_reload_error: str | None = None
     last_reload_at: str | None = None
+    vault_tools_enabled: bool = False
+    vault_tools_tools: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -56,6 +58,8 @@ class MCPRuntimeStatus:
             "last_reload_ok": self.last_reload_ok,
             "last_reload_error": self.last_reload_error,
             "last_reload_at": self.last_reload_at,
+            "vault_tools_enabled": self.vault_tools_enabled,
+            "vault_tools_tools": list(self.vault_tools_tools),
         }
 
 
@@ -120,6 +124,8 @@ def _record_reload_result(
     error: str | None = None,
     connected_servers: list[str] | None = None,
     tools_by_server: dict[str, list[str]] | None = None,
+    vault_tools_enabled: bool = False,
+    vault_tools_tools: list[str] | None = None,
 ) -> None:
     ensure_mcp_runtime_state(app)
     status: MCPRuntimeStatus = app.state.mcp_status
@@ -127,6 +133,7 @@ def _record_reload_result(
     status.last_reload_ok = ok
     status.last_reload_error = error
     status.last_reload_at = _utc_now_iso()
+    status.vault_tools_enabled = vault_tools_enabled
     if connected_servers is not None:
         status.connected_servers = list(connected_servers)
     if tools_by_server is not None:
@@ -134,6 +141,8 @@ def _record_reload_result(
             server_name: sorted(tool_names)
             for server_name, tool_names in tools_by_server.items()
         }
+    if vault_tools_tools is not None:
+        status.vault_tools_tools = list(vault_tools_tools)
 
 
 async def _safe_disconnect(manager: MCPClientManager | None) -> None:
@@ -214,6 +223,14 @@ async def reload_mcp_servers(app: FastAPI) -> dict[str, Any]:
             staged_entries = _tool_entries_for_source(staged_registry, "mcp")
             staged_tools_by_server = _tools_by_server(staged_registry)
 
+            vault_tools_tool_names: list[str] = []
+            if settings.vault_tools_enabled:
+                vault_tools_tool_names = sorted(
+                    tool_name
+                    for tool_name, _, _, meta in staged_registry.snapshot()
+                    if meta.get("server_name") == VAULT_TOOLS_SERVER_NAME
+                )
+
             registry.replace_source("mcp", staged_entries)
             app.state.mcp_manager = next_manager
             _record_reload_result(
@@ -222,6 +239,8 @@ async def reload_mcp_servers(app: FastAPI) -> dict[str, Any]:
                 error=None,
                 connected_servers=next_manager.connected_servers,
                 tools_by_server=staged_tools_by_server,
+                vault_tools_enabled=settings.vault_tools_enabled,
+                vault_tools_tools=vault_tools_tool_names,
             )
 
             if previous_manager is not None and previous_manager is not next_manager:

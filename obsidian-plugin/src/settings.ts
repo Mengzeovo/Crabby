@@ -136,12 +136,22 @@ function formatMcpRuntimeSummary(status: MCPRuntimeStatus): string {
     status.connected_servers.length > 0
       ? status.connected_servers.join("、")
       : "无";
+
   const lines = [
     `连接状态：${status.connected_servers.length > 0 ? `已连接 ${status.connected_servers.length} 个服务` : "当前没有已连接服务"}`,
     `服务列表：${connectedServers}`,
     `工具总数：${totalTools}`,
     `最近重载：${formatReloadStatusLabel(status)}${status.last_reload_at ? ` · ${status.last_reload_at}` : ""}`,
   ];
+
+  if (status.vault_tools_enabled) {
+    const vt = status.vault_tools_tools ?? [];
+    lines.push(
+      `Vault 工具集：${vt.length > 0 ? `已启用，已加载 ${vt.length} 个工具（${vt.join("、")}）` : "已启用，工具目录为空"}`,
+    );
+  } else {
+    lines.push("Vault 工具集：未启用");
+  }
 
   if (status.last_reload_error) {
     lines.push(`错误信息：${status.last_reload_error}`);
@@ -330,7 +340,7 @@ export class CrabbySettingTab extends PluginSettingTab {
   }
 
   private renderMcpSection(containerEl: HTMLElement): void {
-    containerEl.createEl("h3", { text: "MCP 服务" });
+    containerEl.createEl("h3", { text: "MCP 服务与工具" });
 
     let draftMcpConfigPath = this.plugin.settings.backendMcpConfigPath;
     const backendUrl = () =>
@@ -456,7 +466,7 @@ export class CrabbySettingTab extends PluginSettingTab {
 
     new Setting(advancedPathSectionEl)
       .setName("MCP 配置文件路径")
-      .setDesc("一般不需要设置。仅在 mcp_servers.json 不在默认的 server/data/ 位置时手动填写。")
+      .setDesc("一般不需要设置。仅在 mcp_servers.json 不在默认位置（<vault>/.crabby/config/server/data/）时手动填写。")
       .addText((text) => {
         text
           .setPlaceholder("D:\\path\\to\\Crabby\\server\\data\\mcp_servers.json")
@@ -470,7 +480,7 @@ export class CrabbySettingTab extends PluginSettingTab {
 
     const editorSectionEl = createCollapsibleSection(
       containerEl,
-      "编辑原始 MCP JSON",
+      "编辑 mcp_servers.json",
     );
 
     const editor = editorSectionEl.createEl("textarea", {
@@ -504,7 +514,7 @@ export class CrabbySettingTab extends PluginSettingTab {
 
     new Setting(editorSectionEl)
       .setName("从文件载入")
-      .setDesc("把当前配置文件重新载入到编辑器。")
+      .setDesc("把磁盘上的 mcp_servers.json 重新载入到编辑器。")
       .addButton((button) => {
         button.setButtonText("载入");
         button.onClick(() => {
@@ -551,7 +561,7 @@ export class CrabbySettingTab extends PluginSettingTab {
 
     new Setting(editorSectionEl)
       .setName("保存配置")
-      .setDesc("把编辑器内容写入 mcp_servers.json。")
+      .setDesc("把编辑器内容写入 mcp_servers.json（需要先在高级路径覆盖里配置路径，或配置好 .env）。")
       .addButton((button) => {
         button.setButtonText("保存");
         button.onClick(async () => {
