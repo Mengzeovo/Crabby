@@ -1,7 +1,6 @@
 export const LLM_PROVIDER_IDS = [
   "anthropic",
   "openai",
-  "ollama",
   "deepseek",
   "qwen",
   "kimi",
@@ -84,22 +83,6 @@ export const LLM_PROVIDER_PRESETS: Record<LlmProviderId, LlmProviderPreset> = {
       reasoningEffort: true,
     },
     reasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
-  },
-  ollama: {
-    id: "ollama",
-    label: "Ollama",
-    badge: "#2563eb",
-    defaultBaseUrl: "http://localhost:11434",
-    apiKeyEnv: "",
-    models: [
-      { id: "llama3.1", label: "llama3.1" },
-      { id: "qwen2.5", label: "qwen2.5" },
-    ],
-    capabilities: {
-      ...DEFAULT_CAPABILITIES,
-      apiKey: false,
-      vision: true,
-    },
   },
   deepseek: {
     id: "deepseek",

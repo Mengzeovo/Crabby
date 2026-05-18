@@ -1,4 +1,4 @@
-"""Unified LLM client — supports Anthropic, OpenAI-compatible, and Ollama.
+"""Unified LLM client — supports Anthropic and OpenAI-compatible providers.
 
 Provides both non-streaming (chat_completion) and streaming
 (chat_completion_stream) interfaces. Streaming yields delta dicts.
@@ -50,27 +50,25 @@ def _apply_provider_request_options(
     reasoning_effort = _clean_optional_setting(settings.llm_reasoning_effort)
 
     if supports_model_thinking(preset, settings.llm_model):
-        thinking_mode = _clean_optional_setting(settings.llm_thinking_mode)
-        if thinking_mode != "enabled":
-            pass
-        elif preset.thinking_shape == "anthropic":
-            thinking_budget = settings.llm_thinking_budget_tokens
-            if thinking_budget <= 0:
-                thinking_budget = MIN_ANTHROPIC_THINKING_BUDGET_TOKENS
-            thinking_budget = max(
-                thinking_budget,
-                MIN_ANTHROPIC_THINKING_BUDGET_TOKENS,
-            )
-            if max_tokens > MIN_ANTHROPIC_THINKING_BUDGET_TOKENS:
-                body["thinking"] = {
-                    "type": "enabled",
-                    "budget_tokens": min(thinking_budget, max_tokens - 1),
-                }
-        elif preset.thinking_shape == "enable_thinking":
-            body["enable_thinking"] = True
-            body["preserve_thinking"] = True
-        else:
-            body["thinking"] = {"type": "enabled"}
+        if _clean_optional_setting(settings.llm_thinking_mode) == "enabled":
+            if preset.thinking_shape == "anthropic":
+                thinking_budget = settings.llm_thinking_budget_tokens
+                if thinking_budget <= 0:
+                    thinking_budget = MIN_ANTHROPIC_THINKING_BUDGET_TOKENS
+                thinking_budget = max(
+                    thinking_budget,
+                    MIN_ANTHROPIC_THINKING_BUDGET_TOKENS,
+                )
+                if max_tokens > MIN_ANTHROPIC_THINKING_BUDGET_TOKENS:
+                    body["thinking"] = {
+                        "type": "enabled",
+                        "budget_tokens": min(thinking_budget, max_tokens - 1),
+                    }
+            elif preset.thinking_shape == "enable_thinking":
+                body["enable_thinking"] = True
+                body["preserve_thinking"] = True
+            else:
+                body["thinking"] = {"type": "enabled"}
 
     if preset.supports_reasoning_effort and reasoning_effort:
         if not preset.allowed_reasoning_efforts or (
@@ -97,7 +95,7 @@ async def chat_completion(
 
     if preset.kind == "anthropic":
         return await _anthropic_chat(messages, system, tools, max_tokens)
-    if preset.kind in {"openai_compatible", "ollama"}:
+    if preset.kind in {"openai_compatible"}:
         return await _openai_compatible_chat(
             messages,
             system,
@@ -133,7 +131,7 @@ async def chat_completion_stream(
     if preset.kind == "anthropic":
         async for delta in _anthropic_stream(messages, system, tools, max_tokens):
             yield delta
-    elif preset.kind in {"openai_compatible", "ollama"}:
+    elif preset.kind in {"openai_compatible"}:
         async for delta in _openai_stream(messages, system, tools, max_tokens, preset):
             yield delta
     else:
@@ -321,19 +319,14 @@ def _build_openai_params(
 ) -> tuple[str, dict[str, str], dict[str, Any]]:
     """Build URL, headers, body for OpenAI-compatible request."""
     preset = _coerce_provider_preset(provider)
-    if preset.kind == "ollama":
-        base_url = resolve_provider_base_url(preset).rstrip("/")
-        url = f"{base_url}/v1/chat/completions"
-        headers = {"Content-Type": "application/json"}
-    else:
-        base_url = resolve_provider_base_url(preset).rstrip("/")
-        url = f"{base_url}/chat/completions"
-        api_key = resolve_provider_api_key(preset)
-        headers = {
-            "Content-Type": "application/json",
-        }
-        if api_key or preset.api_key_required:
-            headers["Authorization"] = f"Bearer {api_key}"
+    base_url = resolve_provider_base_url(preset).rstrip("/")
+    url = f"{base_url}/chat/completions"
+    api_key = resolve_provider_api_key(preset)
+    headers = {
+        "Content-Type": "application/json",
+    }
+    if api_key or preset.api_key_required:
+        headers["Authorization"] = f"Bearer {api_key}"
 
     oai_messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
     preserve_reasoning_details = preset.reasoning_output_shape == "reasoning_details"
@@ -502,20 +495,6 @@ async def _openai_chat(
         return _convert_openai_response(resp.json(), provider="openai")
 
 
-async def _ollama_chat(
-    messages: list[dict[str, Any]],
-    system: str,
-    tools: list[dict[str, Any]] | None,
-    max_tokens: int,
-) -> dict[str, Any]:
-    url, headers, body = _build_openai_params(messages, system, tools, max_tokens, "ollama")
-
-    async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(url, headers=headers, json=body)
-        resp.raise_for_status()
-        return _convert_openai_response(resp.json(), provider="ollama")
-
-
 async def _openai_compatible_chat(
     messages: list[dict[str, Any]],
     system: str,
@@ -538,7 +517,7 @@ async def _openai_compatible_chat(
 
 
 # ═════════════════════════════════════════════════════════════
-# OpenAI-compatible — streaming (OpenAI / DeepSeek / Ollama)
+# OpenAI-compatible — streaming (OpenAI / DeepSeek)
 # ═════════════════════════════════════════════════════════════
 
 async def _openai_stream(

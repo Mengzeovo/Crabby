@@ -55,7 +55,6 @@ async function testBackendConfig(mod) {
       "EXTRA_SETTING=keep-me",
       "OPENAI_API_KEY=old-openai-key",
       "OPENAI_BASE_URL=https://old.example/v1",
-      "OLLAMA_BASE_URL=http://localhost:11434",
       "CRABBY_ADMIN_ENABLED=true",
       "CRABBY_ADMIN_TOKEN=reload-secret",
       "",
@@ -78,7 +77,6 @@ async function testBackendConfig(mod) {
 
   assert.equal(anthropicMap.OPENAI_API_KEY, null);
   assert.equal(anthropicMap.OPENAI_BASE_URL, null);
-  assert.equal(anthropicMap.OLLAMA_BASE_URL, null);
   assert.equal(anthropicMap.LLM_API_KEY, "anthropic-secret");
   assert.equal(anthropicMap.LLM_BASE_URL, null);
   assert.equal(anthropicMap.ANTHROPIC_API_KEY, "anthropic-secret");
@@ -170,7 +168,6 @@ async function testBackendConfig(mod) {
   assert.doesNotMatch(content, /^LLM_REASONING_SPLIT=/m);
   assert.doesNotMatch(content, /^OPENAI_API_KEY=/m);
   assert.doesNotMatch(content, /^OPENAI_BASE_URL=/m);
-  assert.doesNotMatch(content, /^OLLAMA_BASE_URL=/m);
 
   const savedProfileMap = mod.buildSavedProfileEnvMap({
     id: "profile1",

@@ -64,10 +64,50 @@ export function resolveBackendEnvPath(
 ): BackendEnvPathResolution {
   const backendEnvPath = settings.backendEnvPath?.trim();
   if (backendEnvPath) {
+    const envPath = resolve(backendEnvPath);
+    if (!existsSync(envPath)) {
+      return {
+        ok: false,
+        envPath,
+        derivedFromLegacyPath: false,
+        message: `后端 .env 配置文件 ${envPath} 不存在。`,
+      };
+    }
     return {
       ok: true,
-      envPath: resolve(backendEnvPath),
+      envPath,
       derivedFromLegacyPath: false,
+      message: "",
+    };
+  }
+
+  const legacyPath = settings.backendPath?.trim();
+  if (legacyPath) {
+    const envPath = resolve(legacyPath, ".env");
+    if (!existsSync(envPath)) {
+      return {
+        ok: false,
+        envPath,
+        derivedFromLegacyPath: true,
+        message: `遗留路径 ${envPath} 不存在，请重新配置后端 .env 路径。`,
+      };
+    }
+    const token = readEnvValue(envPath, "CRABBY_ADMIN_TOKEN");
+    if (!token?.trim()) {
+      return {
+        ok: false,
+        envPath,
+        derivedFromLegacyPath: true,
+        message:
+          "遗留配置文件不完整（缺少 CRABBY_ADMIN_TOKEN）。" +
+          "请重新在「后端运行时」区域安装并启动后端，或手动清空" +
+          "后端 .env 路径设置后重新初始化。",
+      };
+    }
+    return {
+      ok: true,
+      envPath,
+      derivedFromLegacyPath: true,
       message: "",
     };
   }
@@ -75,7 +115,9 @@ export function resolveBackendEnvPath(
   return {
     ok: false,
     derivedFromLegacyPath: false,
-    message: "请先配置“后端 .env 路径”，再保存或切换 LLM 配置。",
+    message:
+      "后端尚未初始化。请先在「后端运行时」区域安装并启动后端，" +
+      "完成后 .env 路径将自动配置完毕，无需手动填写。",
   };
 }
 
@@ -617,7 +659,10 @@ export function getBackendEnvPathInputValue(
   if (backendEnvPath) {
     return resolve(backendEnvPath);
   }
-
+  const legacyPath = settings.backendPath?.trim();
+  if (legacyPath) {
+    return resolve(legacyPath, ".env");
+  }
   return "";
 }
 

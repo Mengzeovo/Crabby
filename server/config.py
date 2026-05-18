@@ -62,11 +62,10 @@ class Settings(BaseSettings):
     vault_path: Path = _vaulthome
 
     # LLM
-    llm_provider: str = "anthropic"  # "anthropic" | "openai" | "ollama"
+    llm_provider: str = "anthropic"  # "anthropic" | "openai" | "deepseek" | "custom_openai"
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
-    ollama_base_url: str = "http://localhost:11434"
     llm_api_key: str = ""
     llm_base_url: str = ""
     deepseek_api_key: str = ""
@@ -171,7 +170,7 @@ class Settings(BaseSettings):
         ),
     )
 
-    # Ollama embedding (passed to MemPalace subprocess via mcp_servers.json)
+    # MemPalace Ollama embedding (passed to MemPalace subprocess via mcp_servers.json)
     ollama_embedding_model: str = Field(
         default="",
         validation_alias="OLLAMA_EMBEDDING_MODEL",

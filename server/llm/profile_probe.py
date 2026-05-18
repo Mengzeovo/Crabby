@@ -159,7 +159,7 @@ def _profile_config_errors(
     errors: list[str] = []
     if not model:
         errors.append("缺少 LLM_MODEL")
-    if preset.kind in {"openai_compatible", "ollama"} and not base_url:
+    if preset.kind == "openai_compatible" and not base_url:
         errors.append("缺少 base URL")
     if preset.api_key_required and not api_key:
         errors.append("缺少 API key")

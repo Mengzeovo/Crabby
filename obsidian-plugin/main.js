@@ -1,30 +1,1463 @@
-"use strict";var yt=Object.defineProperty;var js=Object.getOwnPropertyDescriptor;var Vs=Object.getOwnPropertyNames;var qs=Object.prototype.hasOwnProperty;var Ws=(t,e)=>{for(var n in e)yt(t,n,{get:e[n],enumerable:!0})},Ys=(t,e,n,s)=>{if(e&&typeof e=="object"||typeof e=="function")for(let r of Vs(e))!qs.call(t,r)&&r!==n&&yt(t,r,{get:()=>e[r],enumerable:!(s=js(e,r))||s.enumerable});return t};var Gs=t=>Ys(yt({},"__esModule",{value:!0}),t);var va={};Ws(va,{default:()=>kt});module.exports=Gs(va);var qe=require("obsidian");var Le="WebSocket connection failed. Please confirm the backend is running.",nn="WebSocket connection lost while streaming. Please retry.",me=class extends Error{constructor(e,n){super(e),Object.setPrototypeOf(this,new.target.prototype),this.name="WebSocketTransportError",this.canFallbackToRest=n}},xt=class extends Error{constructor(e){super(e),Object.setPrototypeOf(this,new.target.prototype),this.name="WebSocketServerError"}};function sn(t){return t instanceof me&&t.canFallbackToRest}function xe(){return{mode:"auto",manual_persona_id:null,active_persona_id:null,source:"none",status:"unresolved"}}var W=class{constructor(e="http://127.0.0.1:8000"){this.baseUrl=e;this.ws=null;this.pendingCallbacks=null;this.pendingUserOnError=null;this.pendingResolve=null;this.pendingReject=null;this.pendingMessageSent=!1;this._sessionId=null;this._conversationId=null}get sessionId(){return this._sessionId}get conversationId(){return this._conversationId}setBaseUrl(e){let n=e.trim();!n||n===this.baseUrl||(this.ws&&(this.ws.close(),this.ws=null),this.baseUrl=n)}getAttachmentUrl(e){return`${this.baseUrl}/attachments/${e}`}setSession(e,n=null){if(e&&!n)throw new Error("conversationId is required when sessionId is set");this.ws&&(this.ws.close(),this.ws=null),this._sessionId=e,this._conversationId=e?n:null}resetPendingStream(){this.pendingCallbacks=null,this.pendingUserOnError=null,this.pendingResolve=null,this.pendingReject=null,this.pendingMessageSent=!1}resolvePendingStream(){let e=this.pendingResolve;this.resetPendingStream(),e?.()}rejectPendingStream(e){let n=this.pendingReject;this.resetPendingStream(),n?.(e)}failPendingStreamFromSocket(e,n,s){let r=this.pendingUserOnError,i=this.pendingReject;i&&(this.resetPendingStream(),i(new me(e,n)),s&&r?.(e))}async listSessions(){let e=await fetch(`${this.baseUrl}/sessions`);if(!e.ok)throw new Error(`Sessions API error: ${e.status}`);return await e.json()}async createSession(e){let n={method:"POST"};e&&(n.headers={"Content-Type":"application/json"},n.body=JSON.stringify({session_id:e}));let s=await fetch(`${this.baseUrl}/sessions`,n);if(!s.ok){let i=await fe(s);throw new Error(i||`Create session API error: ${s.status}`)}let r=await s.json();return this.applySessionInfo(r),r}async getSession(e){let n=await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(e)}`);if(!n.ok){let s=await fe(n);throw new Error(s||`Session API error: ${n.status}`)}return await n.json()}async listConversations(e){let n=await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(e)}/conversations`);if(!n.ok)throw new Error(`Conversations API error: ${n.status}`);return await n.json()}async getConversationMessages(e,n){let s=await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(e)}/conversations/${encodeURIComponent(n)}/messages`);if(!s.ok)throw new Error(`Conversation messages API error: ${s.status}`);return await s.json()}async forkConversation(e,n,s,r){let i=await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(e)}/conversations/${encodeURIComponent(n)}/fork`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fork_message_id:s,title:r??""})});if(!i.ok){let d=await fe(i);throw new Error(d||`Fork conversation API error: ${i.status}`)}let a=await i.json();return(this._sessionId===a.id||this._sessionId===null)&&this.applySessionInfo(a),a}async getConversationContextStats(e,n){let s=await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(e)}/conversations/${encodeURIComponent(n)}/context-stats`);if(!s.ok)throw new Error(`Context stats API error: ${s.status}`);let r=await s.json();if(typeof r.total_tokens!="number"||typeof r.context_limit!="number"||typeof r.usage_percent!="number")throw new Error("Context stats API returned an invalid payload");return r}async listPersonas(){let e=await fetch(`${this.baseUrl}/personas`);if(!e.ok)throw new Error(`Personas API error: ${e.status}`);return await e.json()}async listSkills(){let e=await fetch(`${this.baseUrl}/skills`);if(!e.ok)throw new Error(`Skills API error: ${e.status}`);return await e.json()}async getCapabilities(){let e=await fetch(`${this.baseUrl}/capabilities`);if(!e.ok)throw new Error(`Capabilities API error: ${e.status}`);return await e.json()}async deleteSession(e){let n=await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(e)}`,{method:"DELETE"});if(!n.ok&&n.status!==204)throw new Error(`Delete session API error: ${n.status}`);this._sessionId===e&&this.setSession(null)}async patchSession(e,n){let s=await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(e)}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(n)});if(!s.ok){let i=await fe(s);throw new Error(i||`Patch session API error: ${s.status}`)}let r=await s.json();return(this._sessionId===r.id||this._sessionId===null)&&this.applySessionInfo(r),r}async chat(e,n){let s=await this.ensureSession(),r=this.normalizePayload(e,s.id,n??s.active_conversation_id),i=await fetch(`${this.baseUrl}/chat`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(r)});if(!i.ok){let d=await fe(i);throw new Error(d||`Agent API error: ${i.status} ${i.statusText}`)}let a=await i.json();return this.applyChatResponse(a),a}async streamChat(e,n){return await this.ensureWebSocket(),new Promise((s,r)=>{this.pendingResolve=s,this.pendingReject=r,this.pendingMessageSent=!1,this.pendingUserOnError=n.onError??null,this.pendingCallbacks={onAssistantPrefix:n.onAssistantPrefix,onReasoningDelta:n.onReasoningDelta,onTextDelta:n.onTextDelta,onToolStart:n.onToolStart,onToolResult:n.onToolResult,onWarning:n.onWarning,onDone:(i,a,d,o,c,w)=>{this._sessionId=i,this._conversationId=a,this.resolvePendingStream(),n.onDone?.(i,a,d,o,c,w)},onError:i=>{this.rejectPendingStream(new xt(i)),n.onError?.(i)}};try{let i=this.ws;if(!i)throw new me(Le,!0);i.send(JSON.stringify(this.normalizeWebSocketPayload(e))),this.pendingMessageSent=!0}catch(i){if(this.resetPendingStream(),i instanceof me){r(i);return}let a=i instanceof Error&&i.message?i.message:Le;r(new me(a,!0))}})}async ensureWebSocket(){if(this.ws&&this.ws.readyState===WebSocket.OPEN)return;try{await this.ensureSession()}catch(n){let s=n instanceof Error&&n.message?n.message:Le;throw new me(s,!0)}if(!this._sessionId||!this._conversationId)throw new me(Le,!0);let e=this.baseUrl.replace(/^http/,"ws");return this.ws=new WebSocket(`${e}/sessions/${encodeURIComponent(this._sessionId)}/conversations/${encodeURIComponent(this._conversationId)}/ws`),new Promise((n,s)=>{let r=this.ws,i=!1,a=!1,d=o=>{a||(a=!0,this.ws=null,s(o))};r.onopen=()=>{i=!0,!a&&(a=!0,n())},r.onerror=()=>{if(!i){d(new me(Le,!0));return}this.failPendingStreamFromSocket(nn,!this.pendingMessageSent,this.pendingMessageSent)},r.onmessage=o=>{try{let c=JSON.parse(o.data);c.type==="sys_notify"?this.onSysNotify?.({message:String(c.message??""),autoTrigger:!!c.auto_trigger}):this.handleEvent(c)}catch{}},r.onclose=()=>{if(this.ws=null,!i){d(new me(Le,!0));return}this.failPendingStreamFromSocket(this.pendingMessageSent?nn:Le,!this.pendingMessageSent,this.pendingMessageSent)}})}handleEvent(e){let n=this.pendingCallbacks;if(n)switch(e.type){case"assistant_prefix":n.onAssistantPrefix?.(e.text);break;case"reasoning_delta":n.onReasoningDelta?.(e.text);break;case"text_delta":n.onTextDelta?.(e.text);break;case"tool_start":n.onToolStart?.(e.name,e.id);break;case"tool_result":n.onToolResult?.(e);break;case"warning":n.onWarning?.(e.message);break;case"done":this._sessionId=typeof e.session_id=="string"?e.session_id:this._sessionId,this._conversationId=typeof e.conversation_id=="string"?e.conversation_id:this._conversationId;let s=typeof e.message_id=="string"?e.message_id:null,r=typeof e.user_message_id=="string"?e.user_message_id:null;if(!this._sessionId||!this._conversationId){n.onError?.("Stream completed without session/conversation IDs");break}n.onDone?.(this._sessionId,this._conversationId,s,r,e.context,e.persona_state);break;case"error":n.onError?.(e.message);break}}disconnect(){this.ws&&(this.ws.close(),this.ws=null),this._sessionId=null,this._conversationId=null}abort(){let e=this.pendingResolve;this.resetPendingStream(),this.ws&&(this.ws.close(),this.ws=null),e?.()}async health(){try{return(await fetch(`${this.baseUrl}/health`)).ok}catch{return!1}}async reloadConfig(e){try{let n=await fetch(`${this.baseUrl}/admin/reload`,{method:"POST",headers:{"X-Crabby-Admin-Token":e}});return n.ok?{ok:!0,status:n.status,detail:null}:{ok:!1,status:n.status,detail:await fe(n)}}catch{return{ok:!1,status:null,detail:null}}}async reloadSettings(e){try{let n=await fetch(`${this.baseUrl}/admin/reload-settings`,{method:"POST",headers:{"X-Crabby-Admin-Token":e}});return n.ok?{ok:!0,status:n.status,detail:null}:{ok:!1,status:n.status,detail:await fe(n)}}catch{return{ok:!1,status:null,detail:null}}}async getMcpStatus(e){try{let n=await fetch(`${this.baseUrl}/admin/mcp/status`,{headers:{"X-Crabby-Admin-Token":e}});return n.ok?{ok:!0,status:n.status,detail:null,data:await n.json()}:{ok:!1,status:n.status,detail:await fe(n)}}catch{return{ok:!1,status:null,detail:null}}}async testCurrentProfile(e){try{let n=await fetch(`${this.baseUrl}/admin/profile/test`,{method:"POST",headers:{"X-Crabby-Admin-Token":e}});return n.ok?{ok:!0,status:n.status,detail:null,data:await n.json()}:{ok:!1,status:n.status,detail:await fe(n)}}catch{return{ok:!1,status:null,detail:null}}}async listLlmProfiles(e){return this.requestLlmProfiles("/admin/profiles",e)}async saveLlmProfile(e,n,s){return this.requestLlmProfiles(`/admin/profiles/${n.id}`,e,{method:"PUT",headers:{"Content-Type":"application/json","X-Crabby-Admin-Token":e},body:JSON.stringify({profile:n,activate:s})})}async activateLlmProfile(e,n){return this.requestLlmProfiles(`/admin/profiles/${n}/activate`,e,{method:"POST"})}async deleteLlmProfile(e,n){return this.requestLlmProfiles(`/admin/profiles/${n}`,e,{method:"DELETE"})}async requestLlmProfiles(e,n,s={}){try{let r=new Headers(s.headers);r.set("X-Crabby-Admin-Token",n);let i=await fetch(`${this.baseUrl}${e}`,{...s,headers:r});return i.ok?{ok:!0,status:i.status,detail:null,data:await i.json()}:{ok:!1,status:i.status,detail:await fe(i)}}catch{return{ok:!1,status:null,detail:null}}}normalizePayload(e,n,s){return typeof e=="string"?{content:e,session_id:n,conversation_id:s}:{...e,session_id:e.session_id??n,conversation_id:e.conversation_id??s}}normalizeWebSocketPayload(e){return typeof e=="string"?{type:"message",content:e}:{type:"message",content:e.content,pasted_contents:e.pasted_contents,persona_mode:e.persona_mode,manual_persona_id:e.manual_persona_id}}async ensureSession(){return this._sessionId&&this._conversationId?{id:this._sessionId,active_conversation_id:this._conversationId}:this.createSession()}applySessionInfo(e){this._sessionId=e.id,this._conversationId=e.active_conversation_id}applyChatResponse(e){this._sessionId=e.session_id,this._conversationId=e.conversation_id}};async function fe(t){try{let e=await t.json();if(typeof e?.detail=="string")return e.detail;if(typeof e?.message=="string")return e.message}catch{}try{return(await t.text()).trim()}catch{return""}}var qn=require("obsidian");var Me="crabby-settings-updated";function rn(){typeof document>"u"||typeof CustomEvent>"u"||document.dispatchEvent(new CustomEvent(Me))}var ce=require("obsidian"),Pt=/\[Image\s+#(\d+)\]/g,Js=/(^|[^0-9A-Za-z_./\\:-])\/([^\s/]*)$/,Xs=/(^|[^0-9A-Za-z_./\\:-])@"([^"]*)$/,Zs=/(^|[^0-9A-Za-z_./\\:-])@([^\s"]*)$/,Qs=/(^|[^0-9A-Za-z_./\\:-])@"([^"]+)"(#L\d+(?:-\d+)?)?/g,er=/(^|[^0-9A-Za-z_./\\:-])@([^\s"]+)/g,an=4,tr=10*1024*1024;function ln(t){let{app:e,client:n,elements:s,state:r}=t,i=[],a=1,d={},o=[],c=0,w=null,S=null,x="",M=!1,p=!1,R=0,C=null,f=[];n.listSkills().then(h=>{i=h,U()}).catch(()=>{i=[]}),n.getCapabilities().then(h=>{C=h}).catch(()=>{C=null});let y=()=>{M?M=!1:tn(),Ie(),X(),U()},b=()=>{if(p){p=!1;return}U()},A=h=>{if(o.length>0){if(h.key==="ArrowDown"){p=!0,h.preventDefault(),h.stopPropagation(),c=(c+1)%o.length,D();return}if(h.key==="ArrowUp"){p=!0,h.preventDefault(),h.stopPropagation(),c=(c-1+o.length)%o.length,D();return}if(h.key==="Tab"||h.key==="Enter"){h.preventDefault(),h.stopPropagation(),G(o[c]);return}if(h.key==="Escape"){p=!0,h.preventDefault(),h.stopPropagation(),o=[],c=0,w=null,D();return}}},H=h=>{let E=cr(h);E.length!==0&&(h.preventDefault(),T(E))},J=h=>{dr(h.dataTransfer?.files)&&(h.preventDefault(),s.inputAreaEl.classList.add("drag-over"))},j=()=>{s.inputAreaEl.classList.remove("drag-over")},Y=h=>{s.inputAreaEl.classList.remove("drag-over");let E=wt(h.dataTransfer?.files);E.length!==0&&(h.preventDefault(),T(E))},O=()=>{s.hiddenFileInput.click()},P=()=>{let h=wt(s.hiddenFileInput.files);s.hiddenFileInput.value="",h.length!==0&&T(h)},l=()=>{v()};s.inputEl.addEventListener("input",y),s.inputEl.addEventListener("keydown",A),s.inputEl.addEventListener("click",b),s.inputEl.addEventListener("keyup",b),s.inputEl.addEventListener("paste",H),s.inputAreaEl.addEventListener("dragover",J),s.inputAreaEl.addEventListener("dragleave",j),s.inputAreaEl.addEventListener("drop",Y),s.attachmentBtn.addEventListener("click",O),s.hiddenFileInput.addEventListener("change",P),window.addEventListener("focus",l),f.push(()=>{s.inputEl.removeEventListener("input",y),s.inputEl.removeEventListener("keydown",A),s.inputEl.removeEventListener("click",b),s.inputEl.removeEventListener("keyup",b),s.inputEl.removeEventListener("paste",H),s.inputAreaEl.removeEventListener("dragover",J),s.inputAreaEl.removeEventListener("dragleave",j),s.inputAreaEl.removeEventListener("drop",Y),s.attachmentBtn.removeEventListener("click",O),s.hiddenFileInput.removeEventListener("change",P),window.removeEventListener("focus",l)});function u(){let h=s.inputEl.value,E=V(h),_=nr(h),L=I(h,E);return!_.trim()&&L.length===0?null:E.length>0&&C?.supports_vision===!1?(new ce.Notice("\u5F53\u524D\u540E\u7AEF\u6A21\u578B\u672A\u5F00\u542F\u89C6\u89C9\u80FD\u529B\uFF0C\u56FE\u7247\u5DF2\u4FDD\u7559\u5728\u8F93\u5165\u6846\u91CC\uFF0C\u6682\u65F6\u4E0D\u80FD\u53D1\u9001\u3002"),null):{request:{content:h,pasted_contents:E.map(({preview_url:$,size_bytes:F,...K})=>K)},displayText:_,displayAttachments:L}}function m(){k(),s.inputEl.value="",Ie(),U()}function g(){k(),f.splice(0).forEach(h=>h())}function k(){d={},o=[],c=0,w=null,tn(),s.composerPillsEl.empty(),D()}async function v(){if(!(typeof navigator>"u"||!navigator.clipboard||typeof navigator.clipboard.read!="function")&&!(Date.now()-R<15e3))try{(await navigator.clipboard.read()).some(_=>_.types.some(L=>L.startsWith("image/")))&&(R=Date.now(),new ce.Notice("\u526A\u8D34\u677F\u91CC\u6709\u56FE\u7247\uFF0C\u53EF\u4EE5\u76F4\u63A5\u7C98\u8D34\u5230\u5BF9\u8BDD\u6846\u3002"))}catch{}}async function T(h){if(Object.keys(d).length+h.length>an){new ce.Notice(`\u6BCF\u6B21\u6700\u591A\u9644\u5E26 ${an} \u5F20\u56FE\u7247\u3002`);return}for(let _ of h){if(_.size>tr){new ce.Notice(`${_.name} \u8D85\u8FC7 10 MB\uFF0C\u5DF2\u8DF3\u8FC7\u3002`);continue}let L=await ur(_),[$,F]=L.split(",",2);if(!F)continue;let K=pr($)||_.type||"image/png",pe=await gr(L),Ye=a++;d[Ye]={id:Ye,type:"image",data:F,media_type:K,filename:_.name||`Image ${Ye}`,width:pe?.width,height:pe?.height,preview_url:L,size_bytes:_.size},ye(Ye)}ie(),U()}function I(h,E){let _=q(h),L=E.map($=>({type:"image",filename:$.filename,media_type:$.media_type,width:$.width,height:$.height,preview_url:$.preview_url}));return[..._,...L]}function q(h){let E=sr(h),_=[];for(let L of E){let $=L.path,F=e.vault.getAbstractFileByPath($);if(F instanceof ce.TFolder){let K={type:"vault_directory",path:$,entry_count:F.children.length};_.push(K)}else if(F instanceof ce.TFile){let K={type:"vault_file",path:$,line_start:L.line_start,line_end:L.line_end};_.push(K)}}return _}function V(h){let E=Array.from(h.matchAll(Pt)).map($=>Number($[1])).filter($=>Number.isFinite($)),_=[],L=new Set;for(let $ of E)L.has($)||!d[$]||(L.add($),_.push(d[$]));return _}function X(){let h=new Set(Array.from(s.inputEl.value.matchAll(Pt)).map(E=>Number(E[1])));for(let[E,_]of Object.entries(d))h.has(Number(E))||delete d[Number(E)];ie()}function ie(){s.composerPillsEl.empty();for(let h of Object.values(d)){let E=s.composerPillsEl.createDiv({cls:"chat-image-pill"});E.createEl("img",{cls:"chat-image-pill-thumb",attr:{src:h.preview_url,alt:h.filename}}),E.createDiv({cls:"chat-image-pill-label"}).setText(h.filename);let L=E.createEl("button",{cls:"chat-image-pill-remove",attr:{"aria-label":`Remove ${h.filename}`}});L.setText("\xD7"),L.addEventListener("click",()=>{delete d[h.id],s.inputEl.value=s.inputEl.value.replace(new RegExp(`\\s*\\[Image\\s+#${h.id}\\]\\s*`,"g")," ").replace(/[ \t]{2,}/g," ").trim(),Ie(),ie(),U()})}s.composerPillsEl.classList.toggle("has-items",Object.keys(d).length>0)}function U(){let h=De();if(h){ee(Ce(h.query,h.from,h.to),`slash:${h.from}:${h.to}:${h.query}`);return}let E=ke();if(E){ee(Re(E.query,E.from,E.to),`mention:${E.from}:${E.to}:${E.query}`);return}ee([])}function D(){if(s.suggestionListEl.empty(),o.length===0){s.suggestionListEl.classList.remove("is-open");return}s.suggestionListEl.classList.add("is-open"),o.forEach((h,E)=>{let _=s.suggestionListEl.createDiv({cls:"chat-suggestion-item"});E===c&&(_.classList.add("is-selected"),window.setTimeout(()=>{_.scrollIntoView({block:"nearest"})},0)),_.createDiv({cls:"chat-suggestion-title"}).setText(h.label),_.createDiv({cls:"chat-suggestion-desc"}).setText(h.description),_.addEventListener("mousedown",F=>{F.preventDefault(),G(h)})})}function G(h){let E=s.inputEl.value,_=E.slice(0,h.replaceFrom),L=E.slice(h.replaceTo);s.inputEl.value=`${_}${h.insertText}${L}`;let $=h.replaceFrom+h.insertText.length;s.inputEl.setSelectionRange($,$),s.inputEl.focus(),Ie(),o=[],w=null,D(),X()}function le(h){if(o.length>0)return!1;let E=s.inputEl.selectionStart??s.inputEl.value.length,_=s.inputEl.selectionEnd??E;if(E!==_||h==="up"&&!Hs(E)||h==="down"&&!Ks(_))return!1;let L=Fs();return L.length===0?!1:S==null?h==="down"?!1:(x=s.inputEl.value,S=L.length-1,We(L[S]),!0):h==="up"?(S===0||(S-=1,We(L[S])),!0):S>=L.length-1?(S=null,We(x),!0):(S+=1,We(L[S]),!0)}function ee(h,E=null){let _=o[c],L=E!=null&&E===w;if(o=h,w=E,o.length===0){c=0,D();return}if(L&&_){let $=o.findIndex(F=>lr(F,_));if($>=0){c=$,D();return}}c=L?Math.min(c,o.length-1):0,D()}function Ce(h,E,_){let L=h.trim().toLowerCase();return i.map(F=>({skill:F,score:rr(F,L)})).filter(F=>F.score>0||L.length===0).sort((F,K)=>K.score-F.score||F.skill.name.localeCompare(K.skill.name)).slice(0,8).map(({skill:F})=>({kind:"slash",label:`/${F.name}`,description:F.description,replaceFrom:E,replaceTo:_,insertText:`/${F.name} `}))}function Re(h,E,_){let L=h.trim().toLowerCase();return e.vault.getAllLoadedFiles().filter(ir).map(K=>({candidate:K,score:ar(K,L)})).filter(K=>K.score>0||L.length===0).sort((K,pe)=>pe.score-K.score||K.candidate.path.localeCompare(pe.candidate.path)).slice(0,8).map(({candidate:K})=>({kind:"mention",label:K instanceof ce.TFolder?`@${K.path}/`:`@${K.path}`,description:K instanceof ce.TFolder?`${K.children.length} items`:K.basename,replaceFrom:E,replaceTo:_,insertText:`${or(K.path)} `}))}function De(){let h=s.inputEl.selectionStart??s.inputEl.value.length,_=s.inputEl.value.slice(0,h).match(Js);if(!_||_.index==null)return null;let L=_.index+_[1].length,$=h;for(;$<s.inputEl.value.length&&!/\s/.test(s.inputEl.value[$]);)$+=1;return{query:_[2]??"",from:L,to:$}}function ke(){let h=s.inputEl.selectionStart??s.inputEl.value.length,E=s.inputEl.value.slice(0,h),_=E.match(Xs);if(_&&_.index!=null){let K=_.index+_[1].length,pe=h;for(;pe<s.inputEl.value.length&&s.inputEl.value[pe]!=='"';)pe+=1;return s.inputEl.value[pe]==='"'&&(pe+=1),{query:_[2]??"",from:K,to:pe}}let L=E.match(Zs);if(!L||L.index==null)return null;let $=L.index+L[1].length,F=h;for(;F<s.inputEl.value.length&&!/\s/.test(s.inputEl.value[F]);)F+=1;return{query:L[2]??"",from:$,to:F}}function ye(h){let E=`[Image #${h}]`;Us(`${zs()?" ":""}${E} `),Ie()}function Us(h){let E=s.inputEl.selectionStart??s.inputEl.value.length,_=s.inputEl.selectionEnd??E,L=s.inputEl.value;s.inputEl.value=`${L.slice(0,E)}${h}${L.slice(_)}`;let $=E+h.length;s.inputEl.setSelectionRange($,$),s.inputEl.focus()}function We(h){M=!0,s.inputEl.value=h;let E=h.length;s.inputEl.setSelectionRange(E,E),s.inputEl.focus(),Ie(),X(),U()}function tn(){S=null,x=""}function Fs(){return r.messages.filter(h=>h.role==="user"&&!!h.content.trim()).map(h=>h.content)}function Hs(h){return!s.inputEl.value.slice(0,h).includes(`
-`)}function Ks(h){return!s.inputEl.value.slice(h).includes(`
-`)}function zs(){let h=s.inputEl.selectionStart??s.inputEl.value.length,E=s.inputEl.value[h-1];return!!(E&&!/\s/.test(E))}function Ie(){s.inputEl.style.height="auto",s.inputEl.style.height=`${Math.min(s.inputEl.scrollHeight,120)}px`}return{getSubmitPayload:u,navigateHistory:le,clear:m,destroy:g}}function nr(t){return t.replace(Pt,"").replace(/[ \t]{2,}/g," ").replace(/\n{3,}/g,`
+"use strict";
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-`).trim()}function sr(t){let e=[],n=new Set;for(let s of t.matchAll(Qs)){let r=`${s[2]??""}${s[3]??""}`;on(e,n,r)}for(let s of t.matchAll(er)){let r=(s[2]??"").replace(/[.,;:!?]+$/,"");r.startsWith('"')||on(e,n,r)}return e}function on(t,e,n){if(!n||e.has(n))return;e.add(n);let s=n.match(/^(.*)#L(\d+)(?:-(\d+))?$/);if(!s){t.push({path:n});return}let r=Number(s[2]),i=Number(s[3]??s[2]);t.push({path:s[1],line_start:Math.min(r,i),line_end:Math.max(r,i)})}function rr(t,e){if(!e)return 1;let n=t.name.toLowerCase(),s=t.description.toLowerCase();return n.startsWith(e)?5:n.includes(e)?4:(t.aliases??[]).some(r=>r.toLowerCase().startsWith(e))?3.5:s.includes(e)?2:0}function ir(t){return t instanceof ce.TFile||t instanceof ce.TFolder?!!t.path:!1}function ar(t,e){if(!e)return 1;let n=t.path.toLowerCase(),s=t.name.toLowerCase();return s.startsWith(e)?5:n.startsWith(e)?4.5:s.includes(e)?4:n.includes(e)?3:0}function or(t){return/\s/.test(t)?`@"${t}"`:`@${t}`}function lr(t,e){return t.kind===e.kind&&t.label===e.label&&t.insertText===e.insertText&&t.replaceFrom===e.replaceFrom&&t.replaceTo===e.replaceTo}function cr(t){return Array.from(t.clipboardData?.items??[]).filter(n=>n.type.startsWith("image/")).map(n=>n.getAsFile()).filter(n=>n!=null)}function wt(t){return Array.from(t??[]).filter(e=>e.type.startsWith("image/"))}function dr(t){return wt(t).length>0}function ur(t){return new Promise((e,n)=>{let s=new FileReader;s.onload=()=>e(String(s.result)),s.onerror=()=>n(s.error),s.readAsDataURL(t)})}function pr(t){let e=t.match(/^data:([^;]+);base64$/);return e?e[1]:null}function gr(t){return new Promise(e=>{let n=new Image;n.onload=()=>e({width:n.width,height:n.height}),n.onerror=()=>e(null),n.src=t})}var Ge=`
+// src/main.ts
+var main_exports = {};
+__export(main_exports, {
+  default: () => CrabbyPlugin
+});
+module.exports = __toCommonJS(main_exports);
+var import_obsidian11 = require("obsidian");
+
+// src/api/client.ts
+var WEB_SOCKET_CONNECTION_FAILED_MESSAGE = "WebSocket connection failed. Please confirm the backend is running.";
+var WEB_SOCKET_STREAM_INTERRUPTED_MESSAGE = "WebSocket connection lost while streaming. Please retry.";
+var WebSocketTransportError = class extends Error {
+  constructor(message, canFallbackToRest) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.name = "WebSocketTransportError";
+    this.canFallbackToRest = canFallbackToRest;
+  }
+};
+var WebSocketServerError = class extends Error {
+  constructor(message) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.name = "WebSocketServerError";
+  }
+};
+function shouldFallbackToRest(error) {
+  return error instanceof WebSocketTransportError && error.canFallbackToRest;
+}
+function createDefaultPersonaState() {
+  return {
+    mode: "auto",
+    manual_persona_id: null,
+    active_persona_id: null,
+    source: "none",
+    status: "unresolved"
+  };
+}
+var AgentClient = class {
+  constructor(baseUrl = "http://127.0.0.1:8000") {
+    this.baseUrl = baseUrl;
+    this.ws = null;
+    this.pendingCallbacks = null;
+    this.pendingUserOnError = null;
+    this.pendingResolve = null;
+    this.pendingReject = null;
+    this.pendingMessageSent = false;
+    this._sessionId = null;
+    this._conversationId = null;
+    this._wsHandlers = null;
+  }
+  get sessionId() {
+    return this._sessionId;
+  }
+  get conversationId() {
+    return this._conversationId;
+  }
+  setBaseUrl(baseUrl) {
+    const normalized = baseUrl.trim();
+    if (!normalized || normalized === this.baseUrl) {
+      return;
+    }
+    if (this.ws) {
+      if (this._wsHandlers) {
+        this.ws.removeEventListener("open", this._wsHandlers.onopen);
+        this.ws.removeEventListener("error", this._wsHandlers.onerror);
+        this.ws.removeEventListener("message", this._wsHandlers.onmessage);
+        this.ws.removeEventListener("close", this._wsHandlers.onclose);
+        this._wsHandlers = null;
+      }
+      this.ws.close();
+      this.ws = null;
+    }
+    this.baseUrl = normalized;
+  }
+  getAttachmentUrl(attachmentId) {
+    return `${this.baseUrl}/attachments/${attachmentId}`;
+  }
+  setSession(sessionId, conversationId = null) {
+    if (sessionId && !conversationId) {
+      throw new Error("conversationId is required when sessionId is set");
+    }
+    if (this.ws) {
+      if (this._wsHandlers) {
+        this.ws.removeEventListener("open", this._wsHandlers.onopen);
+        this.ws.removeEventListener("error", this._wsHandlers.onerror);
+        this.ws.removeEventListener("message", this._wsHandlers.onmessage);
+        this.ws.removeEventListener("close", this._wsHandlers.onclose);
+        this._wsHandlers = null;
+      }
+      this.ws.close();
+      this.ws = null;
+    }
+    this._sessionId = sessionId;
+    this._conversationId = sessionId ? conversationId : null;
+  }
+  resetPendingStream() {
+    this.pendingCallbacks = null;
+    this.pendingUserOnError = null;
+    this.pendingResolve = null;
+    this.pendingReject = null;
+    this.pendingMessageSent = false;
+  }
+  resolvePendingStream() {
+    const resolve7 = this.pendingResolve;
+    this.resetPendingStream();
+    resolve7?.();
+  }
+  rejectPendingStream(error) {
+    const reject = this.pendingReject;
+    this.resetPendingStream();
+    reject?.(error);
+  }
+  failPendingStreamFromSocket(message, canFallbackToRest, notifyUser) {
+    const onError = this.pendingUserOnError;
+    const reject = this.pendingReject;
+    if (!reject) {
+      return;
+    }
+    this.resetPendingStream();
+    reject(new WebSocketTransportError(message, canFallbackToRest));
+    if (notifyUser) {
+      onError?.({ message, code: "TRANSPORT_ERROR" });
+    }
+  }
+  async listSessions() {
+    const resp = await fetch(`${this.baseUrl}/sessions`);
+    if (!resp.ok) throw new Error(`Sessions API error: ${resp.status}`);
+    return await resp.json();
+  }
+  async createSession(sessionId) {
+    const init = { method: "POST" };
+    if (sessionId) {
+      init.headers = { "Content-Type": "application/json" };
+      init.body = JSON.stringify({ session_id: sessionId });
+    }
+    const resp = await fetch(`${this.baseUrl}/sessions`, init);
+    if (!resp.ok) {
+      const detail = await readErrorDetail(resp);
+      throw new Error(detail || `Create session API error: ${resp.status}`);
+    }
+    const session = await resp.json();
+    this.applySessionInfo(session);
+    return session;
+  }
+  async getSession(sessionId) {
+    const resp = await fetch(
+      `${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}`
+    );
+    if (!resp.ok) {
+      const detail = await readErrorDetail(resp);
+      throw new Error(detail || `Session API error: ${resp.status}`);
+    }
+    return await resp.json();
+  }
+  async listConversations(sessionId) {
+    const resp = await fetch(
+      `${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/conversations`
+    );
+    if (!resp.ok) throw new Error(`Conversations API error: ${resp.status}`);
+    return await resp.json();
+  }
+  async getConversationMessages(sessionId, conversationId) {
+    const resp = await fetch(
+      `${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(conversationId)}/messages`
+    );
+    if (!resp.ok) {
+      throw new Error(`Conversation messages API error: ${resp.status}`);
+    }
+    return await resp.json();
+  }
+  async forkConversation(sessionId, parentConversationId, forkMessageId, title) {
+    const resp = await fetch(
+      `${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(parentConversationId)}/fork`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fork_message_id: forkMessageId,
+          title: title ?? ""
+        })
+      }
+    );
+    if (!resp.ok) {
+      const detail = await readErrorDetail(resp);
+      throw new Error(detail || `Fork conversation API error: ${resp.status}`);
+    }
+    const session = await resp.json();
+    if (this._sessionId === session.id || this._sessionId === null) {
+      this.applySessionInfo(session);
+    }
+    return session;
+  }
+  async getConversationContextStats(sessionId, conversationId) {
+    const resp = await fetch(
+      `${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(conversationId)}/context-stats`
+    );
+    if (!resp.ok) throw new Error(`Context stats API error: ${resp.status}`);
+    const data = await resp.json();
+    if (typeof data.total_tokens !== "number" || typeof data.context_limit !== "number" || typeof data.usage_percent !== "number") {
+      throw new Error("Context stats API returned an invalid payload");
+    }
+    return data;
+  }
+  async listPersonas() {
+    const resp = await fetch(`${this.baseUrl}/personas`);
+    if (!resp.ok) throw new Error(`Personas API error: ${resp.status}`);
+    return await resp.json();
+  }
+  async listSkills() {
+    const resp = await fetch(`${this.baseUrl}/skills`);
+    if (!resp.ok) throw new Error(`Skills API error: ${resp.status}`);
+    return await resp.json();
+  }
+  async getCapabilities() {
+    const resp = await fetch(`${this.baseUrl}/capabilities`);
+    if (!resp.ok) throw new Error(`Capabilities API error: ${resp.status}`);
+    return await resp.json();
+  }
+  async deleteSession(sessionId) {
+    const resp = await fetch(
+      `${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}`,
+      { method: "DELETE" }
+    );
+    if (!resp.ok && resp.status !== 204) {
+      throw new Error(`Delete session API error: ${resp.status}`);
+    }
+    if (this._sessionId === sessionId) {
+      this.setSession(null);
+    }
+  }
+  async patchSession(sessionId, payload) {
+    const resp = await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok) {
+      const detail = await readErrorDetail(resp);
+      throw new Error(detail || `Patch session API error: ${resp.status}`);
+    }
+    const session = await resp.json();
+    if (this._sessionId === session.id || this._sessionId === null) {
+      this.applySessionInfo(session);
+    }
+    return session;
+  }
+  async chat(payload, conversationId) {
+    const session = await this.ensureSession();
+    const request = this.normalizePayload(
+      payload,
+      session.id,
+      conversationId ?? session.active_conversation_id
+    );
+    const resp = await fetch(`${this.baseUrl}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!resp.ok) {
+      const detail = await readErrorDetail(resp);
+      throw new Error(
+        detail || `Agent API error: ${resp.status} ${resp.statusText}`
+      );
+    }
+    const data = await resp.json();
+    this.applyChatResponse(data);
+    return data;
+  }
+  async streamChat(payload, callbacks) {
+    await this.ensureWebSocket();
+    return new Promise((resolve7, reject) => {
+      this.pendingResolve = resolve7;
+      this.pendingReject = reject;
+      this.pendingMessageSent = false;
+      this.pendingUserOnError = callbacks.onError ?? null;
+      this.pendingCallbacks = {
+        onAssistantPrefix: callbacks.onAssistantPrefix,
+        onReasoningDelta: callbacks.onReasoningDelta,
+        onTextDelta: callbacks.onTextDelta,
+        onToolStart: callbacks.onToolStart,
+        onToolResult: callbacks.onToolResult,
+        onWarning: callbacks.onWarning,
+        onDone: (sessionId, convId, assistantMessageId, userMessageId, context, personaState) => {
+          this._sessionId = sessionId;
+          this._conversationId = convId;
+          this.resolvePendingStream();
+          callbacks.onDone?.(
+            sessionId,
+            convId,
+            assistantMessageId,
+            userMessageId,
+            context,
+            personaState
+          );
+        },
+        onError: (payload2) => {
+          this.rejectPendingStream(new WebSocketServerError(payload2.message));
+          callbacks.onError?.(payload2);
+        }
+      };
+      try {
+        const ws = this.ws;
+        if (!ws) {
+          throw new WebSocketTransportError(WEB_SOCKET_CONNECTION_FAILED_MESSAGE, true);
+        }
+        ws.send(JSON.stringify(this.normalizeWebSocketPayload(payload)));
+        this.pendingMessageSent = true;
+      } catch (error) {
+        this.resetPendingStream();
+        if (error instanceof WebSocketTransportError) {
+          reject(error);
+          return;
+        }
+        const message = error instanceof Error && error.message ? error.message : WEB_SOCKET_CONNECTION_FAILED_MESSAGE;
+        reject(new WebSocketTransportError(message, true));
+      }
+    });
+  }
+  async ensureWebSocket() {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return;
+    }
+    try {
+      await this.ensureSession();
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : WEB_SOCKET_CONNECTION_FAILED_MESSAGE;
+      throw new WebSocketTransportError(message, true);
+    }
+    if (!this._sessionId || !this._conversationId) {
+      throw new WebSocketTransportError(WEB_SOCKET_CONNECTION_FAILED_MESSAGE, true);
+    }
+    const wsUrl = this.baseUrl.replace(/^http/, "ws");
+    this.ws = new WebSocket(
+      `${wsUrl}/sessions/${encodeURIComponent(this._sessionId)}/conversations/${encodeURIComponent(this._conversationId)}/ws`
+    );
+    let opened = false;
+    let settled = false;
+    let resolveConnection = null;
+    let rejectConnection = null;
+    const onOpen = () => {
+      opened = true;
+      if (settled) return;
+      settled = true;
+      resolveConnection?.();
+    };
+    const onError = () => {
+      if (!opened) {
+        if (settled) return;
+        settled = true;
+        this.ws = null;
+        rejectConnection?.(new WebSocketTransportError(WEB_SOCKET_CONNECTION_FAILED_MESSAGE, true));
+        return;
+      }
+      this.failPendingStreamFromSocket(
+        WEB_SOCKET_STREAM_INTERRUPTED_MESSAGE,
+        !this.pendingMessageSent,
+        this.pendingMessageSent
+      );
+    };
+    const onMessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        if (data.type === "sys_notify") {
+          this.onSysNotify?.({
+            message: String(data.message ?? ""),
+            autoTrigger: Boolean(data.auto_trigger)
+          });
+        } else {
+          this.handleEvent(data);
+        }
+      } catch {
+      }
+    };
+    const onClose = () => {
+      this.ws = null;
+      if (!opened) {
+        if (settled) return;
+        settled = true;
+        rejectConnection?.(new WebSocketTransportError(WEB_SOCKET_CONNECTION_FAILED_MESSAGE, true));
+        return;
+      }
+      this.failPendingStreamFromSocket(
+        this.pendingMessageSent ? WEB_SOCKET_STREAM_INTERRUPTED_MESSAGE : WEB_SOCKET_CONNECTION_FAILED_MESSAGE,
+        !this.pendingMessageSent,
+        this.pendingMessageSent
+      );
+    };
+    this.ws.addEventListener("open", onOpen);
+    this.ws.addEventListener("error", onError);
+    this.ws.addEventListener("message", onMessage);
+    this.ws.addEventListener("close", onClose);
+    this._wsHandlers = { onopen: onOpen, onerror: onError, onmessage: onMessage, onclose: onClose };
+    return new Promise((resolve7, reject) => {
+      resolveConnection = resolve7;
+      rejectConnection = reject;
+    });
+  }
+  handleEvent(data) {
+    const cb = this.pendingCallbacks;
+    if (!cb) return;
+    switch (data.type) {
+      case "assistant_prefix":
+        cb.onAssistantPrefix?.(data.text);
+        break;
+      case "reasoning_delta":
+        cb.onReasoningDelta?.(data.text);
+        break;
+      case "text_delta":
+        cb.onTextDelta?.(data.text);
+        break;
+      case "tool_start":
+        cb.onToolStart?.(data.name, data.id);
+        break;
+      case "tool_result":
+        cb.onToolResult?.(data);
+        break;
+      case "warning":
+        cb.onWarning?.(data.message);
+        break;
+      case "done":
+        this._sessionId = typeof data.session_id === "string" ? data.session_id : this._sessionId;
+        this._conversationId = typeof data.conversation_id === "string" ? data.conversation_id : this._conversationId;
+        const assistantMessageId = typeof data.message_id === "string" ? data.message_id : null;
+        const userMessageId = typeof data.user_message_id === "string" ? data.user_message_id : null;
+        if (!this._sessionId || !this._conversationId) {
+          cb.onError?.({ message: "Stream completed without session/conversation IDs", code: "MISSING_IDS" });
+          break;
+        }
+        cb.onDone?.(
+          this._sessionId,
+          this._conversationId,
+          assistantMessageId,
+          userMessageId,
+          data.context,
+          data.persona_state
+        );
+        break;
+      case "error":
+        cb.onError?.({ message: data.message, code: "SERVER_ERROR" });
+        break;
+    }
+  }
+  disconnect() {
+    if (this.ws) {
+      if (this._wsHandlers) {
+        this.ws.removeEventListener("open", this._wsHandlers.onopen);
+        this.ws.removeEventListener("error", this._wsHandlers.onerror);
+        this.ws.removeEventListener("message", this._wsHandlers.onmessage);
+        this.ws.removeEventListener("close", this._wsHandlers.onclose);
+        this._wsHandlers = null;
+      }
+      this.ws.close();
+      this.ws = null;
+    }
+    this._sessionId = null;
+    this._conversationId = null;
+  }
+  abort() {
+    const resolve7 = this.pendingResolve;
+    this.resetPendingStream();
+    if (this.ws) {
+      if (this._wsHandlers) {
+        this.ws.removeEventListener("open", this._wsHandlers.onopen);
+        this.ws.removeEventListener("error", this._wsHandlers.onerror);
+        this.ws.removeEventListener("message", this._wsHandlers.onmessage);
+        this.ws.removeEventListener("close", this._wsHandlers.onclose);
+        this._wsHandlers = null;
+      }
+      this.ws.close();
+      this.ws = null;
+    }
+    resolve7?.();
+  }
+  async health() {
+    try {
+      const resp = await fetch(`${this.baseUrl}/health`);
+      return resp.ok;
+    } catch {
+      return false;
+    }
+  }
+  async reloadConfig(adminToken) {
+    try {
+      const resp = await fetch(`${this.baseUrl}/admin/reload`, {
+        method: "POST",
+        headers: {
+          "X-Crabby-Admin-Token": adminToken
+        }
+      });
+      if (!resp.ok) {
+        return {
+          ok: false,
+          status: resp.status,
+          detail: await readErrorDetail(resp)
+        };
+      }
+      return { ok: true, status: resp.status, detail: null };
+    } catch {
+      return { ok: false, status: null, detail: null };
+    }
+  }
+  async reloadSettings(adminToken) {
+    try {
+      const resp = await fetch(`${this.baseUrl}/admin/reload-settings`, {
+        method: "POST",
+        headers: {
+          "X-Crabby-Admin-Token": adminToken
+        }
+      });
+      if (!resp.ok) {
+        return {
+          ok: false,
+          status: resp.status,
+          detail: await readErrorDetail(resp)
+        };
+      }
+      return { ok: true, status: resp.status, detail: null };
+    } catch {
+      return { ok: false, status: null, detail: null };
+    }
+  }
+  async getMcpStatus(adminToken) {
+    try {
+      const resp = await fetch(`${this.baseUrl}/admin/mcp/status`, {
+        headers: {
+          "X-Crabby-Admin-Token": adminToken
+        }
+      });
+      if (!resp.ok) {
+        return {
+          ok: false,
+          status: resp.status,
+          detail: await readErrorDetail(resp)
+        };
+      }
+      return {
+        ok: true,
+        status: resp.status,
+        detail: null,
+        data: await resp.json()
+      };
+    } catch {
+      return { ok: false, status: null, detail: null };
+    }
+  }
+  async testCurrentProfile(adminToken) {
+    try {
+      const resp = await fetch(`${this.baseUrl}/admin/profile/test`, {
+        method: "POST",
+        headers: {
+          "X-Crabby-Admin-Token": adminToken
+        }
+      });
+      if (!resp.ok) {
+        return {
+          ok: false,
+          status: resp.status,
+          detail: await readErrorDetail(resp)
+        };
+      }
+      return {
+        ok: true,
+        status: resp.status,
+        detail: null,
+        data: await resp.json()
+      };
+    } catch {
+      return { ok: false, status: null, detail: null };
+    }
+  }
+  async listLlmProfiles(adminToken) {
+    return this.requestLlmProfiles("/admin/profiles", adminToken);
+  }
+  async saveLlmProfile(adminToken, profile, activate) {
+    return this.requestLlmProfiles(`/admin/profiles/${profile.id}`, adminToken, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Crabby-Admin-Token": adminToken
+      },
+      body: JSON.stringify({ profile, activate })
+    });
+  }
+  async activateLlmProfile(adminToken, profileId) {
+    return this.requestLlmProfiles(
+      `/admin/profiles/${profileId}/activate`,
+      adminToken,
+      { method: "POST" }
+    );
+  }
+  async deleteLlmProfile(adminToken, profileId) {
+    return this.requestLlmProfiles(`/admin/profiles/${profileId}`, adminToken, {
+      method: "DELETE"
+    });
+  }
+  async requestLlmProfiles(path, adminToken, init = {}) {
+    try {
+      const headers = new Headers(init.headers);
+      headers.set("X-Crabby-Admin-Token", adminToken);
+      const resp = await fetch(`${this.baseUrl}${path}`, {
+        ...init,
+        headers
+      });
+      if (!resp.ok) {
+        return {
+          ok: false,
+          status: resp.status,
+          detail: await readErrorDetail(resp)
+        };
+      }
+      return {
+        ok: true,
+        status: resp.status,
+        detail: null,
+        data: await resp.json()
+      };
+    } catch {
+      return { ok: false, status: null, detail: null };
+    }
+  }
+  normalizePayload(payload, sessionId, conversationId) {
+    if (typeof payload === "string") {
+      return {
+        content: payload,
+        session_id: sessionId,
+        conversation_id: conversationId
+      };
+    }
+    return {
+      ...payload,
+      session_id: payload.session_id ?? sessionId,
+      conversation_id: payload.conversation_id ?? conversationId
+    };
+  }
+  normalizeWebSocketPayload(payload) {
+    if (typeof payload === "string") {
+      return { type: "message", content: payload };
+    }
+    return {
+      type: "message",
+      content: payload.content,
+      pasted_contents: payload.pasted_contents,
+      persona_mode: payload.persona_mode,
+      manual_persona_id: payload.manual_persona_id
+    };
+  }
+  async ensureSession() {
+    if (this._sessionId && this._conversationId) {
+      return {
+        id: this._sessionId,
+        active_conversation_id: this._conversationId
+      };
+    }
+    return this.createSession();
+  }
+  applySessionInfo(session) {
+    this._sessionId = session.id;
+    this._conversationId = session.active_conversation_id;
+  }
+  applyChatResponse(response) {
+    this._sessionId = response.session_id;
+    this._conversationId = response.conversation_id;
+  }
+};
+async function readErrorDetail(resp) {
+  try {
+    const body = await resp.json();
+    if (typeof body?.detail === "string") {
+      return body.detail;
+    }
+    if (typeof body?.message === "string") {
+      return body.message;
+    }
+  } catch {
+  }
+  try {
+    return (await resp.text()).trim();
+  } catch {
+    return "";
+  }
+}
+
+// src/chat/ChatView.ts
+var import_obsidian8 = require("obsidian");
+
+// src/config/settingsEvents.ts
+var SETTINGS_UPDATED_EVENT = "crabby-settings-updated";
+function notifySettingsUpdated() {
+  if (typeof document === "undefined" || typeof CustomEvent === "undefined") {
+    return;
+  }
+  document.dispatchEvent(new CustomEvent(SETTINGS_UPDATED_EVENT));
+}
+
+// src/chat/chatComposer.ts
+var import_obsidian = require("obsidian");
+var IMAGE_REF_RE = /\[Image\s+#(\d+)\]/g;
+var SLASH_CONTEXT_RE = /(^|[^0-9A-Za-z_./\\:-])\/([^\s/]*)$/;
+var QUOTED_MENTION_CONTEXT_RE = /(^|[^0-9A-Za-z_./\\:-])@"([^"]*)$/;
+var REGULAR_MENTION_CONTEXT_RE = /(^|[^0-9A-Za-z_./\\:-])@([^\s"]*)$/;
+var QUOTED_MENTION_RE = /(^|[^0-9A-Za-z_./\\:-])@"([^"]+)"(#L\d+(?:-\d+)?)?/g;
+var REGULAR_MENTION_RE = /(^|[^0-9A-Za-z_./\\:-])@([^\s"]+)/g;
+var MAX_IMAGES = 4;
+var MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+function createChatComposer(deps) {
+  const { app, client, elements, state } = deps;
+  let skills = [];
+  let nextImageId = 1;
+  let pastedContents = {};
+  let suggestions = [];
+  let selectedSuggestionIndex = 0;
+  let suggestionContextKey = null;
+  let historyNavigationIndex = null;
+  let historyDraft = "";
+  let suppressNextHistoryReset = false;
+  let suppressNextSelectionRefresh = false;
+  let lastClipboardHintAt = 0;
+  let backendCapabilities = null;
+  const cleanupFns = [];
+  void client.listSkills().then((result2) => {
+    skills = result2;
+    refreshSuggestions();
+  }).catch(() => {
+    skills = [];
+  });
+  void client.getCapabilities().then((result2) => {
+    backendCapabilities = result2;
+  }).catch(() => {
+    backendCapabilities = null;
+  });
+  const onInput = () => {
+    if (suppressNextHistoryReset) {
+      suppressNextHistoryReset = false;
+    } else {
+      resetHistoryNavigation();
+    }
+    autoResize();
+    pruneDeletedImageRefs();
+    refreshSuggestions();
+  };
+  const onSelectionChange = () => {
+    if (suppressNextSelectionRefresh) {
+      suppressNextSelectionRefresh = false;
+      return;
+    }
+    refreshSuggestions();
+  };
+  const onKeyDown = (evt) => {
+    if (suggestions.length > 0) {
+      if (evt.key === "ArrowDown") {
+        suppressNextSelectionRefresh = true;
+        evt.preventDefault();
+        evt.stopPropagation();
+        selectedSuggestionIndex = (selectedSuggestionIndex + 1) % suggestions.length;
+        renderSuggestions();
+        return;
+      }
+      if (evt.key === "ArrowUp") {
+        suppressNextSelectionRefresh = true;
+        evt.preventDefault();
+        evt.stopPropagation();
+        selectedSuggestionIndex = (selectedSuggestionIndex - 1 + suggestions.length) % suggestions.length;
+        renderSuggestions();
+        return;
+      }
+      if (evt.key === "Tab" || evt.key === "Enter") {
+        evt.preventDefault();
+        evt.stopPropagation();
+        applySuggestion(suggestions[selectedSuggestionIndex]);
+        return;
+      }
+      if (evt.key === "Escape") {
+        suppressNextSelectionRefresh = true;
+        evt.preventDefault();
+        evt.stopPropagation();
+        suggestions = [];
+        selectedSuggestionIndex = 0;
+        suggestionContextKey = null;
+        renderSuggestions();
+        return;
+      }
+    }
+  };
+  const onPaste = (evt) => {
+    const files = extractImageFilesFromClipboard(evt);
+    if (files.length === 0) {
+      return;
+    }
+    evt.preventDefault();
+    void ingestImageFiles(files);
+  };
+  const onDragOver = (evt) => {
+    if (!hasImageFiles(evt.dataTransfer?.files)) {
+      return;
+    }
+    evt.preventDefault();
+    elements.inputAreaEl.classList.add("drag-over");
+  };
+  const onDragLeave = () => {
+    elements.inputAreaEl.classList.remove("drag-over");
+  };
+  const onDrop = (evt) => {
+    elements.inputAreaEl.classList.remove("drag-over");
+    const files = toImageFiles(evt.dataTransfer?.files);
+    if (files.length === 0) {
+      return;
+    }
+    evt.preventDefault();
+    void ingestImageFiles(files);
+  };
+  const onAttachmentClick = () => {
+    elements.hiddenFileInput.click();
+  };
+  const onFileInput = () => {
+    const files = toImageFiles(elements.hiddenFileInput.files);
+    elements.hiddenFileInput.value = "";
+    if (files.length === 0) {
+      return;
+    }
+    void ingestImageFiles(files);
+  };
+  const onFocus = () => {
+    void maybeShowClipboardHint();
+  };
+  elements.inputEl.addEventListener("input", onInput);
+  elements.inputEl.addEventListener("keydown", onKeyDown);
+  elements.inputEl.addEventListener("click", onSelectionChange);
+  elements.inputEl.addEventListener("keyup", onSelectionChange);
+  elements.inputEl.addEventListener("paste", onPaste);
+  elements.inputAreaEl.addEventListener("dragover", onDragOver);
+  elements.inputAreaEl.addEventListener("dragleave", onDragLeave);
+  elements.inputAreaEl.addEventListener("drop", onDrop);
+  elements.attachmentBtn.addEventListener("click", onAttachmentClick);
+  elements.hiddenFileInput.addEventListener("change", onFileInput);
+  window.addEventListener("focus", onFocus);
+  cleanupFns.push(() => {
+    elements.inputEl.removeEventListener("input", onInput);
+    elements.inputEl.removeEventListener("keydown", onKeyDown);
+    elements.inputEl.removeEventListener("click", onSelectionChange);
+    elements.inputEl.removeEventListener("keyup", onSelectionChange);
+    elements.inputEl.removeEventListener("paste", onPaste);
+    elements.inputAreaEl.removeEventListener("dragover", onDragOver);
+    elements.inputAreaEl.removeEventListener("dragleave", onDragLeave);
+    elements.inputAreaEl.removeEventListener("drop", onDrop);
+    elements.attachmentBtn.removeEventListener("click", onAttachmentClick);
+    elements.hiddenFileInput.removeEventListener("change", onFileInput);
+    window.removeEventListener("focus", onFocus);
+  });
+  function getSubmitPayload() {
+    const rawText = elements.inputEl.value;
+    const activeImages = getReferencedImages(rawText);
+    const displayText = removeImageRefs(rawText);
+    const displayAttachments = buildDisplayAttachments(rawText, activeImages);
+    if (!displayText.trim() && displayAttachments.length === 0) {
+      return null;
+    }
+    if (activeImages.length > 0 && backendCapabilities?.supports_vision === false) {
+      new import_obsidian.Notice("\u5F53\u524D\u540E\u7AEF\u6A21\u578B\u672A\u5F00\u542F\u89C6\u89C9\u80FD\u529B\uFF0C\u56FE\u7247\u5DF2\u4FDD\u7559\u5728\u8F93\u5165\u6846\u91CC\uFF0C\u6682\u65F6\u4E0D\u80FD\u53D1\u9001\u3002");
+      return null;
+    }
+    return {
+      request: {
+        content: rawText,
+        pasted_contents: activeImages.map(({ preview_url: _previewUrl, size_bytes: _size, ...rest }) => rest)
+      },
+      displayText,
+      displayAttachments
+    };
+  }
+  function clear() {
+    clearComposerState();
+    elements.inputEl.value = "";
+    autoResize();
+    refreshSuggestions();
+  }
+  function destroy() {
+    clearComposerState();
+    cleanupFns.splice(0).forEach((cleanup) => cleanup());
+  }
+  function clearComposerState() {
+    pastedContents = {};
+    suggestions = [];
+    selectedSuggestionIndex = 0;
+    suggestionContextKey = null;
+    resetHistoryNavigation();
+    elements.composerPillsEl.empty();
+    renderSuggestions();
+  }
+  async function maybeShowClipboardHint() {
+    if (typeof navigator === "undefined" || !navigator.clipboard || typeof navigator.clipboard.read !== "function") {
+      return;
+    }
+    if (Date.now() - lastClipboardHintAt < 15e3) {
+      return;
+    }
+    try {
+      const items = await navigator.clipboard.read();
+      const hasImage = items.some(
+        (item) => item.types.some((type) => type.startsWith("image/"))
+      );
+      if (hasImage) {
+        lastClipboardHintAt = Date.now();
+        new import_obsidian.Notice("\u526A\u8D34\u677F\u91CC\u6709\u56FE\u7247\uFF0C\u53EF\u4EE5\u76F4\u63A5\u7C98\u8D34\u5230\u5BF9\u8BDD\u6846\u3002");
+      }
+    } catch {
+    }
+  }
+  async function ingestImageFiles(files) {
+    const currentCount = Object.keys(pastedContents).length;
+    if (currentCount + files.length > MAX_IMAGES) {
+      new import_obsidian.Notice(`\u6BCF\u6B21\u6700\u591A\u9644\u5E26 ${MAX_IMAGES} \u5F20\u56FE\u7247\u3002`);
+      return;
+    }
+    for (const file of files) {
+      if (file.size > MAX_IMAGE_BYTES) {
+        new import_obsidian.Notice(`${file.name} \u8D85\u8FC7 10 MB\uFF0C\u5DF2\u8DF3\u8FC7\u3002`);
+        continue;
+      }
+      const dataUrl = await readFileAsDataUrl(file);
+      const [header, base64] = dataUrl.split(",", 2);
+      if (!base64) {
+        continue;
+      }
+      const mediaType = extractMediaType(header) || file.type || "image/png";
+      const dimensions = await getImageDimensions(dataUrl);
+      const id = nextImageId++;
+      pastedContents[id] = {
+        id,
+        type: "image",
+        data: base64,
+        media_type: mediaType,
+        filename: file.name || `Image ${id}`,
+        width: dimensions?.width,
+        height: dimensions?.height,
+        preview_url: dataUrl,
+        size_bytes: file.size
+      };
+      insertImagePlaceholder(id);
+    }
+    renderImagePills();
+    refreshSuggestions();
+  }
+  function buildDisplayAttachments(rawText, activeImages) {
+    const fileAttachments = extractMentionDisplayAttachments(rawText);
+    const imageAttachments = activeImages.map((image) => ({
+      type: "image",
+      filename: image.filename,
+      media_type: image.media_type,
+      width: image.width,
+      height: image.height,
+      preview_url: image.preview_url
+    }));
+    return [...fileAttachments, ...imageAttachments];
+  }
+  function extractMentionDisplayAttachments(rawText) {
+    const mentions = extractAtMentions(rawText);
+    const results = [];
+    for (const mention of mentions) {
+      const path = mention.path;
+      const abstract = app.vault.getAbstractFileByPath(path);
+      if (abstract instanceof import_obsidian.TFolder) {
+        const attachment = {
+          type: "vault_directory",
+          path,
+          entry_count: abstract.children.length
+        };
+        results.push(attachment);
+      } else if (abstract instanceof import_obsidian.TFile) {
+        const attachment = {
+          type: "vault_file",
+          path,
+          line_start: mention.line_start,
+          line_end: mention.line_end
+        };
+        results.push(attachment);
+      }
+    }
+    return results;
+  }
+  function getReferencedImages(rawText) {
+    const ids = Array.from(rawText.matchAll(IMAGE_REF_RE)).map((match) => Number(match[1])).filter((value) => Number.isFinite(value));
+    const ordered = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const id of ids) {
+      if (seen.has(id) || !pastedContents[id]) {
+        continue;
+      }
+      seen.add(id);
+      ordered.push(pastedContents[id]);
+    }
+    return ordered;
+  }
+  function pruneDeletedImageRefs() {
+    const activeIds = new Set(
+      Array.from(elements.inputEl.value.matchAll(IMAGE_REF_RE)).map(
+        (match) => Number(match[1])
+      )
+    );
+    for (const [key, item] of Object.entries(pastedContents)) {
+      if (!activeIds.has(Number(key))) {
+        delete pastedContents[Number(key)];
+      }
+    }
+    renderImagePills();
+  }
+  function renderImagePills() {
+    elements.composerPillsEl.empty();
+    for (const image of Object.values(pastedContents)) {
+      const pill = elements.composerPillsEl.createDiv({ cls: "chat-image-pill" });
+      pill.createEl("img", {
+        cls: "chat-image-pill-thumb",
+        attr: {
+          src: image.preview_url,
+          alt: image.filename
+        }
+      });
+      const label = pill.createDiv({ cls: "chat-image-pill-label" });
+      label.setText(image.filename);
+      const removeBtn = pill.createEl("button", {
+        cls: "chat-image-pill-remove",
+        attr: { "aria-label": `Remove ${image.filename}` }
+      });
+      removeBtn.setText("\xD7");
+      removeBtn.addEventListener("click", () => {
+        delete pastedContents[image.id];
+        elements.inputEl.value = elements.inputEl.value.replace(new RegExp(`\\s*\\[Image\\s+#${image.id}\\]\\s*`, "g"), " ").replace(/[ \t]{2,}/g, " ").trim();
+        autoResize();
+        renderImagePills();
+        refreshSuggestions();
+      });
+    }
+    elements.composerPillsEl.classList.toggle(
+      "has-items",
+      Object.keys(pastedContents).length > 0
+    );
+  }
+  function refreshSuggestions() {
+    const slashContext = getSlashContext();
+    if (slashContext) {
+      setSuggestions(
+        buildSlashSuggestions(slashContext.query, slashContext.from, slashContext.to),
+        `slash:${slashContext.from}:${slashContext.to}:${slashContext.query}`
+      );
+      return;
+    }
+    const mentionContext = getMentionContext();
+    if (mentionContext) {
+      setSuggestions(
+        buildMentionSuggestions(
+          mentionContext.query,
+          mentionContext.from,
+          mentionContext.to
+        ),
+        `mention:${mentionContext.from}:${mentionContext.to}:${mentionContext.query}`
+      );
+      return;
+    }
+    setSuggestions([]);
+  }
+  function renderSuggestions() {
+    elements.suggestionListEl.empty();
+    if (suggestions.length === 0) {
+      elements.suggestionListEl.classList.remove("is-open");
+      return;
+    }
+    elements.suggestionListEl.classList.add("is-open");
+    suggestions.forEach((suggestion, index) => {
+      const item = elements.suggestionListEl.createDiv({
+        cls: "chat-suggestion-item"
+      });
+      if (index === selectedSuggestionIndex) {
+        item.classList.add("is-selected");
+        window.setTimeout(() => {
+          item.scrollIntoView({ block: "nearest" });
+        }, 0);
+      }
+      const title = item.createDiv({ cls: "chat-suggestion-title" });
+      title.setText(suggestion.label);
+      const desc = item.createDiv({ cls: "chat-suggestion-desc" });
+      desc.setText(suggestion.description);
+      item.addEventListener("mousedown", (evt) => {
+        evt.preventDefault();
+        applySuggestion(suggestion);
+      });
+    });
+  }
+  function applySuggestion(suggestion) {
+    const value = elements.inputEl.value;
+    const before = value.slice(0, suggestion.replaceFrom);
+    const after = value.slice(suggestion.replaceTo);
+    elements.inputEl.value = `${before}${suggestion.insertText}${after}`;
+    const cursor = suggestion.replaceFrom + suggestion.insertText.length;
+    elements.inputEl.setSelectionRange(cursor, cursor);
+    elements.inputEl.focus();
+    autoResize();
+    suggestions = [];
+    suggestionContextKey = null;
+    renderSuggestions();
+    pruneDeletedImageRefs();
+  }
+  function navigateHistory(direction) {
+    if (suggestions.length > 0) {
+      return false;
+    }
+    const start = elements.inputEl.selectionStart ?? elements.inputEl.value.length;
+    const end = elements.inputEl.selectionEnd ?? start;
+    if (start !== end) {
+      return false;
+    }
+    if (direction === "up" && !isCursorOnFirstLine(start)) {
+      return false;
+    }
+    if (direction === "down" && !isCursorOnLastLine(end)) {
+      return false;
+    }
+    const historyEntries = getMessageHistoryEntries();
+    if (historyEntries.length === 0) {
+      return false;
+    }
+    if (historyNavigationIndex == null) {
+      if (direction === "down") {
+        return false;
+      }
+      historyDraft = elements.inputEl.value;
+      historyNavigationIndex = historyEntries.length - 1;
+      setComposerText(historyEntries[historyNavigationIndex]);
+      return true;
+    }
+    if (direction === "up") {
+      if (historyNavigationIndex === 0) {
+        return true;
+      }
+      historyNavigationIndex -= 1;
+      setComposerText(historyEntries[historyNavigationIndex]);
+      return true;
+    }
+    if (historyNavigationIndex >= historyEntries.length - 1) {
+      historyNavigationIndex = null;
+      setComposerText(historyDraft);
+      return true;
+    }
+    historyNavigationIndex += 1;
+    setComposerText(historyEntries[historyNavigationIndex]);
+    return true;
+  }
+  function setSuggestions(nextSuggestions, contextKey = null) {
+    const currentSelection = suggestions[selectedSuggestionIndex];
+    const shouldPreserveSelection = contextKey != null && contextKey === suggestionContextKey;
+    suggestions = nextSuggestions;
+    suggestionContextKey = contextKey;
+    if (suggestions.length === 0) {
+      selectedSuggestionIndex = 0;
+      renderSuggestions();
+      return;
+    }
+    if (shouldPreserveSelection && currentSelection) {
+      const preservedIndex = suggestions.findIndex(
+        (suggestion) => isSameSuggestion(suggestion, currentSelection)
+      );
+      if (preservedIndex >= 0) {
+        selectedSuggestionIndex = preservedIndex;
+        renderSuggestions();
+        return;
+      }
+    }
+    selectedSuggestionIndex = shouldPreserveSelection ? Math.min(selectedSuggestionIndex, suggestions.length - 1) : 0;
+    renderSuggestions();
+  }
+  function buildSlashSuggestions(query, from, to) {
+    const normalizedQuery = query.trim().toLowerCase();
+    const ranked = skills.map((skill) => ({
+      skill,
+      score: scoreSkill(skill, normalizedQuery)
+    })).filter((entry) => entry.score > 0 || normalizedQuery.length === 0).sort((a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name)).slice(0, 8);
+    return ranked.map(({ skill }) => ({
+      kind: "slash",
+      label: `/${skill.name}`,
+      description: skill.description,
+      replaceFrom: from,
+      replaceTo: to,
+      insertText: `/${skill.name} `
+    }));
+  }
+  function buildMentionSuggestions(query, from, to) {
+    const normalizedQuery = query.trim().toLowerCase();
+    const candidates = app.vault.getAllLoadedFiles().filter(isMentionSuggestionCandidate);
+    const ranked = candidates.map((candidate) => ({
+      candidate,
+      score: scoreMentionCandidate(candidate, normalizedQuery)
+    })).filter((entry) => entry.score > 0 || normalizedQuery.length === 0).sort(
+      (a, b) => b.score - a.score || a.candidate.path.localeCompare(b.candidate.path)
+    ).slice(0, 8);
+    return ranked.map(({ candidate }) => ({
+      kind: "mention",
+      label: candidate instanceof import_obsidian.TFolder ? `@${candidate.path}/` : `@${candidate.path}`,
+      description: candidate instanceof import_obsidian.TFolder ? `${candidate.children.length} items` : candidate.basename,
+      replaceFrom: from,
+      replaceTo: to,
+      insertText: `${formatMention(candidate.path)} `
+    }));
+  }
+  function getSlashContext() {
+    const cursor = elements.inputEl.selectionStart ?? elements.inputEl.value.length;
+    const before = elements.inputEl.value.slice(0, cursor);
+    const match = before.match(SLASH_CONTEXT_RE);
+    if (!match || match.index == null) {
+      return null;
+    }
+    const slashIndex = match.index + match[1].length;
+    let to = cursor;
+    while (to < elements.inputEl.value.length && !/\s/.test(elements.inputEl.value[to])) {
+      to += 1;
+    }
+    return {
+      query: match[2] ?? "",
+      from: slashIndex,
+      to
+    };
+  }
+  function getMentionContext() {
+    const cursor = elements.inputEl.selectionStart ?? elements.inputEl.value.length;
+    const before = elements.inputEl.value.slice(0, cursor);
+    const quoted = before.match(QUOTED_MENTION_CONTEXT_RE);
+    if (quoted && quoted.index != null) {
+      const start2 = quoted.index + quoted[1].length;
+      let to2 = cursor;
+      while (to2 < elements.inputEl.value.length && elements.inputEl.value[to2] !== '"') {
+        to2 += 1;
+      }
+      if (elements.inputEl.value[to2] === '"') {
+        to2 += 1;
+      }
+      return {
+        query: quoted[2] ?? "",
+        from: start2,
+        to: to2
+      };
+    }
+    const regular = before.match(REGULAR_MENTION_CONTEXT_RE);
+    if (!regular || regular.index == null) {
+      return null;
+    }
+    const start = regular.index + regular[1].length;
+    let to = cursor;
+    while (to < elements.inputEl.value.length && !/\s/.test(elements.inputEl.value[to])) {
+      to += 1;
+    }
+    return {
+      query: regular[2] ?? "",
+      from: start,
+      to
+    };
+  }
+  function insertImagePlaceholder(id) {
+    const token = `[Image #${id}]`;
+    insertTextAtCursor(`${needsLeadingSpace() ? " " : ""}${token} `);
+    autoResize();
+  }
+  function insertTextAtCursor(text) {
+    const start = elements.inputEl.selectionStart ?? elements.inputEl.value.length;
+    const end = elements.inputEl.selectionEnd ?? start;
+    const value = elements.inputEl.value;
+    elements.inputEl.value = `${value.slice(0, start)}${text}${value.slice(end)}`;
+    const nextCursor = start + text.length;
+    elements.inputEl.setSelectionRange(nextCursor, nextCursor);
+    elements.inputEl.focus();
+  }
+  function setComposerText(text) {
+    suppressNextHistoryReset = true;
+    elements.inputEl.value = text;
+    const cursor = text.length;
+    elements.inputEl.setSelectionRange(cursor, cursor);
+    elements.inputEl.focus();
+    autoResize();
+    pruneDeletedImageRefs();
+    refreshSuggestions();
+  }
+  function resetHistoryNavigation() {
+    historyNavigationIndex = null;
+    historyDraft = "";
+  }
+  function getMessageHistoryEntries() {
+    return state.messages.filter((message) => message.role === "user" && Boolean(message.content.trim())).map((message) => message.content);
+  }
+  function isCursorOnFirstLine(position) {
+    return !elements.inputEl.value.slice(0, position).includes("\n");
+  }
+  function isCursorOnLastLine(position) {
+    return !elements.inputEl.value.slice(position).includes("\n");
+  }
+  function needsLeadingSpace() {
+    const start = elements.inputEl.selectionStart ?? elements.inputEl.value.length;
+    const previous = elements.inputEl.value[start - 1];
+    return Boolean(previous && !/\s/.test(previous));
+  }
+  function autoResize() {
+    elements.inputEl.style.height = "auto";
+    elements.inputEl.style.height = `${Math.min(elements.inputEl.scrollHeight, 120)}px`;
+  }
+  return {
+    getSubmitPayload,
+    navigateHistory,
+    clear,
+    destroy
+  };
+}
+function removeImageRefs(text) {
+  return text.replace(IMAGE_REF_RE, "").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+function extractAtMentions(text) {
+  const results = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const match of text.matchAll(QUOTED_MENTION_RE)) {
+    const path = `${match[2] ?? ""}${match[3] ?? ""}`;
+    pushMention(results, seen, path);
+  }
+  for (const match of text.matchAll(REGULAR_MENTION_RE)) {
+    const path = (match[2] ?? "").replace(/[.,;:!?]+$/, "");
+    if (path.startsWith('"')) {
+      continue;
+    }
+    pushMention(results, seen, path);
+  }
+  return results;
+}
+function pushMention(results, seen, rawPath) {
+  if (!rawPath || seen.has(rawPath)) {
+    return;
+  }
+  seen.add(rawPath);
+  const rangeMatch = rawPath.match(/^(.*)#L(\d+)(?:-(\d+))?$/);
+  if (!rangeMatch) {
+    results.push({ path: rawPath });
+    return;
+  }
+  const start = Number(rangeMatch[2]);
+  const end = Number(rangeMatch[3] ?? rangeMatch[2]);
+  results.push({
+    path: rangeMatch[1],
+    line_start: Math.min(start, end),
+    line_end: Math.max(start, end)
+  });
+}
+function scoreSkill(skill, query) {
+  if (!query) {
+    return 1;
+  }
+  const name = skill.name.toLowerCase();
+  const description = skill.description.toLowerCase();
+  if (name.startsWith(query)) return 5;
+  if (name.includes(query)) return 4;
+  if ((skill.aliases ?? []).some((alias) => alias.toLowerCase().startsWith(query))) {
+    return 3.5;
+  }
+  if (description.includes(query)) return 2;
+  return 0;
+}
+function isMentionSuggestionCandidate(file) {
+  if (!(file instanceof import_obsidian.TFile || file instanceof import_obsidian.TFolder)) {
+    return false;
+  }
+  return Boolean(file.path);
+}
+function scoreMentionCandidate(candidate, query) {
+  if (!query) {
+    return 1;
+  }
+  const path = candidate.path.toLowerCase();
+  const base = candidate.name.toLowerCase();
+  if (base.startsWith(query)) return 5;
+  if (path.startsWith(query)) return 4.5;
+  if (base.includes(query)) return 4;
+  if (path.includes(query)) return 3;
+  return 0;
+}
+function formatMention(path) {
+  return /\s/.test(path) ? `@"${path}"` : `@${path}`;
+}
+function isSameSuggestion(left, right) {
+  return left.kind === right.kind && left.label === right.label && left.insertText === right.insertText && left.replaceFrom === right.replaceFrom && left.replaceTo === right.replaceTo;
+}
+function extractImageFilesFromClipboard(evt) {
+  const items = Array.from(evt.clipboardData?.items ?? []);
+  return items.filter((item) => item.type.startsWith("image/")).map((item) => item.getAsFile()).filter((file) => file != null);
+}
+function toImageFiles(fileList) {
+  return Array.from(fileList ?? []).filter((file) => file.type.startsWith("image/"));
+}
+function hasImageFiles(fileList) {
+  return toImageFiles(fileList).length > 0;
+}
+function readFileAsDataUrl(file) {
+  return new Promise((resolve7, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve7(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+function extractMediaType(header) {
+  const match = header.match(/^data:([^;]+);base64$/);
+  return match ? match[1] : null;
+}
+function getImageDimensions(src) {
+  return new Promise((resolve7) => {
+    const image = new Image();
+    image.onload = () => resolve7({ width: image.width, height: image.height });
+    image.onerror = () => resolve7(null);
+    image.src = src;
+  });
+}
+
+// src/chat/chatIcons.ts
+var ICON_SEND = `
     <svg viewBox="0 0 24 24" width="15" height="15" fill="none"
       stroke="currentColor" stroke-width="2.5"
       stroke-linecap="round" stroke-linejoin="round">
       <line x1="12" y1="19" x2="12" y2="5"/>
       <polyline points="5 12 12 5 19 12"/>
-    </svg>`,cn=`
+    </svg>`;
+var ICON_STOP = `
     <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
       <rect x="4" y="4" width="16" height="16" rx="3"/>
-    </svg>`,dn=`
+    </svg>`;
+var ICON_HISTORY = `
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
       stroke="currentColor" stroke-width="2"
       stroke-linecap="round" stroke-linejoin="round">
       <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
       <path d="M3 3v5h5"/>
       <path d="M12 7v5l4 2"/>
-    </svg>`,un=`
+    </svg>`;
+var ICON_PLUS = `
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
       stroke="currentColor" stroke-width="2.5"
       stroke-linecap="round" stroke-linejoin="round">
       <line x1="12" y1="5" x2="12" y2="19"/>
       <line x1="5" y1="12" x2="19" y2="12"/>
-    </svg>`,pn=`
+    </svg>`;
+var ICON_TREE = `
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
       stroke="currentColor" stroke-width="2"
       stroke-linecap="round" stroke-linejoin="round">
@@ -38,7 +1471,8 @@
       <circle cx="12" cy="3" r="2"/>
       <circle cx="6" cy="16" r="2"/>
       <circle cx="18" cy="16" r="2"/>
-    </svg>`,gn=`
+    </svg>`;
+var ICON_FORK = `
     <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
       stroke="currentColor" stroke-width="2"
       stroke-linecap="round" stroke-linejoin="round">
@@ -47,38 +1481,1805 @@
       <circle cx="18" cy="6" r="3"/>
       <path d="M6 9v6"/>
       <path d="M9 6h3a6 6 0 0 1 6 6v3"/>
-    </svg>`,mn=`
+    </svg>`;
+var ICON_ATTACH = `
     <svg viewBox="0 0 24 24" width="15" height="15" fill="none"
       stroke="currentColor" stroke-width="2"
       stroke-linecap="round" stroke-linejoin="round">
       <path d="M21.44 11.05l-8.49 8.49a6 6 0 1 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66L9.41 17.41a2 2 0 1 1-2.83-2.83l8.49-8.48"/>
-    </svg>`,hn=`
+    </svg>`;
+var ICON_TRASH = `
     <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
       stroke="currentColor" stroke-width="2"
       stroke-linecap="round" stroke-linejoin="round">
       <polyline points="3 6 5 6 21 6"/>
       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-    </svg>`;function fn(t){let e=t.toLowerCase();return e==="bash"||e==="shell"||e==="run_command"?">_":e.includes("read")||e.includes("file")?"\u{1F4C4}":e.includes("write")?"\u270F\uFE0F":e.includes("search")||e.includes("grep")?"\u{1F50D}":e.includes("mempalace")||e.includes("memory")?"\u{1F9E0}":e.includes("browser")||e.includes("web")?"\u{1F310}":"\u{1F527}"}var vn=require("obsidian");function bn(t,e,n){let s=t.createDiv({cls:"chat-custom-select"});s.addClass("chat-persona-select");let r=s.createDiv({cls:"custom-select-trigger"});r.innerHTML=`<span>Persona</span>
+    </svg>`;
+function getToolIcon(name) {
+  const normalized = name.toLowerCase();
+  if (normalized === "bash" || normalized === "shell" || normalized === "run_command") {
+    return ">_";
+  }
+  if (normalized.includes("read") || normalized.includes("file")) {
+    return "\u{1F4C4}";
+  }
+  if (normalized.includes("write")) {
+    return "\u270F\uFE0F";
+  }
+  if (normalized.includes("search") || normalized.includes("grep")) {
+    return "\u{1F50D}";
+  }
+  if (normalized.includes("mempalace") || normalized.includes("memory")) {
+    return "\u{1F9E0}";
+  }
+  if (normalized.includes("browser") || normalized.includes("web")) {
+    return "\u{1F310}";
+  }
+  return "\u{1F527}";
+}
+
+// src/chat/chatPersonaSelect.ts
+var import_obsidian2 = require("obsidian");
+function mountPersonaSelect(parentEl, client, state) {
+  const customSelect = parentEl.createDiv({ cls: "chat-custom-select" });
+  customSelect.addClass("chat-persona-select");
+  const triggerBtn = customSelect.createDiv({ cls: "custom-select-trigger" });
+  triggerBtn.innerHTML = `<span>Persona</span>
       <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-    `;let i=s.createDiv({cls:"custom-select-dropdown"}),a=[],d=[],o=()=>{d=[{kind:"auto",id:"auto",label:"Auto"},{kind:"none",id:"none",label:"No Persona"},...a.map(f=>({kind:"manual",id:f.id,label:f.title}))]},c=f=>f?a.find(y=>y.id===f)?.title??f:null,w=f=>f.mode==="none"?"none":f.mode==="manual"?f.manual_persona_id??"manual":"auto",S=f=>{if(f.mode==="none")return"No Persona";if(f.mode==="manual")return c(f.manual_persona_id)??"Manual";let y=c(f.active_persona_id);return y?`Auto / ${y}`:"Auto"},x=()=>{r.querySelector("span")?.setText(S(n.personaState));let f=w(n.personaState);Array.from(i.children).forEach(y=>{let b=y;b.classList.toggle("selected",b.dataset.optionKey===f)})},M=f=>{n.personaState={...xe(),...f},x()},p=f=>f.kind==="none"?{mode:"none",manual_persona_id:null,active_persona_id:null,source:"none",status:"disabled"}:f.kind==="manual"?{mode:"manual",manual_persona_id:f.id,active_persona_id:f.id,source:"manual",status:"manual"}:xe(),R=()=>{i.empty(),o();for(let f of d){let y=i.createDiv({cls:"custom-select-option"});y.dataset.optionKey=f.kind==="manual"?f.id:f.kind,y.createEl("span",{cls:"cso-name"}).setText(f.label),y.createEl("span",{cls:"cso-provider cso-meta"}).setText(f.kind==="auto"?"AUTO":f.kind==="none"?"OFF":"MANUAL"),y.addEventListener("click",async H=>{H.stopPropagation(),s.classList.remove("open");let J=n.personaState,j=p(f);M(j);let Y=e.sessionId;if(Y)try{let O=await e.patchSession(Y,{persona_mode:j.mode,manual_persona_id:j.manual_persona_id});M(O.persona_state)}catch(O){M(J);let P=O instanceof Error?O.message:String(O);new vn.Notice(`Persona switch failed: ${P}`)}})}x()};e.listPersonas().then(f=>{a=f,R()}).catch(f=>{console.warn("[ChatView] listPersonas failed:",f),R()}),R(),r.addEventListener("click",f=>{f.stopPropagation(),f.preventDefault(),s.classList.toggle("open")});let C=f=>{s.contains(f.target)||s.classList.remove("open")};return document.addEventListener("click",C),{setPersonaState:M,destroy:()=>{document.removeEventListener("click",C)}}}var it=require("obsidian");var we=require("node:fs"),Qe=require("node:path");var Je=["anthropic","openai","ollama","deepseek","qwen","kimi","minimax","zhipu","custom_openai"],Pe={baseUrl:!0,apiKey:!0,vision:!1,thinking:!1,thinkingBudget:!1,reasoningEffort:!1,reasoningSplit:!1},mr={anthropic:{id:"anthropic",label:"Anthropic",badge:"#d97706",defaultBaseUrl:"",apiKeyEnv:"ANTHROPIC_API_KEY",models:[{id:"claude-sonnet-4-20250514",label:"Claude Sonnet 4"}],capabilities:{...Pe,baseUrl:!1,vision:!0,thinking:!0,thinkingBudget:!0}},openai:{id:"openai",label:"OpenAI",badge:"#059669",defaultBaseUrl:"https://api.openai.com/v1",apiKeyEnv:"OPENAI_API_KEY",models:[{id:"gpt-5.4-mini",label:"GPT-5.4 Mini",supportsVision:!0},{id:"gpt-5.4",label:"GPT-5.4",supportsVision:!0}],capabilities:{...Pe,vision:!0,reasoningEffort:!0},reasoningEfforts:["none","minimal","low","medium","high","xhigh"]},ollama:{id:"ollama",label:"Ollama",badge:"#2563eb",defaultBaseUrl:"http://localhost:11434",apiKeyEnv:"",models:[{id:"llama3.1",label:"llama3.1"},{id:"qwen2.5",label:"qwen2.5"}],capabilities:{...Pe,apiKey:!1,vision:!0}},deepseek:{id:"deepseek",label:"DeepSeek",badge:"#4f46e5",defaultBaseUrl:"https://api.deepseek.com",apiKeyEnv:"DEEPSEEK_API_KEY",models:[{id:"deepseek-v4-flash",label:"DeepSeek V4 Flash"},{id:"deepseek-v4-pro",label:"DeepSeek V4 Pro"}],capabilities:{...Pe,thinking:!0,reasoningEffort:!0},reasoningEfforts:["high","max"]},qwen:{id:"qwen",label:"Qwen Coding Plan",badge:"#0891b2",defaultBaseUrl:"https://coding.dashscope.aliyuncs.com/v1",apiKeyEnv:"BAILIAN_CODING_PLAN_API_KEY",models:[{id:"qwen3.6-plus",label:"\u5343\u95EE qwen3.6-plus",supportsVision:!0,supportsThinking:!0},{id:"qwen3.5-plus",label:"\u5343\u95EE qwen3.5-plus",supportsVision:!0,supportsThinking:!0},{id:"qwen3-max-2026-01-23",label:"\u5343\u95EE qwen3-max-2026-01-23",supportsVision:!1,supportsThinking:!0},{id:"qwen3-coder-next",label:"\u5343\u95EE qwen3-coder-next",supportsVision:!1,supportsThinking:!1},{id:"qwen3-coder-plus",label:"\u5343\u95EE qwen3-coder-plus",supportsVision:!1,supportsThinking:!1},{id:"glm-5",label:"\u667A\u8C31 glm-5",supportsVision:!1,supportsThinking:!0},{id:"glm-4.7",label:"\u667A\u8C31 glm-4.7",supportsVision:!1,supportsThinking:!0},{id:"kimi-k2.5",label:"Kimi kimi-k2.5",supportsVision:!0,supportsThinking:!0},{id:"MiniMax-M2.5",label:"MiniMax M2.5",supportsVision:!1,supportsThinking:!0}],capabilities:{...Pe,vision:!0,thinking:!0}},kimi:{id:"kimi",label:"Kimi Code",badge:"#7c3aed",defaultBaseUrl:"https://api.kimi.com/coding/v1",apiKeyEnv:"KIMI_API_KEY",models:[{id:"kimi-for-coding",label:"Kimi for Coding",supportsVision:!0,supportsThinking:!0}],capabilities:{...Pe,vision:!0,thinking:!0}},minimax:{id:"minimax",label:"MiniMax",badge:"#db2777",defaultBaseUrl:"https://api.minimax.io/v1",apiKeyEnv:"MINIMAX_API_KEY",models:[{id:"MiniMax-M2.7",label:"MiniMax M2.7"},{id:"MiniMax-M2.7-highspeed",label:"MiniMax M2.7 Highspeed"},{id:"MiniMax-M2.5",label:"MiniMax M2.5"}],capabilities:{...Pe,reasoningSplit:!0}},zhipu:{id:"zhipu",label:"Zhipu GLM",badge:"#16a34a",defaultBaseUrl:"https://open.bigmodel.cn/api/paas/v4",apiKeyEnv:"ZAI_API_KEY",models:[{id:"glm-5.1",label:"GLM-5.1"},{id:"glm-5-turbo",label:"GLM-5 Turbo"},{id:"glm-4.7",label:"GLM-4.7"},{id:"glm-4.7-flash",label:"GLM-4.7 Flash"}],capabilities:{...Pe,vision:!0,thinking:!0}},custom_openai:{id:"custom_openai",label:"Custom OpenAI",badge:"#64748b",defaultBaseUrl:"https://api.openai.com/v1",apiKeyEnv:"LLM_API_KEY",models:[],capabilities:{...Pe,vision:!0,thinking:!0,thinkingBudget:!0,reasoningEffort:!0,reasoningSplit:!0},reasoningEfforts:["none","minimal","low","medium","high","max","xhigh"]}};function St(t){return typeof t=="string"&&Je.includes(t)}function Xe(t){return St(t)?t:"custom_openai"}function de(t){return mr[t]}function kn(t){return de(t).reasoningEfforts?.join(" | ")??""}function yn(t){return de(t).models[0]?.id??""}function Et(t,e){return de(t).models.find(n=>n.id===e)}var et="X-Crabby-Admin-Token",xn="CRABBY_ADMIN_ENABLED",Ze="CRABBY_ADMIN_TOKEN",Fe="VAULT_PATH",Sn=/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/;function Se(t){let e=t.backendEnvPath?.trim();return e?{ok:!0,envPath:(0,Qe.resolve)(e),derivedFromLegacyPath:!1,message:""}:{ok:!1,derivedFromLegacyPath:!1,message:"\u8BF7\u5148\u914D\u7F6E\u201C\u540E\u7AEF .env \u8DEF\u5F84\u201D\uFF0C\u518D\u4FDD\u5B58\u6216\u5207\u6362 LLM \u914D\u7F6E\u3002"}}function ge(t,e){if(!(0,we.existsSync)(t))return null;for(let[n,s]of hr(t))if(n===e)return s;return null}function tt(t){let e=Se(t);if(!e.ok||!e.envPath)return{ok:!1,message:e.message};let n=ge(e.envPath,Ze)?.trim();return n?{ok:!0,adminToken:n,envPath:e.envPath,message:""}:{ok:!1,envPath:e.envPath,message:`${e.envPath} \u7F3A\u5C11 ${Ze}\u3002`}}function hr(t){if(!(0,we.existsSync)(t))return[];let n=(0,we.readFileSync)(t,"utf8").split(/\r?\n/),s=[];for(let r of n){let i=r.match(Sn);i&&s.push([i[1],Pr(i[2])])}return s}function Be(t,e){let n=(0,we.existsSync)(t)?(0,we.readFileSync)(t,"utf8"):"",s=n.includes(`\r
-`)?`\r
-`:`
-`,r=n===""?[]:n.split(/\r?\n/),i=new Map(Object.entries(e)),a=[];for(let o of r){let c=o.match(Sn);if(!c){a.push(o);continue}let w=c[1];if(!i.has(w)){a.push(o);continue}let S=i.get(w)??null;i.delete(w),S!==null&&a.push(`${w}=${wn(S)}`)}for(let[o,c]of i.entries())c!==null&&a.push(`${o}=${wn(c)}`);let d=a.join(s);(0,we.writeFileSync)(t,d===""?"":`${d}${s}`,"utf8")}async function nt(t,e){let n=tt(t);if(!n.ok||!n.adminToken)return{ok:!1,message:n.message,envPath:n.envPath};let s=await e.listLlmProfiles(n.adminToken);return rt(t,s,"\u5DF2\u4ECE\u540E\u7AEF\u8BFB\u53D6 LLM \u914D\u7F6E\u3002")}async function Ee(t,e,n,s=!1){let r=tt(t);if(!r.ok||!r.adminToken)return{ok:!1,message:r.message,envPath:r.envPath};let i=await n.saveLlmProfile(r.adminToken,vr(e),s);return rt(t,i,s?`\u5DF2\u4FDD\u5B58\u5E76\u542F\u7528 ${e.name}\u3002`:`\u5DF2\u4FDD\u5B58 ${e.name} \u5230\u540E\u7AEF\u3002`)}async function $e(t,e,n){let s=tt(t);if(!s.ok||!s.adminToken)return{ok:!1,message:s.message,envPath:s.envPath};let r=await n.activateLlmProfile(s.adminToken,e);return rt(t,r,"\u5DF2\u5207\u6362\u540E\u7AEF LLM \u914D\u7F6E\u3002")}async function st(t,e,n){let s=tt(t);if(!s.ok||!s.adminToken)return{ok:!1,message:s.message,envPath:s.envPath};let r=await n.deleteLlmProfile(s.adminToken,e);return rt(t,r,"\u5DF2\u4ECE\u540E\u7AEF\u5220\u9664 LLM \u914D\u7F6E\u3002")}function rt(t,e,n){return!e.ok||!e.data?{ok:!1,reloadStatus:e.status,message:kr(e)}:(fr(t,e.data),{ok:!0,envPath:e.data.envPath,reloadStatus:e.status,profiles:t.llmProfiles,activeProfileId:t.activeProfileId,message:n})}function fr(t,e){t.llmProfiles=e.profiles.map(br),t.activeProfileId=e.activeProfileId}function vr(t){return{id:t.id,name:t.name,provider:t.provider,model:t.model,baseUrl:t.baseUrl,apiKey:t.apiKey,supportsVision:t.supportsVision,thinkingMode:t.thinkingMode,thinkingEffort:t.thinkingEffort,thinkingBudgetTokens:t.thinkingBudgetTokens,reasoningSplit:t.reasoningSplit}}function br(t){return{id:t.id,name:t.name,provider:St(t.provider)?t.provider:"custom_openai",model:t.model,baseUrl:t.baseUrl,apiKey:t.apiKey,supportsVision:!!t.supportsVision,thinkingMode:t.thinkingMode,thinkingEffort:t.thinkingEffort,thinkingBudgetTokens:t.thinkingBudgetTokens||"1024",reasoningSplit:!!t.reasoningSplit}}function kr(t){return t.status===null?"\u540E\u7AEF\u5F53\u524D\u4E0D\u53EF\u8BBF\u95EE\u3002":t.detail||`HTTP ${t.status}`}async function En(t,e,n){let s=Se(t);if(!s.ok||!s.envPath)return{ok:!1,message:s.message,changed:!1};let r=e.trim();if(!r)return{ok:!1,envPath:s.envPath,needsMigration:s.derivedFromLegacyPath,changed:!1,message:"\u65E0\u6CD5\u68C0\u6D4B\u5F53\u524D Obsidian vault \u8DEF\u5F84\u3002"};let i=(0,Qe.resolve)(r),a=ge(s.envPath,Fe);if(a&&xr(a,i))return{ok:!0,envPath:s.envPath,needsMigration:s.derivedFromLegacyPath,changed:!1,message:`\u5F53\u524D vault \u8DEF\u5F84\u5DF2\u7ECF\u540C\u6B65\uFF1A${i}`};Be(s.envPath,{[Fe]:i});let d=ge(s.envPath,xn);if(!He(d))return{ok:!1,envPath:s.envPath,needsMigration:s.derivedFromLegacyPath,changed:!0,message:`\u5DF2\u5C06 ${Fe}=${i} \u4FDD\u5B58\u5230 ${s.envPath}\uFF0C\u4F46\u540E\u7AEF\u70ED\u91CD\u8F7D\u672A\u5F00\u542F\u3002\u8BF7\u8BBE\u7F6E ${xn}=true \u540E\u518D\u8BD5\u3002`};let o=ge(s.envPath,Ze)?.trim();if(!o)return{ok:!1,envPath:s.envPath,needsMigration:s.derivedFromLegacyPath,changed:!0,message:`\u5DF2\u5C06 ${Fe}=${i} \u4FDD\u5B58\u5230 ${s.envPath}\uFF0C\u4F46\u7F3A\u5C11 ${Ze}\u3002`};let c=await n.reloadSettings(o);return c.ok?{ok:!0,envPath:s.envPath,needsMigration:s.derivedFromLegacyPath,reloadStatus:c.status,changed:!0,message:s.derivedFromLegacyPath?`\u5DF2\u540C\u6B65 vault \u8DEF\u5F84\u5230 ${i}\uFF0C\u5E76\u5B8C\u6210\u540E\u7AEF\u70ED\u91CD\u8F7D\u3002${s.message}`:`\u5DF2\u540C\u6B65 vault \u8DEF\u5F84\u5230 ${i}\uFF0C\u5E76\u5B8C\u6210\u540E\u7AEF\u70ED\u91CD\u8F7D\u3002`}:{ok:!1,envPath:s.envPath,needsMigration:s.derivedFromLegacyPath,reloadStatus:c.status,changed:!0,message:`\u5DF2\u5C06 ${Fe}=${i} \u4FDD\u5B58\u5230 ${s.envPath}\uFF0C\u4F46\u540E\u7AEF\u91CD\u8F7D\u5931\u8D25`+yr(c)+"\u3002"}}function He(t){return t?["1","true","yes","on"].includes(t.trim().toLowerCase()):!1}function yr(t){return t.status===null?"\uFF1A\u540E\u7AEF\u5F53\u524D\u4E0D\u53EF\u8BBF\u95EE":t.detail?`\uFF08HTTP ${t.status}\uFF09\uFF1A${t.detail}`:`\uFF08HTTP ${t.status}\uFF09`}function xr(t,e){return Pn(t)===Pn(e)}function Pn(t){let e=(0,Qe.resolve)(t);return process.platform==="win32"?e.toLowerCase():e}function Pr(t){if(t.startsWith('"')&&t.endsWith('"'))try{return JSON.parse(t)}catch{return t.slice(1,-1)}return t.startsWith("'")&&t.endsWith("'")?t.slice(1,-1):t}function wn(t){return t===""?'""':/[#\s"'\\]/.test(t)?JSON.stringify(t):t}function Tt(t){return t.name.trim()||t.model.trim()||de(t.provider).label}function wr(t){return de(t.provider).label.toUpperCase()}function Tn(t,e,n){let s=t.createDiv({cls:"chat-custom-select"}),r=s.createDiv({cls:"custom-select-trigger"});r.innerHTML=`<span>Select Model</span>
+    `;
+  const dropdownList = customSelect.createDiv({
+    cls: "custom-select-dropdown"
+  });
+  let personas = [];
+  let options = [];
+  const buildOptions = () => {
+    options = [
+      { kind: "auto", id: "auto", label: "Auto" },
+      { kind: "none", id: "none", label: "No Persona" },
+      ...personas.map((persona) => ({
+        kind: "manual",
+        id: persona.id,
+        label: persona.title
+      }))
+    ];
+  };
+  const getPersonaTitle = (personaId) => {
+    if (!personaId) {
+      return null;
+    }
+    return personas.find((persona) => persona.id === personaId)?.title ?? personaId;
+  };
+  const getOptionKey = (personaState) => {
+    if (personaState.mode === "none") {
+      return "none";
+    }
+    if (personaState.mode === "manual") {
+      return personaState.manual_persona_id ?? "manual";
+    }
+    return "auto";
+  };
+  const getTriggerText = (personaState) => {
+    if (personaState.mode === "none") {
+      return "No Persona";
+    }
+    if (personaState.mode === "manual") {
+      return getPersonaTitle(personaState.manual_persona_id) ?? "Manual";
+    }
+    const routedTitle = getPersonaTitle(personaState.active_persona_id);
+    return routedTitle ? `Auto / ${routedTitle}` : "Auto";
+  };
+  const updateSelectionUi = () => {
+    triggerBtn.querySelector("span")?.setText(getTriggerText(state.personaState));
+    const selectedKey = getOptionKey(state.personaState);
+    Array.from(dropdownList.children).forEach((child) => {
+      const optionEl = child;
+      optionEl.classList.toggle(
+        "selected",
+        optionEl.dataset.optionKey === selectedKey
+      );
+    });
+  };
+  const setPersonaState = (nextState) => {
+    state.personaState = {
+      ...createDefaultPersonaState(),
+      ...nextState
+    };
+    updateSelectionUi();
+  };
+  const toState = (option) => {
+    if (option.kind === "none") {
+      return {
+        mode: "none",
+        manual_persona_id: null,
+        active_persona_id: null,
+        source: "none",
+        status: "disabled"
+      };
+    }
+    if (option.kind === "manual") {
+      return {
+        mode: "manual",
+        manual_persona_id: option.id,
+        active_persona_id: option.id,
+        source: "manual",
+        status: "manual"
+      };
+    }
+    return createDefaultPersonaState();
+  };
+  const renderOptions = () => {
+    dropdownList.empty();
+    buildOptions();
+    for (const option of options) {
+      const optionEl = dropdownList.createDiv({ cls: "custom-select-option" });
+      optionEl.dataset.optionKey = option.kind === "manual" ? option.id : option.kind;
+      const nameSpan = optionEl.createEl("span", { cls: "cso-name" });
+      nameSpan.setText(option.label);
+      const metaSpan = optionEl.createEl("span", { cls: "cso-provider cso-meta" });
+      metaSpan.setText(
+        option.kind === "auto" ? "AUTO" : option.kind === "none" ? "OFF" : "MANUAL"
+      );
+      optionEl.addEventListener("click", async (evt) => {
+        evt.stopPropagation();
+        customSelect.classList.remove("open");
+        const previousState = state.personaState;
+        const nextState = toState(option);
+        setPersonaState(nextState);
+        const sessionId = client.sessionId;
+        if (!sessionId) {
+          return;
+        }
+        try {
+          const updated = await client.patchSession(sessionId, {
+            persona_mode: nextState.mode,
+            manual_persona_id: nextState.manual_persona_id
+          });
+          setPersonaState(updated.persona_state);
+        } catch (error) {
+          setPersonaState(previousState);
+          const message = error instanceof Error ? error.message : String(error);
+          new import_obsidian2.Notice(`Persona switch failed: ${message}`);
+        }
+      });
+    }
+    updateSelectionUi();
+  };
+  void client.listPersonas().then((loaded) => {
+    personas = loaded;
+    renderOptions();
+  }).catch((error) => {
+    console.warn("[ChatView] listPersonas failed:", error);
+    renderOptions();
+  });
+  renderOptions();
+  triggerBtn.addEventListener("click", (evt) => {
+    evt.stopPropagation();
+    evt.preventDefault();
+    customSelect.classList.toggle("open");
+  });
+  const outsideClickListener = (evt) => {
+    if (!customSelect.contains(evt.target)) {
+      customSelect.classList.remove("open");
+    }
+  };
+  document.addEventListener("click", outsideClickListener);
+  return {
+    setPersonaState,
+    destroy: () => {
+      document.removeEventListener("click", outsideClickListener);
+    }
+  };
+}
+
+// src/chat/chatProfileSelect.ts
+var import_obsidian3 = require("obsidian");
+
+// src/config/backendConfig.ts
+var import_node_fs = require("node:fs");
+var import_node_path = require("node:path");
+
+// src/config/llmProviders.ts
+var LLM_PROVIDER_IDS = [
+  "anthropic",
+  "openai",
+  "deepseek",
+  "qwen",
+  "kimi",
+  "minimax",
+  "zhipu",
+  "custom_openai"
+];
+var DEFAULT_CAPABILITIES = {
+  baseUrl: true,
+  apiKey: true,
+  vision: false,
+  thinking: false,
+  thinkingBudget: false,
+  reasoningEffort: false,
+  reasoningSplit: false
+};
+var LLM_PROVIDER_PRESETS = {
+  anthropic: {
+    id: "anthropic",
+    label: "Anthropic",
+    badge: "#d97706",
+    defaultBaseUrl: "",
+    apiKeyEnv: "ANTHROPIC_API_KEY",
+    models: [
+      { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" }
+    ],
+    capabilities: {
+      ...DEFAULT_CAPABILITIES,
+      baseUrl: false,
+      vision: true,
+      thinking: true,
+      thinkingBudget: true
+    }
+  },
+  openai: {
+    id: "openai",
+    label: "OpenAI",
+    badge: "#059669",
+    defaultBaseUrl: "https://api.openai.com/v1",
+    apiKeyEnv: "OPENAI_API_KEY",
+    models: [
+      { id: "gpt-5.4-mini", label: "GPT-5.4 Mini", supportsVision: true },
+      { id: "gpt-5.4", label: "GPT-5.4", supportsVision: true }
+    ],
+    capabilities: {
+      ...DEFAULT_CAPABILITIES,
+      vision: true,
+      reasoningEffort: true
+    },
+    reasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"]
+  },
+  deepseek: {
+    id: "deepseek",
+    label: "DeepSeek",
+    badge: "#4f46e5",
+    defaultBaseUrl: "https://api.deepseek.com",
+    apiKeyEnv: "DEEPSEEK_API_KEY",
+    models: [
+      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
+      { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro" }
+    ],
+    capabilities: {
+      ...DEFAULT_CAPABILITIES,
+      thinking: true,
+      reasoningEffort: true
+    },
+    reasoningEfforts: ["high", "max"]
+  },
+  qwen: {
+    id: "qwen",
+    label: "Qwen Coding Plan",
+    badge: "#0891b2",
+    defaultBaseUrl: "https://coding.dashscope.aliyuncs.com/v1",
+    apiKeyEnv: "BAILIAN_CODING_PLAN_API_KEY",
+    models: [
+      {
+        id: "qwen3.6-plus",
+        label: "\u5343\u95EE qwen3.6-plus",
+        supportsVision: true,
+        supportsThinking: true
+      },
+      {
+        id: "qwen3.5-plus",
+        label: "\u5343\u95EE qwen3.5-plus",
+        supportsVision: true,
+        supportsThinking: true
+      },
+      {
+        id: "qwen3-max-2026-01-23",
+        label: "\u5343\u95EE qwen3-max-2026-01-23",
+        supportsVision: false,
+        supportsThinking: true
+      },
+      {
+        id: "qwen3-coder-next",
+        label: "\u5343\u95EE qwen3-coder-next",
+        supportsVision: false,
+        supportsThinking: false
+      },
+      {
+        id: "qwen3-coder-plus",
+        label: "\u5343\u95EE qwen3-coder-plus",
+        supportsVision: false,
+        supportsThinking: false
+      },
+      {
+        id: "glm-5",
+        label: "\u667A\u8C31 glm-5",
+        supportsVision: false,
+        supportsThinking: true
+      },
+      {
+        id: "glm-4.7",
+        label: "\u667A\u8C31 glm-4.7",
+        supportsVision: false,
+        supportsThinking: true
+      },
+      {
+        id: "kimi-k2.5",
+        label: "Kimi kimi-k2.5",
+        supportsVision: true,
+        supportsThinking: true
+      },
+      {
+        id: "MiniMax-M2.5",
+        label: "MiniMax M2.5",
+        supportsVision: false,
+        supportsThinking: true
+      }
+    ],
+    capabilities: {
+      ...DEFAULT_CAPABILITIES,
+      vision: true,
+      thinking: true
+    }
+  },
+  kimi: {
+    id: "kimi",
+    label: "Kimi Code",
+    badge: "#7c3aed",
+    defaultBaseUrl: "https://api.kimi.com/coding/v1",
+    apiKeyEnv: "KIMI_API_KEY",
+    models: [
+      {
+        id: "kimi-for-coding",
+        label: "Kimi for Coding",
+        supportsVision: true,
+        supportsThinking: true
+      }
+    ],
+    capabilities: {
+      ...DEFAULT_CAPABILITIES,
+      vision: true,
+      thinking: true
+    }
+  },
+  minimax: {
+    id: "minimax",
+    label: "MiniMax",
+    badge: "#db2777",
+    defaultBaseUrl: "https://api.minimax.io/v1",
+    apiKeyEnv: "MINIMAX_API_KEY",
+    models: [
+      { id: "MiniMax-M2.7", label: "MiniMax M2.7" },
+      { id: "MiniMax-M2.7-highspeed", label: "MiniMax M2.7 Highspeed" },
+      { id: "MiniMax-M2.5", label: "MiniMax M2.5" }
+    ],
+    capabilities: {
+      ...DEFAULT_CAPABILITIES,
+      reasoningSplit: true
+    }
+  },
+  zhipu: {
+    id: "zhipu",
+    label: "Zhipu GLM",
+    badge: "#16a34a",
+    defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    apiKeyEnv: "ZAI_API_KEY",
+    models: [
+      { id: "glm-5.1", label: "GLM-5.1" },
+      { id: "glm-5-turbo", label: "GLM-5 Turbo" },
+      { id: "glm-4.7", label: "GLM-4.7" },
+      { id: "glm-4.7-flash", label: "GLM-4.7 Flash" }
+    ],
+    capabilities: {
+      ...DEFAULT_CAPABILITIES,
+      vision: true,
+      thinking: true
+    }
+  },
+  custom_openai: {
+    id: "custom_openai",
+    label: "Custom OpenAI",
+    badge: "#64748b",
+    defaultBaseUrl: "https://api.openai.com/v1",
+    apiKeyEnv: "LLM_API_KEY",
+    models: [],
+    capabilities: {
+      ...DEFAULT_CAPABILITIES,
+      vision: true,
+      thinking: true,
+      thinkingBudget: true,
+      reasoningEffort: true,
+      reasoningSplit: true
+    },
+    reasoningEfforts: ["none", "minimal", "low", "medium", "high", "max", "xhigh"]
+  }
+};
+function isLlmProviderId(value) {
+  return typeof value === "string" && LLM_PROVIDER_IDS.includes(value);
+}
+function normalizeLlmProviderId(value) {
+  return isLlmProviderId(value) ? value : "custom_openai";
+}
+function getLlmProviderPreset(provider) {
+  return LLM_PROVIDER_PRESETS[provider];
+}
+function getReasoningEffortHint(provider) {
+  return getLlmProviderPreset(provider).reasoningEfforts?.join(" | ") ?? "";
+}
+function getDefaultModelForProvider(provider) {
+  return getLlmProviderPreset(provider).models[0]?.id ?? "";
+}
+function findModelPreset(provider, model) {
+  return getLlmProviderPreset(provider).models.find((item) => item.id === model);
+}
+
+// src/config/backendConfig.ts
+var ADMIN_RELOAD_HEADER = "X-Crabby-Admin-Token";
+var ADMIN_ENABLED_KEY = "CRABBY_ADMIN_ENABLED";
+var ADMIN_TOKEN_KEY = "CRABBY_ADMIN_TOKEN";
+var VAULT_PATH_KEY = "VAULT_PATH";
+var ENV_ASSIGNMENT = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/;
+function resolveBackendEnvPath(settings) {
+  const backendEnvPath = settings.backendEnvPath?.trim();
+  if (backendEnvPath) {
+    const envPath = (0, import_node_path.resolve)(backendEnvPath);
+    if (!(0, import_node_fs.existsSync)(envPath)) {
+      return {
+        ok: false,
+        envPath,
+        derivedFromLegacyPath: false,
+        message: `\u540E\u7AEF .env \u914D\u7F6E\u6587\u4EF6 ${envPath} \u4E0D\u5B58\u5728\u3002`
+      };
+    }
+    return {
+      ok: true,
+      envPath,
+      derivedFromLegacyPath: false,
+      message: ""
+    };
+  }
+  const legacyPath = settings.backendPath?.trim();
+  if (legacyPath) {
+    const envPath = (0, import_node_path.resolve)(legacyPath, ".env");
+    if (!(0, import_node_fs.existsSync)(envPath)) {
+      return {
+        ok: false,
+        envPath,
+        derivedFromLegacyPath: true,
+        message: `\u9057\u7559\u8DEF\u5F84 ${envPath} \u4E0D\u5B58\u5728\uFF0C\u8BF7\u91CD\u65B0\u914D\u7F6E\u540E\u7AEF .env \u8DEF\u5F84\u3002`
+      };
+    }
+    const token = readEnvValue(envPath, "CRABBY_ADMIN_TOKEN");
+    if (!token?.trim()) {
+      return {
+        ok: false,
+        envPath,
+        derivedFromLegacyPath: true,
+        message: "\u9057\u7559\u914D\u7F6E\u6587\u4EF6\u4E0D\u5B8C\u6574\uFF08\u7F3A\u5C11 CRABBY_ADMIN_TOKEN\uFF09\u3002\u8BF7\u91CD\u65B0\u5728\u300C\u540E\u7AEF\u8FD0\u884C\u65F6\u300D\u533A\u57DF\u5B89\u88C5\u5E76\u542F\u52A8\u540E\u7AEF\uFF0C\u6216\u624B\u52A8\u6E05\u7A7A\u540E\u7AEF .env \u8DEF\u5F84\u8BBE\u7F6E\u540E\u91CD\u65B0\u521D\u59CB\u5316\u3002"
+      };
+    }
+    return {
+      ok: true,
+      envPath,
+      derivedFromLegacyPath: true,
+      message: ""
+    };
+  }
+  return {
+    ok: false,
+    derivedFromLegacyPath: false,
+    message: "\u540E\u7AEF\u5C1A\u672A\u521D\u59CB\u5316\u3002\u8BF7\u5148\u5728\u300C\u540E\u7AEF\u8FD0\u884C\u65F6\u300D\u533A\u57DF\u5B89\u88C5\u5E76\u542F\u52A8\u540E\u7AEF\uFF0C\u5B8C\u6210\u540E .env \u8DEF\u5F84\u5C06\u81EA\u52A8\u914D\u7F6E\u5B8C\u6BD5\uFF0C\u65E0\u9700\u624B\u52A8\u586B\u5199\u3002"
+  };
+}
+function readEnvValue(envPath, key) {
+  if (!(0, import_node_fs.existsSync)(envPath)) {
+    return null;
+  }
+  for (const [envKey, value] of readEnvAssignments(envPath)) {
+    if (envKey === key) {
+      return value;
+    }
+  }
+  return null;
+}
+function resolveBackendAdminToken(settings) {
+  const resolution = resolveBackendEnvPath(settings);
+  if (!resolution.ok || !resolution.envPath) {
+    return {
+      ok: false,
+      message: resolution.message
+    };
+  }
+  const adminToken = readEnvValue(resolution.envPath, ADMIN_TOKEN_KEY)?.trim();
+  if (!adminToken) {
+    return {
+      ok: false,
+      envPath: resolution.envPath,
+      message: `${resolution.envPath} \u7F3A\u5C11 ${ADMIN_TOKEN_KEY}\u3002`
+    };
+  }
+  return {
+    ok: true,
+    adminToken,
+    envPath: resolution.envPath,
+    message: ""
+  };
+}
+function readEnvAssignments(envPath) {
+  if (!(0, import_node_fs.existsSync)(envPath)) {
+    return [];
+  }
+  const content = (0, import_node_fs.readFileSync)(envPath, "utf8");
+  const lines = content.split(/\r?\n/);
+  const assignments = [];
+  for (const line of lines) {
+    const match = line.match(ENV_ASSIGNMENT);
+    if (match) {
+      assignments.push([match[1], stripWrappingQuotes(match[2])]);
+    }
+  }
+  return assignments;
+}
+function upsertEnvFile(envPath, envMap) {
+  const existing = (0, import_node_fs.existsSync)(envPath) ? (0, import_node_fs.readFileSync)(envPath, "utf8") : "";
+  const newline = existing.includes("\r\n") ? "\r\n" : "\n";
+  const lines = existing === "" ? [] : existing.split(/\r?\n/);
+  const pending = new Map(Object.entries(envMap));
+  const nextLines = [];
+  for (const line of lines) {
+    const match = line.match(ENV_ASSIGNMENT);
+    if (!match) {
+      nextLines.push(line);
+      continue;
+    }
+    const key = match[1];
+    if (!pending.has(key)) {
+      nextLines.push(line);
+      continue;
+    }
+    const value = pending.get(key) ?? null;
+    pending.delete(key);
+    if (value !== null) {
+      nextLines.push(`${key}=${serializeEnvValue(value)}`);
+    }
+  }
+  for (const [key, value] of pending.entries()) {
+    if (value !== null) {
+      nextLines.push(`${key}=${serializeEnvValue(value)}`);
+    }
+  }
+  const nextContent = nextLines.join(newline);
+  (0, import_node_fs.writeFileSync)(envPath, nextContent === "" ? "" : `${nextContent}${newline}`, "utf8");
+}
+async function fetchLlmProfilesFromBackend(settings, client) {
+  const token = resolveBackendAdminToken(settings);
+  if (!token.ok || !token.adminToken) {
+    return { ok: false, message: token.message, envPath: token.envPath };
+  }
+  const result2 = await client.listLlmProfiles(token.adminToken);
+  return applyBackendProfileResult(settings, result2, "\u5DF2\u4ECE\u540E\u7AEF\u8BFB\u53D6 LLM \u914D\u7F6E\u3002");
+}
+async function saveLlmProfileToBackend(settings, profile, client, activate = false) {
+  const token = resolveBackendAdminToken(settings);
+  if (!token.ok || !token.adminToken) {
+    return { ok: false, message: token.message, envPath: token.envPath };
+  }
+  const result2 = await client.saveLlmProfile(
+    token.adminToken,
+    toBackendLlmProfile(profile),
+    activate
+  );
+  return applyBackendProfileResult(
+    settings,
+    result2,
+    activate ? `\u5DF2\u4FDD\u5B58\u5E76\u542F\u7528 ${profile.name}\u3002` : `\u5DF2\u4FDD\u5B58 ${profile.name} \u5230\u540E\u7AEF\u3002`
+  );
+}
+async function activateLlmProfileOnBackend(settings, profileId, client) {
+  const token = resolveBackendAdminToken(settings);
+  if (!token.ok || !token.adminToken) {
+    return { ok: false, message: token.message, envPath: token.envPath };
+  }
+  const result2 = await client.activateLlmProfile(token.adminToken, profileId);
+  return applyBackendProfileResult(settings, result2, "\u5DF2\u5207\u6362\u540E\u7AEF LLM \u914D\u7F6E\u3002");
+}
+async function deleteLlmProfileFromBackend(settings, profileId, client) {
+  const token = resolveBackendAdminToken(settings);
+  if (!token.ok || !token.adminToken) {
+    return { ok: false, message: token.message, envPath: token.envPath };
+  }
+  const result2 = await client.deleteLlmProfile(token.adminToken, profileId);
+  return applyBackendProfileResult(settings, result2, "\u5DF2\u4ECE\u540E\u7AEF\u5220\u9664 LLM \u914D\u7F6E\u3002");
+}
+function applyBackendProfileResult(settings, result2, successMessage) {
+  if (!result2.ok || !result2.data) {
+    return {
+      ok: false,
+      reloadStatus: result2.status,
+      message: formatBackendProfileFailure(result2)
+    };
+  }
+  applyBackendProfileState(settings, result2.data);
+  return {
+    ok: true,
+    envPath: result2.data.envPath,
+    reloadStatus: result2.status,
+    profiles: settings.llmProfiles,
+    activeProfileId: settings.activeProfileId,
+    message: successMessage
+  };
+}
+function applyBackendProfileState(settings, data) {
+  settings.llmProfiles = data.profiles.map(fromBackendLlmProfile);
+  settings.activeProfileId = data.activeProfileId;
+}
+function toBackendLlmProfile(profile) {
+  return {
+    id: profile.id,
+    name: profile.name,
+    provider: profile.provider,
+    model: profile.model,
+    baseUrl: profile.baseUrl,
+    apiKey: profile.apiKey,
+    supportsVision: profile.supportsVision,
+    thinkingMode: profile.thinkingMode,
+    thinkingEffort: profile.thinkingEffort,
+    thinkingBudgetTokens: profile.thinkingBudgetTokens,
+    reasoningSplit: profile.reasoningSplit
+  };
+}
+function fromBackendLlmProfile(profile) {
+  return {
+    id: profile.id,
+    name: profile.name,
+    provider: isLlmProviderId(profile.provider) ? profile.provider : "custom_openai",
+    model: profile.model,
+    baseUrl: profile.baseUrl,
+    apiKey: profile.apiKey,
+    supportsVision: Boolean(profile.supportsVision),
+    thinkingMode: profile.thinkingMode,
+    thinkingEffort: profile.thinkingEffort,
+    thinkingBudgetTokens: profile.thinkingBudgetTokens || "1024",
+    reasoningSplit: Boolean(profile.reasoningSplit)
+  };
+}
+function formatBackendProfileFailure(result2) {
+  if (result2.status === null) {
+    return "\u540E\u7AEF\u5F53\u524D\u4E0D\u53EF\u8BBF\u95EE\u3002";
+  }
+  return result2.detail || `HTTP ${result2.status}`;
+}
+async function syncVaultPathLocally(settings, vaultPath, client) {
+  const resolution = resolveBackendEnvPath(settings);
+  if (!resolution.ok || !resolution.envPath) {
+    return {
+      ok: false,
+      message: resolution.message,
+      changed: false
+    };
+  }
+  const nextVaultPath = vaultPath.trim();
+  if (!nextVaultPath) {
+    return {
+      ok: false,
+      envPath: resolution.envPath,
+      needsMigration: resolution.derivedFromLegacyPath,
+      changed: false,
+      message: "\u65E0\u6CD5\u68C0\u6D4B\u5F53\u524D Obsidian vault \u8DEF\u5F84\u3002"
+    };
+  }
+  const resolvedVaultPath = (0, import_node_path.resolve)(nextVaultPath);
+  const currentVaultPath = readEnvValue(resolution.envPath, VAULT_PATH_KEY);
+  if (currentVaultPath && isSameFilesystemPath(currentVaultPath, resolvedVaultPath)) {
+    return {
+      ok: true,
+      envPath: resolution.envPath,
+      needsMigration: resolution.derivedFromLegacyPath,
+      changed: false,
+      message: `\u5F53\u524D vault \u8DEF\u5F84\u5DF2\u7ECF\u540C\u6B65\uFF1A${resolvedVaultPath}`
+    };
+  }
+  upsertEnvFile(resolution.envPath, {
+    [VAULT_PATH_KEY]: resolvedVaultPath
+  });
+  const adminEnabled = readEnvValue(resolution.envPath, ADMIN_ENABLED_KEY);
+  if (!isTruthyEnvValue(adminEnabled)) {
+    return {
+      ok: false,
+      envPath: resolution.envPath,
+      needsMigration: resolution.derivedFromLegacyPath,
+      changed: true,
+      message: `\u5DF2\u5C06 ${VAULT_PATH_KEY}=${resolvedVaultPath} \u4FDD\u5B58\u5230 ${resolution.envPath}\uFF0C\u4F46\u540E\u7AEF\u70ED\u91CD\u8F7D\u672A\u5F00\u542F\u3002\u8BF7\u8BBE\u7F6E ${ADMIN_ENABLED_KEY}=true \u540E\u518D\u8BD5\u3002`
+    };
+  }
+  const adminToken = readEnvValue(resolution.envPath, ADMIN_TOKEN_KEY)?.trim();
+  if (!adminToken) {
+    return {
+      ok: false,
+      envPath: resolution.envPath,
+      needsMigration: resolution.derivedFromLegacyPath,
+      changed: true,
+      message: `\u5DF2\u5C06 ${VAULT_PATH_KEY}=${resolvedVaultPath} \u4FDD\u5B58\u5230 ${resolution.envPath}\uFF0C\u4F46\u7F3A\u5C11 ${ADMIN_TOKEN_KEY}\u3002`
+    };
+  }
+  const reloadResult = await client.reloadSettings(adminToken);
+  if (reloadResult.ok) {
+    return {
+      ok: true,
+      envPath: resolution.envPath,
+      needsMigration: resolution.derivedFromLegacyPath,
+      reloadStatus: reloadResult.status,
+      changed: true,
+      message: resolution.derivedFromLegacyPath ? `\u5DF2\u540C\u6B65 vault \u8DEF\u5F84\u5230 ${resolvedVaultPath}\uFF0C\u5E76\u5B8C\u6210\u540E\u7AEF\u70ED\u91CD\u8F7D\u3002${resolution.message}` : `\u5DF2\u540C\u6B65 vault \u8DEF\u5F84\u5230 ${resolvedVaultPath}\uFF0C\u5E76\u5B8C\u6210\u540E\u7AEF\u70ED\u91CD\u8F7D\u3002`
+    };
+  }
+  return {
+    ok: false,
+    envPath: resolution.envPath,
+    needsMigration: resolution.derivedFromLegacyPath,
+    reloadStatus: reloadResult.status,
+    changed: true,
+    message: `\u5DF2\u5C06 ${VAULT_PATH_KEY}=${resolvedVaultPath} \u4FDD\u5B58\u5230 ${resolution.envPath}\uFF0C\u4F46\u540E\u7AEF\u91CD\u8F7D\u5931\u8D25` + formatReloadSuffix(reloadResult) + "\u3002"
+  };
+}
+function isTruthyEnvValue(value) {
+  if (!value) {
+    return false;
+  }
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+function formatReloadSuffix(reloadResult) {
+  if (reloadResult.status === null) {
+    return "\uFF1A\u540E\u7AEF\u5F53\u524D\u4E0D\u53EF\u8BBF\u95EE";
+  }
+  if (reloadResult.detail) {
+    return `\uFF08HTTP ${reloadResult.status}\uFF09\uFF1A${reloadResult.detail}`;
+  }
+  return `\uFF08HTTP ${reloadResult.status}\uFF09`;
+}
+function isSameFilesystemPath(left, right) {
+  return normalizeFilesystemPath(left) === normalizeFilesystemPath(right);
+}
+function normalizeFilesystemPath(value) {
+  const normalized = (0, import_node_path.resolve)(value);
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+function stripWrappingQuotes(value) {
+  if (value.startsWith('"') && value.endsWith('"')) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value.slice(1, -1);
+    }
+  }
+  if (value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+function serializeEnvValue(value) {
+  if (value === "") {
+    return '""';
+  }
+  if (/[#\s"'\\]/.test(value)) {
+    return JSON.stringify(value);
+  }
+  return value;
+}
+
+// src/chat/chatProfileSelect.ts
+function getProfileDisplayName(profile) {
+  return profile.name.trim() || profile.model.trim() || getLlmProviderPreset(profile.provider).label;
+}
+function getProviderBadgeText(profile) {
+  return getLlmProviderPreset(profile.provider).label.toUpperCase();
+}
+function mountProfileSelect(parentEl, plugin, client) {
+  const customSelect = parentEl.createDiv({ cls: "chat-custom-select" });
+  const triggerBtn = customSelect.createDiv({ cls: "custom-select-trigger" });
+  triggerBtn.innerHTML = `<span>Select Model</span>
       <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-    `;let i=s.createDiv({cls:"custom-select-dropdown"}),a=[],d=()=>e.settings.llmProfiles.find(x=>x.id===e.settings.activeProfileId)??e.settings.llmProfiles[0],o=()=>{let x=d();r.querySelector("span")?.setText(x?Tt(x):"Select Model"),a.forEach(({optionEl:M,profileId:p})=>{M.classList.toggle("selected",p===e.settings.activeProfileId)})},c=()=>{if(i.empty(),a=[],e.settings.llmProfiles.length===0){i.createDiv({cls:"custom-select-option custom-select-option-empty"}).setText("No LLM profiles"),o();return}e.settings.llmProfiles.forEach(x=>{let M=i.createDiv({cls:"custom-select-option"});a.push({profileId:x.id,optionEl:M});let p=M.createDiv({cls:"cso-label"});p.createEl("span",{cls:"cso-name"}).setText(Tt(x)),p.createEl("span",{cls:"cso-model"}).setText(`${de(x.provider).label} / ${x.model}`);let f=M.createEl("span",{cls:"cso-provider"});f.setText(wr(x)),f.setAttribute("data-provider",x.provider),M.addEventListener("click",async y=>{y.stopPropagation(),s.classList.remove("open");let b=e.settings.llmProfiles.find(A=>A.id===x.id)??x;if(b.id===e.settings.activeProfileId){o();return}try{let A=await $e(e.settings,b.id,n);if(A.ok){await e.saveSettings(),c(),new it.Notice(`Switched to model: ${Tt(b)}`);return}o(),new it.Notice(`Profile switch failed: ${A.message}`)}catch(A){o();let H=A instanceof Error?A.message:String(A);new it.Notice(`Profile switch failed: ${H}`)}})}),o()};c(),r.addEventListener("click",x=>{x.stopPropagation(),x.preventDefault(),c(),s.classList.toggle("open")});let w=x=>{s.contains(x.target)||s.classList.remove("open")},S=()=>{c()};return document.addEventListener("click",w),document.addEventListener(Me,S),()=>{document.removeEventListener("click",w),document.removeEventListener(Me,S)}}var he=require("obsidian");var _n=require("obsidian"),Sr="<think>",Er="</think>",Tr="<thinking>",_r="</thinking>",Cn="<think-json>",Ln="</think-json>",Cr="Crabby",Mn=[{open:Cn,close:Ln,encoded:!0},{open:Sr,close:Er,allowNested:!0},{open:Tr,close:_r,allowNested:!0}];function _t(t){let e=t.createDiv({cls:"chat-assistant-header"});return e.createSpan({cls:"chat-assistant-name",text:Cr}),e}function An(t,e,n,s){n.empty();let r=Ct(s);if(r.thoughtText&&Dn(n,r.thoughtText),r.visibleMarkdown.trim()){let i=n.createDiv({cls:"chat-assistant-markdown"});_n.MarkdownRenderer.render(t,r.visibleMarkdown,i,"",e)}}function Rn(t){t.empty();let e=t.createDiv({cls:"chat-assistant-shell"});_t(e);let n=e.createDiv({cls:"chat-assistant-content"}),s=null,r=null;return{render(i,a){let d=a.trim();d&&(s?s.updateThoughtText(d):s=Dn(n,d,{streaming:!0})),i?(r||(r=n.createDiv({cls:"chat-assistant-markdown chat-assistant-streaming-text"})),r.setText(i)):r&&(r.remove(),r=null)}}}function at(t,e){let n=t.trim();return n?`${Cn}${Ir(n)}${Ln}
+    `;
+  const dropdownList = customSelect.createDiv({
+    cls: "custom-select-dropdown"
+  });
+  let optionEls = [];
+  const getDisplayedProfile = () => plugin.settings.llmProfiles.find(
+    (profile) => profile.id === plugin.settings.activeProfileId
+  ) ?? plugin.settings.llmProfiles[0];
+  const refreshSelectionUi = () => {
+    const activeProfile = getDisplayedProfile();
+    triggerBtn.querySelector("span")?.setText(
+      activeProfile ? getProfileDisplayName(activeProfile) : "Select Model"
+    );
+    optionEls.forEach(({ optionEl, profileId }) => {
+      optionEl.classList.toggle(
+        "selected",
+        profileId === plugin.settings.activeProfileId
+      );
+    });
+  };
+  const renderOptions = () => {
+    dropdownList.empty();
+    optionEls = [];
+    if (plugin.settings.llmProfiles.length === 0) {
+      const emptyEl = dropdownList.createDiv({
+        cls: "custom-select-option custom-select-option-empty"
+      });
+      emptyEl.setText("No LLM profiles");
+      refreshSelectionUi();
+      return;
+    }
+    plugin.settings.llmProfiles.forEach((profile) => {
+      const optionEl = dropdownList.createDiv({ cls: "custom-select-option" });
+      optionEls.push({ profileId: profile.id, optionEl });
+      const labelWrap = optionEl.createDiv({ cls: "cso-label" });
+      const nameSpan = labelWrap.createEl("span", { cls: "cso-name" });
+      nameSpan.setText(getProfileDisplayName(profile));
+      const modelSpan = labelWrap.createEl("span", { cls: "cso-model" });
+      modelSpan.setText(
+        `${getLlmProviderPreset(profile.provider).label} / ${profile.model}`
+      );
+      const providerBadge = optionEl.createEl("span", { cls: "cso-provider" });
+      providerBadge.setText(getProviderBadgeText(profile));
+      providerBadge.setAttribute("data-provider", profile.provider);
+      optionEl.addEventListener("click", async (evt) => {
+        evt.stopPropagation();
+        customSelect.classList.remove("open");
+        const currentProfile = plugin.settings.llmProfiles.find((item) => item.id === profile.id) ?? profile;
+        if (currentProfile.id === plugin.settings.activeProfileId) {
+          refreshSelectionUi();
+          return;
+        }
+        try {
+          const result2 = await activateLlmProfileOnBackend(
+            plugin.settings,
+            currentProfile.id,
+            client
+          );
+          if (result2.ok) {
+            await plugin.saveSettings();
+            renderOptions();
+            new import_obsidian3.Notice(
+              `Switched to model: ${getProfileDisplayName(currentProfile)}`
+            );
+            return;
+          }
+          refreshSelectionUi();
+          new import_obsidian3.Notice(`Profile switch failed: ${result2.message}`);
+        } catch (error) {
+          refreshSelectionUi();
+          const message = error instanceof Error ? error.message : String(error);
+          new import_obsidian3.Notice(`Profile switch failed: ${message}`);
+        }
+      });
+    });
+    refreshSelectionUi();
+  };
+  renderOptions();
+  triggerBtn.addEventListener("click", (evt) => {
+    evt.stopPropagation();
+    evt.preventDefault();
+    renderOptions();
+    customSelect.classList.toggle("open");
+  });
+  const outsideClickListener = (evt) => {
+    if (!customSelect.contains(evt.target)) {
+      customSelect.classList.remove("open");
+    }
+  };
+  const settingsUpdatedListener = () => {
+    renderOptions();
+  };
+  document.addEventListener("click", outsideClickListener);
+  document.addEventListener(SETTINGS_UPDATED_EVENT, settingsUpdatedListener);
+  return () => {
+    document.removeEventListener("click", outsideClickListener);
+    document.removeEventListener(SETTINGS_UPDATED_EVENT, settingsUpdatedListener);
+  };
+}
 
-${e}`.trim():e}function Ct(t){if(!Lr(t))return{visibleMarkdown:t,thoughtText:""};let e=[],n=[],s=0;for(;s<t.length;){let r=Mr(t,s);if(!r){e.push(t.slice(s));break}let{tag:i,openIndex:a}=r,d=Ar(t,i,a);if(d<0)return{visibleMarkdown:t,thoughtText:""};e.push(t.slice(s,a));let o=t.slice(a+i.open.length,d),c=Dr(o,i);c&&n.push(c),s=d+i.close.length}return{visibleMarkdown:$r(e.join("")),thoughtText:n.join(`
+// src/chat/chatSessions.ts
+var import_obsidian5 = require("obsidian");
 
-`)}}function Lr(t){return Mn.some(e=>t.includes(e.open))}function Mr(t,e){let n=null;for(let s of Mn){let r=t.indexOf(s.open,e);r>=0&&(!n||r<n.openIndex)&&(n={tag:s,openIndex:r})}return n}function Ar(t,e,n){let s=n+e.open.length;if(!e.allowNested)return t.indexOf(e.close,s);let r=Rr(t,e,n);if(r>=0)return r;let i=1,a=s;for(;a<t.length;){let d=t.indexOf(e.open,a),o=t.indexOf(e.close,a);if(o<0)return-1;if(d>=0&&d<o){i+=1,a=d+e.open.length;continue}if(i-=1,i===0)return o;a=o+e.close.length}return-1}function Rr(t,e,n){if(n!==0)return-1;let s=`
-${e.close}
+// src/chat/chatAssistantContent.ts
+var import_obsidian4 = require("obsidian");
+var THINK_OPEN = "<think>";
+var THINK_CLOSE = "</think>";
+var THINKING_OPEN = "<thinking>";
+var THINKING_CLOSE = "</thinking>";
+var THINK_JSON_OPEN = "<think-json>";
+var THINK_JSON_CLOSE = "</think-json>";
+var ASSISTANT_DISPLAY_NAME = "Crabby";
+var THOUGHT_TAGS = [
+  { open: THINK_JSON_OPEN, close: THINK_JSON_CLOSE, encoded: true },
+  { open: THINK_OPEN, close: THINK_CLOSE, allowNested: true },
+  { open: THINKING_OPEN, close: THINKING_CLOSE, allowNested: true }
+];
+function createAssistantIdentityHeader(container) {
+  const header = container.createDiv({ cls: "chat-assistant-header" });
+  header.createSpan({
+    cls: "chat-assistant-name",
+    text: ASSISTANT_DISPLAY_NAME
+  });
+  return header;
+}
+function renderAssistantMessageContent(app, component, container, content) {
+  container.empty();
+  const parsed = parseAssistantContent(content);
+  if (parsed.thoughtText) {
+    createThoughtBlock(container, parsed.thoughtText);
+  }
+  if (parsed.visibleMarkdown.trim()) {
+    const markdownEl = container.createDiv({ cls: "chat-assistant-markdown" });
+    void import_obsidian4.MarkdownRenderer.render(app, parsed.visibleMarkdown, markdownEl, "", component);
+  }
+}
+function createStreamingAssistantContentRenderer(container) {
+  container.empty();
+  const shell = container.createDiv({ cls: "chat-assistant-shell" });
+  createAssistantIdentityHeader(shell);
+  const contentEl = shell.createDiv({ cls: "chat-assistant-content" });
+  let thoughtBlock = null;
+  let visibleEl = null;
+  return {
+    render(visibleText, thoughtText) {
+      const thought = thoughtText.trim();
+      if (thought) {
+        if (!thoughtBlock) {
+          thoughtBlock = createThoughtBlock(contentEl, thought, {
+            streaming: true
+          });
+        } else {
+          thoughtBlock.updateThoughtText(thought);
+        }
+      }
+      if (visibleText) {
+        if (!visibleEl) {
+          visibleEl = contentEl.createDiv({
+            cls: "chat-assistant-markdown chat-assistant-streaming-text"
+          });
+        }
+        visibleEl.setText(visibleText);
+      } else if (visibleEl) {
+        visibleEl.remove();
+        visibleEl = null;
+      }
+    }
+  };
+}
+function buildAssistantContent(reasoningText, visibleText) {
+  const reasoning = reasoningText.trim();
+  if (!reasoning) {
+    return visibleText;
+  }
+  return `${THINK_JSON_OPEN}${encodeThoughtText(reasoning)}${THINK_JSON_CLOSE}
 
-`,r=t.lastIndexOf(s);if(r>=0)return r+1;let i=`
-${e.close}`;return t.endsWith(i)?t.length-e.close.length:-1}function Dr(t,e){return((e.encoded?Br(t):t)??t).trim()}function Ir(t){return JSON.stringify(t).replace(/[<>&]/g,e=>e==="<"?"\\u003c":e===">"?"\\u003e":"\\u0026")}function Br(t){try{let e=JSON.parse(t);return typeof e=="string"?e:null}catch{return null}}function Dn(t,e,n={}){let s=t.createDiv({cls:n.streaming?"chat-thought-block streaming":"chat-thought-block"}),r=s.createDiv({cls:"chat-thought-header"});r.setAttribute("role","button"),r.setAttribute("tabindex","0"),r.setAttribute("aria-expanded","false"),r.createSpan({cls:"chat-thought-title"}).setText("\u601D\u7EF4\u94FE");let a=r.createSpan({cls:"chat-thought-preview"}),d=r.createSpan({cls:"chat-thought-chevron"});d.setText(">");let o=s.createDiv({cls:"chat-thought-body"}),c=S=>{let x=Nr(S);a.classList.toggle("is-empty",!x),a.setText(x?x.slice(0,72)+(x.length>72?"...":""):""),o.setText(S)},w=()=>{let S=!s.classList.contains("expanded");s.classList.toggle("expanded",S),r.setAttribute("aria-expanded",S?"true":"false"),d.setText(S?"v":">")};return r.addEventListener("click",w),r.addEventListener("keydown",S=>{(S.key==="Enter"||S.key===" ")&&(S.preventDefault(),w())}),c(e),{updateThoughtText:c}}function $r(t){return t.replace(/\n{3,}/g,`
+${visibleText}`.trim();
+}
+function parseAssistantContent(content) {
+  if (!hasThoughtOpenTag(content)) {
+    return {
+      visibleMarkdown: content,
+      thoughtText: ""
+    };
+  }
+  const visibleParts = [];
+  const thoughtParts = [];
+  let cursor = 0;
+  while (cursor < content.length) {
+    const match = findNextThoughtTag(content, cursor);
+    if (!match) {
+      visibleParts.push(content.slice(cursor));
+      break;
+    }
+    const { tag, openIndex } = match;
+    const closeIndex = findThoughtCloseIndex(
+      content,
+      tag,
+      openIndex
+    );
+    if (closeIndex < 0) {
+      return {
+        visibleMarkdown: content,
+        thoughtText: ""
+      };
+    }
+    visibleParts.push(content.slice(cursor, openIndex));
+    const rawThought = content.slice(openIndex + tag.open.length, closeIndex);
+    const thought = parseThoughtText(rawThought, tag);
+    if (thought) {
+      thoughtParts.push(thought);
+    }
+    cursor = closeIndex + tag.close.length;
+  }
+  return {
+    visibleMarkdown: cleanVisibleMarkdown(visibleParts.join("")),
+    thoughtText: thoughtParts.join("\n\n")
+  };
+}
+function hasThoughtOpenTag(content) {
+  return THOUGHT_TAGS.some((tag) => content.includes(tag.open));
+}
+function findNextThoughtTag(content, cursor) {
+  let nextMatch = null;
+  for (const tag of THOUGHT_TAGS) {
+    const openIndex = content.indexOf(tag.open, cursor);
+    if (openIndex >= 0 && (!nextMatch || openIndex < nextMatch.openIndex)) {
+      nextMatch = { tag, openIndex };
+    }
+  }
+  return nextMatch;
+}
+function findThoughtCloseIndex(content, tag, openIndex) {
+  const cursor = openIndex + tag.open.length;
+  if (!tag.allowNested) {
+    return content.indexOf(tag.close, cursor);
+  }
+  const legacyWrapperCloseIndex = findLegacyWrapperCloseIndex(
+    content,
+    tag,
+    openIndex
+  );
+  if (legacyWrapperCloseIndex >= 0) {
+    return legacyWrapperCloseIndex;
+  }
+  let depth = 1;
+  let searchFrom = cursor;
+  while (searchFrom < content.length) {
+    const nextOpenIndex = content.indexOf(tag.open, searchFrom);
+    const nextCloseIndex = content.indexOf(tag.close, searchFrom);
+    if (nextCloseIndex < 0) {
+      return -1;
+    }
+    if (nextOpenIndex >= 0 && nextOpenIndex < nextCloseIndex) {
+      depth += 1;
+      searchFrom = nextOpenIndex + tag.open.length;
+      continue;
+    }
+    depth -= 1;
+    if (depth === 0) {
+      return nextCloseIndex;
+    }
+    searchFrom = nextCloseIndex + tag.close.length;
+  }
+  return -1;
+}
+function findLegacyWrapperCloseIndex(content, tag, openIndex) {
+  if (openIndex !== 0) {
+    return -1;
+  }
+  const closeWithFollowingMarkdown = `
+${tag.close}
 
-`).trim()}function Nr(t){return t.trim().split(`
-`).find(e=>e.trim())}function Or(t){if(t==null||Number.isNaN(t))return"\u672A\u77E5\u65F6\u95F4";let e=t>1e10?t:t*1e3;if(e===0)return"\u65E9\u671F\u4F1A\u8BDD";let n=Date.now()-e;if(n<0)return"\u521A\u521A";let s=Math.floor(n/6e4);if(s<1)return"\u521A\u521A";if(s<60)return`${s} \u5206\u949F\u524D`;let r=Math.floor(s/60);if(r<24)return`${r} \u5C0F\u65F6\u524D`;let i=Math.floor(r/24);if(i<7)return`${i} \u5929\u524D`;let a=new Date(e);return`${a.getFullYear()}/${a.getMonth()+1}/${a.getDate()}`}function Ur(t){let e=t.reasoning_details;return Array.isArray(e)?e.map(n=>typeof n=="object"&&n!==null&&typeof n.text=="string"?n.text:"").join(""):typeof t.thinking=="string"?t.thinking:""}var Lt=class extends he.Modal{constructor(n,s,r,i){super(n);this.sourcePreview=s;this.suggestedTitle=r;this.resolved=!1;this.resolve=i}onOpen(){let{contentEl:n}=this;n.empty(),n.addClass("fork-conversation-modal"),n.createEl("h2",{text:"\u786E\u8BA4\u5206\u53C9\u6807\u9898"});let s=n.createDiv({cls:"fork-conversation-preview"});s.createEl("div",{cls:"fork-conversation-label",text:"\u6765\u6E90\u6D88\u606F"}),s.createEl("div",{cls:"fork-conversation-text",text:this.sourcePreview});let r=n.createDiv({cls:"fork-conversation-title"});r.createEl("div",{cls:"fork-conversation-label",text:"\u5206\u652F\u6807\u9898"}),this.titleInput=r.createEl("input",{cls:"fork-conversation-input",attr:{type:"text",value:this.suggestedTitle,spellcheck:"false"}}),this.titleInput.addEventListener("keydown",o=>{o.key==="Enter"&&(o.preventDefault(),this.submit()),o.key==="Escape"&&(o.preventDefault(),this.close())});let i=n.createDiv({cls:"fork-conversation-actions"});i.createEl("button",{cls:"mod-muted",text:"\u53D6\u6D88"}).addEventListener("click",()=>this.close()),i.createEl("button",{cls:"mod-cta",text:"\u5206\u53C9"}).addEventListener("click",()=>this.submit()),window.requestAnimationFrame(()=>{this.titleInput.focus(),this.titleInput.select()})}onClose(){this.resolved||(this.resolved=!0,this.resolve(null)),this.contentEl.removeClass("fork-conversation-modal"),this.contentEl.empty()}submit(){this.resolved||(this.resolved=!0,this.resolve(this.titleInput.value.trim()),this.close())}};function Fr(t,e,n){return new Promise(s=>{new Lt(t,e,n,s).open()})}function In(t){return(Ct(t).visibleMarkdown||t).replace(/\s+/g," ").trim()}function Hr(t){return In(t).slice(0,40)||"\u65B0\u5206\u652F"}function Kr(t){return In(t).slice(0,160)||"\uFF08\u7A7A\u6D88\u606F\uFF09"}function zr(t){let e=new Map;for(let r of t)e.set(r.id,{...r,children:[]});let n=[];for(let r of e.values()){let i=r.parent_id??"",a=i?e.get(i):void 0;a?a.children.push(r):n.push(r)}let s=r=>{r.sort((i,a)=>i.created_at!==a.created_at?i.created_at-a.created_at:i.id.localeCompare(a.id));for(let i of r)i.children.length>0&&s(i.children)};return s(n),n}function Bn(t){let{app:e,client:n,composer:s,elements:r,state:i,transcript:a,persona:d}=t;a.setForkHandler(P=>{J(P)});async function o(){r.sessionListEl.empty(),r.sessionListEl.createDiv({cls:"session-loading"}).setText("\u52A0\u8F7D\u4E2D...");try{let l=await n.listSessions();if(r.sessionListEl.empty(),l.length===0){r.sessionListEl.createDiv({cls:"session-empty"}).setText("\u6682\u65E0\u5386\u53F2\u4F1A\u8BDD");return}for(let u of l)j(u)}catch{r.sessionListEl.empty(),r.sessionListEl.createDiv({cls:"session-error"}).setText("\u52A0\u8F7D\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u540E\u7AEF\u8FDE\u63A5")}}async function c(){if(!i.treePanelOpen)return;r.treeListEl.empty(),r.treeListEl.createDiv({cls:"conversation-tree-loading"}).setText("\u52A0\u8F7D\u4E2D...");let l=n.sessionId;if(!l){r.treeListEl.empty(),r.treeListEl.createDiv({cls:"conversation-tree-empty"}).setText("\u5F53\u524D\u8FD8\u6CA1\u6709\u53EF\u663E\u793A\u7684\u4F1A\u8BDD\u6811"),r.treePanelTitleEl.setText("\u4F1A\u8BDD\u6811");return}try{let[u,m]=await Promise.all([n.getSession(l),n.listConversations(l)]);if(!i.treePanelOpen||n.sessionId!==l)return;if(r.treePanelTitleEl.setText(u.title?`\u4F1A\u8BDD\u6811 \xB7 ${u.title}`:"\u4F1A\u8BDD\u6811"),r.treeListEl.empty(),m.length===0){r.treeListEl.createDiv({cls:"conversation-tree-empty"}).setText("\u5F53\u524D\u4F1A\u8BDD\u5C1A\u65E0\u5206\u652F");return}let g=zr(m);Y(g,r.treeListEl,u.id)}catch(u){if(!i.treePanelOpen)return;r.treeListEl.empty();let m=u instanceof Error?u.message:String(u);r.treeListEl.createDiv({cls:"conversation-tree-error"}).setText(`\u4F1A\u8BDD\u6811\u52A0\u8F7D\u5931\u8D25\uFF1A${m}`)}}function w(){i.sessionPanelOpen=!0,i.treePanelOpen=!1,r.sessionPanelEl.addClass("open"),r.treePanelEl.removeClass("open")}function S(){i.sessionPanelOpen=!1,r.sessionPanelEl.removeClass("open")}function x(){i.treePanelOpen=!0,i.sessionPanelOpen=!1,r.treePanelEl.addClass("open"),r.sessionPanelEl.removeClass("open")}function M(){i.treePanelOpen=!1,r.treePanelEl.removeClass("open")}function p(){if(i.sessionPanelOpen){S();return}w(),o()}function R(){if(i.treePanelOpen){M();return}x(),c()}function C(){S(),M(),n.disconnect(),a.clearConversationUi(),s.clear(),d.setPersonaState(xe()),r.sessionTitleEl.setText("\u65B0\u4F1A\u8BDD"),r.treePanelTitleEl.setText("\u4F1A\u8BDD\u6811"),r.treeListEl.empty(),a.appendMessage("assistant","\u4F60\u597D\uFF01\u65B0\u4F1A\u8BDD\u5DF2\u7ECF\u5F00\u59CB\u4E86\uFF0C\u6709\u4EC0\u4E48\u53EF\u4EE5\u5E2E\u4F60\u7684\uFF1F")}async function f(P){try{let l=P.active_conversation_id,u=[],m=null;try{u=await n.getConversationMessages(P.id,l)}catch(k){console.warn("[ChatView] getConversationMessages failed:",k)}try{m=await n.getConversationContextStats(P.id,l)}catch(k){console.warn("[ChatView] getConversationContextStats failed:",k)}n.setSession(P.id,l),d.setPersonaState(P.persona_state??xe()),r.sessionTitleEl.setText(P.title||"\u672A\u547D\u540D\u4F1A\u8BDD"),a.clearConversationUi(),s.clear();let g=new Map;for(let k of u)if(k.role==="user"&&Array.isArray(k.content)){for(let v of k.content)if(v.type==="tool_result"&&v.tool_use_id){let T=typeof v.content=="string"?v.content:JSON.stringify(v.content||""),I=v.ui&&typeof v.ui=="object"?v.ui:{};g.set(v.tool_use_id,{id:v.tool_use_id,tool_use_id:v.tool_use_id,output:T,...I})}}for(let k of u)k.role==="user"?y(k):k.role==="assistant"&&b(k,g);m&&a.updateContextBar(m),a.scrollToBottom(!0),i.treePanelOpen&&await c()}catch(l){let u=l instanceof Error?l.message:String(l);console.error("[ChatView] switchToSession failed:",l),new he.Notice(`\u5207\u6362\u4F1A\u8BDD\u5931\u8D25: ${u}`)}}function y(P){let l=Array.isArray(P.attachments)?P.attachments:[];if(typeof P.text=="string"){a.appendMessage("user",P.text,!1,l,P.message_id);return}let u=!1;if(typeof P.content=="string")a.appendMessage("user",P.content,!1,l,P.message_id),u=!0;else if(Array.isArray(P.content)){let m=P.content.filter(g=>g.type==="text"&&g.text).map(g=>g.text).join(`
-`);(m||l.length>0)&&(a.appendMessage("user",m,!1,l,P.message_id),u=!0)}!u&&!Array.isArray(P.content)&&P.content&&a.appendMessage("user",JSON.stringify(P.content),!1,l,P.message_id)}function b(P,l){if(Array.isArray(P.content)){let u="",m="",g=!1,k=()=>{let v=at(u,m);v.trim()&&(a.appendMessage("assistant",v,!1,[],!g&&P.message_id?P.message_id:void 0),g=!0),u="",m=""};for(let v of P.content)v.type==="reasoning_details"||v.type==="thinking"?u+=Ur(v):v.type==="text"&&v.text?m+=`${m?`
-`:""}${v.text}`:v.type==="tool_use"&&v.name&&(k(),a.renderHistoricalTool({id:v.id,tool_use_id:v.id,name:v.name,tool:v.name,output:"(no output)",...l.get(v.id)||{}}));k();return}typeof P.content=="string"&&P.content&&a.appendMessage("assistant",P.content,!1,[],P.message_id)}async function A(P){try{await n.deleteSession(P),new he.Notice("\u4F1A\u8BDD\u5DF2\u5220\u9664"),await o(),n.sessionId===null&&(M(),r.treePanelTitleEl.setText("\u4F1A\u8BDD\u6811"),r.treeListEl.empty())}catch{new he.Notice("\u5220\u9664\u5931\u8D25")}}async function H(P){if(n.sessionId===P)try{let u=(await n.listSessions()).find(m=>m.id===P);if(!u)return;r.sessionTitleEl.getText()==="\u65B0\u4F1A\u8BDD"&&u.title&&r.sessionTitleEl.setText(u.title),i.treePanelOpen&&(r.treePanelTitleEl.setText(u.title?`\u4F1A\u8BDD\u6811 \xB7 ${u.title}`:"\u4F1A\u8BDD\u6811"),c())}catch{}}async function J(P){if(i.isSending){new he.Notice("\u5F53\u524D\u6B63\u5728\u56DE\u590D\uFF0C\u8BF7\u5148\u5B8C\u6210\u540E\u518D\u5206\u53C9");return}let l=n.sessionId,u=n.conversationId;if(!l||!u){new he.Notice("\u5F53\u524D\u6CA1\u6709\u53EF\u5206\u53C9\u7684\u4F1A\u8BDD");return}let m=Hr(P.content),g=Kr(P.content),k=await Fr(e,g,m);if(k!==null)try{let v=await n.forkConversation(l,u,P.messageId,k);await f(v)}catch(v){let T=v instanceof Error?v.message:String(v);new he.Notice(`\u5206\u53C9\u5931\u8D25: ${T}`)}}function j(P){let l=r.sessionListEl.createDiv({cls:"session-card"}),u=n.sessionId===P.id;u&&l.addClass("active");let m=l.createDiv({cls:"session-card-content"});m.createDiv({cls:"session-card-title"}).setText(P.title||"\u672A\u547D\u540D\u4F1A\u8BDD");let k=m.createDiv({cls:"session-card-meta"}),v=P.turn_count>0?`${P.turn_count} \u6B21\u5BF9\u8BDD`:`${P.message_count} \u6761\u6D88\u606F`;if(k.setText(`${v} \xB7 ${Or(P.created_at)}`),u&&m.createEl("span",{cls:"session-card-badge"}).setText("\u5F53\u524D"),m.addEventListener("click",()=>{S(),f(P)}),!u){let T=l.createEl("button",{cls:"session-card-delete",attr:{"aria-label":"\u5220\u9664\u4F1A\u8BDD"}});T.innerHTML=hn,T.addEventListener("click",I=>{I.stopPropagation(),A(P.id)})}}function Y(P,l,u){for(let m of P){let g=l.createDiv({cls:"conversation-tree-branch"}),k=g.createEl("button",{cls:"conversation-tree-node",attr:{type:"button","aria-pressed":m.active?"true":"false",title:m.active?"\u5F53\u524D\u5206\u652F":"\u5207\u6362\u5230\u8BE5\u5206\u652F"}});m.active&&k.addClass("active");let v=k.createDiv({cls:"conversation-tree-node-main"});if(v.createDiv({cls:"conversation-tree-node-title"}).setText(m.title||"\u672A\u547D\u540D\u5206\u652F"),v.createSpan({cls:"conversation-tree-node-badge"}).setText(m.active?"\u5F53\u524D":`v${m.revision}`),k.createDiv({cls:"conversation-tree-node-meta"}).setText([`${m.message_count} \u6761`,m.fork_message_id?`fork ${m.fork_message_id.slice(0,8)}`:"",m.parent_id?`parent ${m.parent_id.slice(0,8)}`:"root"].filter(Boolean).join(" \xB7 ")),k.addEventListener("click",()=>{if(!m.active){if(i.isSending){new he.Notice("\u5F53\u524D\u6B63\u5728\u56DE\u590D\uFF0C\u8BF7\u5148\u5B8C\u6210\u540E\u518D\u5207\u6362\u5206\u652F");return}O(u,m.id)}}),m.children.length>0){let V=g.createDiv({cls:"conversation-tree-children"});Y(m.children,V,u)}}}async function O(P,l){try{let u=await n.patchSession(P,{active_conversation_id:l});await f(u)}catch(u){let m=u instanceof Error?u.message:String(u);new he.Notice(`\u5207\u6362\u5206\u652F\u5931\u8D25: ${m}`)}}return{handleNewSession:C,toggleSessionPanel:p,toggleTreePanel:R,loadSessionList:o,loadConversationTree:c,switchToSession:f,deleteSessionConfirm:A,syncCurrentSessionTitle:H}}var $n="crabby-chat-styles",Nn=`
+`;
+  const closeWithFollowingMarkdownIndex = content.lastIndexOf(
+    closeWithFollowingMarkdown
+  );
+  if (closeWithFollowingMarkdownIndex >= 0) {
+    return closeWithFollowingMarkdownIndex + 1;
+  }
+  const closeAtEnd = `
+${tag.close}`;
+  if (content.endsWith(closeAtEnd)) {
+    return content.length - tag.close.length;
+  }
+  return -1;
+}
+function parseThoughtText(rawThought, tag) {
+  const thoughtText = tag.encoded ? decodeThoughtText(rawThought) : rawThought;
+  return (thoughtText ?? rawThought).trim();
+}
+function encodeThoughtText(thoughtText) {
+  return JSON.stringify(thoughtText).replace(/[<>&]/g, (char) => {
+    if (char === "<") {
+      return "\\u003c";
+    }
+    if (char === ">") {
+      return "\\u003e";
+    }
+    return "\\u0026";
+  });
+}
+function decodeThoughtText(encodedThoughtText) {
+  try {
+    const decoded = JSON.parse(encodedThoughtText);
+    return typeof decoded === "string" ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+function createThoughtBlock(container, thoughtText, options = {}) {
+  const wrapper = container.createDiv({
+    cls: options.streaming ? "chat-thought-block streaming" : "chat-thought-block"
+  });
+  const header = wrapper.createDiv({ cls: "chat-thought-header" });
+  header.setAttribute("role", "button");
+  header.setAttribute("tabindex", "0");
+  header.setAttribute("aria-expanded", "false");
+  const title = header.createSpan({ cls: "chat-thought-title" });
+  title.setText("\u601D\u7EF4\u94FE");
+  const preview = header.createSpan({ cls: "chat-thought-preview" });
+  const chevron = header.createSpan({ cls: "chat-thought-chevron" });
+  chevron.setText(">");
+  const body = wrapper.createDiv({ cls: "chat-thought-body" });
+  const updateThoughtText = (nextThoughtText) => {
+    const previewLine = getFirstNonEmptyLine(nextThoughtText);
+    preview.classList.toggle("is-empty", !previewLine);
+    preview.setText(
+      previewLine ? previewLine.slice(0, 72) + (previewLine.length > 72 ? "..." : "") : ""
+    );
+    body.setText(nextThoughtText);
+  };
+  const toggle = () => {
+    const expanded = !wrapper.classList.contains("expanded");
+    wrapper.classList.toggle("expanded", expanded);
+    header.setAttribute("aria-expanded", expanded ? "true" : "false");
+    chevron.setText(expanded ? "v" : ">");
+  };
+  header.addEventListener("click", toggle);
+  header.addEventListener("keydown", (evt) => {
+    if (evt.key === "Enter" || evt.key === " ") {
+      evt.preventDefault();
+      toggle();
+    }
+  });
+  updateThoughtText(thoughtText);
+  return { updateThoughtText };
+}
+function cleanVisibleMarkdown(content) {
+  return content.replace(/\n{3,}/g, "\n\n").trim();
+}
+function getFirstNonEmptyLine(content) {
+  return content.trim().split("\n").find((line) => line.trim());
+}
+
+// src/chat/chatSessions.ts
+function formatRelativeTime(timestamp) {
+  if (timestamp == null || Number.isNaN(timestamp)) {
+    return "\u672A\u77E5\u65F6\u95F4";
+  }
+  const milliseconds = timestamp > 1e10 ? timestamp : timestamp * 1e3;
+  if (milliseconds === 0) {
+    return "\u65E9\u671F\u4F1A\u8BDD";
+  }
+  const diff = Date.now() - milliseconds;
+  if (diff < 0) {
+    return "\u521A\u521A";
+  }
+  const minutes = Math.floor(diff / 6e4);
+  if (minutes < 1) {
+    return "\u521A\u521A";
+  }
+  if (minutes < 60) {
+    return `${minutes} \u5206\u949F\u524D`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours} \u5C0F\u65F6\u524D`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 7) {
+    return `${days} \u5929\u524D`;
+  }
+  const date = new Date(milliseconds);
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+}
+function getReasoningText(block) {
+  const details = block.reasoning_details;
+  if (Array.isArray(details)) {
+    return details.map((detail) => {
+      if (typeof detail === "object" && detail !== null && typeof detail.text === "string") {
+        return detail.text;
+      }
+      return "";
+    }).join("");
+  }
+  return typeof block.thinking === "string" ? block.thinking : "";
+}
+var ForkConversationModal = class extends import_obsidian5.Modal {
+  constructor(app, sourcePreview, suggestedTitle, resolve7) {
+    super(app);
+    this.sourcePreview = sourcePreview;
+    this.suggestedTitle = suggestedTitle;
+    this.resolved = false;
+    this.resolve = resolve7;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("fork-conversation-modal");
+    contentEl.createEl("h2", { text: "\u786E\u8BA4\u5206\u53C9\u6807\u9898" });
+    const previewSection = contentEl.createDiv({
+      cls: "fork-conversation-preview"
+    });
+    previewSection.createEl("div", {
+      cls: "fork-conversation-label",
+      text: "\u6765\u6E90\u6D88\u606F"
+    });
+    previewSection.createEl("div", {
+      cls: "fork-conversation-text",
+      text: this.sourcePreview
+    });
+    const titleSection = contentEl.createDiv({
+      cls: "fork-conversation-title"
+    });
+    titleSection.createEl("div", {
+      cls: "fork-conversation-label",
+      text: "\u5206\u652F\u6807\u9898"
+    });
+    this.titleInput = titleSection.createEl("input", {
+      cls: "fork-conversation-input",
+      attr: { type: "text", value: this.suggestedTitle, spellcheck: "false" }
+    });
+    this.titleInput.addEventListener("keydown", (evt) => {
+      if (evt.key === "Enter") {
+        evt.preventDefault();
+        this.submit();
+      }
+      if (evt.key === "Escape") {
+        evt.preventDefault();
+        this.close();
+      }
+    });
+    const buttonRow = contentEl.createDiv({
+      cls: "fork-conversation-actions"
+    });
+    const cancelBtn = buttonRow.createEl("button", {
+      cls: "mod-muted",
+      text: "\u53D6\u6D88"
+    });
+    cancelBtn.addEventListener("click", () => this.close());
+    const confirmBtn = buttonRow.createEl("button", {
+      cls: "mod-cta",
+      text: "\u5206\u53C9"
+    });
+    confirmBtn.addEventListener("click", () => this.submit());
+    window.requestAnimationFrame(() => {
+      this.titleInput.focus();
+      this.titleInput.select();
+    });
+  }
+  onClose() {
+    if (!this.resolved) {
+      this.resolved = true;
+      this.resolve(null);
+    }
+    this.contentEl.removeClass("fork-conversation-modal");
+    this.contentEl.empty();
+  }
+  submit() {
+    if (this.resolved) {
+      return;
+    }
+    this.resolved = true;
+    this.resolve(this.titleInput.value.trim());
+    this.close();
+  }
+};
+function promptForkTitle(app, sourcePreview, suggestedTitle) {
+  return new Promise((resolve7) => {
+    const modal = new ForkConversationModal(
+      app,
+      sourcePreview,
+      suggestedTitle,
+      resolve7
+    );
+    modal.open();
+  });
+}
+function normalizePreview(content) {
+  const parsed = parseAssistantContent(content);
+  const raw = parsed.visibleMarkdown || content;
+  return raw.replace(/\s+/g, " ").trim();
+}
+function buildForkTitleSuggestion(content) {
+  const preview = normalizePreview(content);
+  return preview.slice(0, 40) || "\u65B0\u5206\u652F";
+}
+function buildForkPreview(content) {
+  const preview = normalizePreview(content);
+  return preview.slice(0, 160) || "\uFF08\u7A7A\u6D88\u606F\uFF09";
+}
+function buildConversationTree(conversations) {
+  const nodes = /* @__PURE__ */ new Map();
+  for (const conversation of conversations) {
+    nodes.set(conversation.id, {
+      ...conversation,
+      children: []
+    });
+  }
+  const roots = [];
+  for (const node of nodes.values()) {
+    const parentId = node.parent_id ?? "";
+    const parent = parentId ? nodes.get(parentId) : void 0;
+    if (parent) {
+      parent.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  const sortNodes = (items) => {
+    items.sort((left, right) => {
+      if (left.created_at !== right.created_at) {
+        return left.created_at - right.created_at;
+      }
+      return left.id.localeCompare(right.id);
+    });
+    for (const item of items) {
+      if (item.children.length > 0) {
+        sortNodes(item.children);
+      }
+    }
+  };
+  sortNodes(roots);
+  return roots;
+}
+function createChatSessions(deps) {
+  const { app, client, composer, elements, state, transcript, persona } = deps;
+  transcript.setForkHandler((target) => {
+    void handleForkMessage(target);
+  });
+  async function loadSessionList() {
+    elements.sessionListEl.empty();
+    const loadingEl = elements.sessionListEl.createDiv({
+      cls: "session-loading"
+    });
+    loadingEl.setText("\u52A0\u8F7D\u4E2D...");
+    try {
+      const sessions = await client.listSessions();
+      elements.sessionListEl.empty();
+      if (sessions.length === 0) {
+        const emptyEl = elements.sessionListEl.createDiv({
+          cls: "session-empty"
+        });
+        emptyEl.setText("\u6682\u65E0\u5386\u53F2\u4F1A\u8BDD");
+        return;
+      }
+      for (const session of sessions) {
+        renderSessionCard(session);
+      }
+    } catch {
+      elements.sessionListEl.empty();
+      const errEl = elements.sessionListEl.createDiv({ cls: "session-error" });
+      errEl.setText("\u52A0\u8F7D\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u540E\u7AEF\u8FDE\u63A5");
+    }
+  }
+  async function loadConversationTree() {
+    if (!state.treePanelOpen) {
+      return;
+    }
+    elements.treeListEl.empty();
+    const loadingEl = elements.treeListEl.createDiv({
+      cls: "conversation-tree-loading"
+    });
+    loadingEl.setText("\u52A0\u8F7D\u4E2D...");
+    const sessionId = client.sessionId;
+    if (!sessionId) {
+      elements.treeListEl.empty();
+      const emptyEl = elements.treeListEl.createDiv({
+        cls: "conversation-tree-empty"
+      });
+      emptyEl.setText("\u5F53\u524D\u8FD8\u6CA1\u6709\u53EF\u663E\u793A\u7684\u4F1A\u8BDD\u6811");
+      elements.treePanelTitleEl.setText("\u4F1A\u8BDD\u6811");
+      return;
+    }
+    try {
+      const [session, conversations] = await Promise.all([
+        client.getSession(sessionId),
+        client.listConversations(sessionId)
+      ]);
+      if (!state.treePanelOpen || client.sessionId !== sessionId) {
+        return;
+      }
+      elements.treePanelTitleEl.setText(
+        session.title ? `\u4F1A\u8BDD\u6811 \xB7 ${session.title}` : "\u4F1A\u8BDD\u6811"
+      );
+      elements.treeListEl.empty();
+      if (conversations.length === 0) {
+        const emptyEl = elements.treeListEl.createDiv({
+          cls: "conversation-tree-empty"
+        });
+        emptyEl.setText("\u5F53\u524D\u4F1A\u8BDD\u5C1A\u65E0\u5206\u652F");
+        return;
+      }
+      const tree = buildConversationTree(conversations);
+      renderTreeBranch(tree, elements.treeListEl, session.id);
+    } catch (err) {
+      if (!state.treePanelOpen) {
+        return;
+      }
+      elements.treeListEl.empty();
+      const message = err instanceof Error ? err.message : String(err);
+      const errEl = elements.treeListEl.createDiv({
+        cls: "conversation-tree-error"
+      });
+      errEl.setText(`\u4F1A\u8BDD\u6811\u52A0\u8F7D\u5931\u8D25\uFF1A${message}`);
+    }
+  }
+  function openSessionPanel() {
+    state.sessionPanelOpen = true;
+    state.treePanelOpen = false;
+    elements.sessionPanelEl.addClass("open");
+    elements.treePanelEl.removeClass("open");
+  }
+  function closeSessionPanel() {
+    state.sessionPanelOpen = false;
+    elements.sessionPanelEl.removeClass("open");
+  }
+  function openTreePanel() {
+    state.treePanelOpen = true;
+    state.sessionPanelOpen = false;
+    elements.treePanelEl.addClass("open");
+    elements.sessionPanelEl.removeClass("open");
+  }
+  function closeTreePanel() {
+    state.treePanelOpen = false;
+    elements.treePanelEl.removeClass("open");
+  }
+  function toggleSessionPanel() {
+    if (state.sessionPanelOpen) {
+      closeSessionPanel();
+      return;
+    }
+    openSessionPanel();
+    void loadSessionList();
+  }
+  function toggleTreePanel() {
+    if (state.treePanelOpen) {
+      closeTreePanel();
+      return;
+    }
+    openTreePanel();
+    void loadConversationTree();
+  }
+  function handleNewSession() {
+    closeSessionPanel();
+    closeTreePanel();
+    client.disconnect();
+    transcript.clearConversationUi();
+    composer.clear();
+    persona.setPersonaState(createDefaultPersonaState());
+    elements.sessionTitleEl.setText("\u65B0\u4F1A\u8BDD");
+    elements.treePanelTitleEl.setText("\u4F1A\u8BDD\u6811");
+    elements.treeListEl.empty();
+    transcript.appendMessage(
+      "assistant",
+      "\u4F60\u597D\uFF01\u65B0\u4F1A\u8BDD\u5DF2\u7ECF\u5F00\u59CB\u4E86\uFF0C\u6709\u4EC0\u4E48\u53EF\u4EE5\u5E2E\u4F60\u7684\uFF1F"
+    );
+  }
+  async function switchToSession(session) {
+    try {
+      const conversationId = session.active_conversation_id;
+      let rawMessages = [];
+      let contextStats = null;
+      try {
+        rawMessages = await client.getConversationMessages(
+          session.id,
+          conversationId
+        );
+      } catch (msgErr) {
+        console.warn("[ChatView] getConversationMessages failed:", msgErr);
+      }
+      try {
+        contextStats = await client.getConversationContextStats(
+          session.id,
+          conversationId
+        );
+      } catch (contextErr) {
+        console.warn(
+          "[ChatView] getConversationContextStats failed:",
+          contextErr
+        );
+      }
+      client.setSession(session.id, conversationId);
+      persona.setPersonaState(
+        session.persona_state ?? createDefaultPersonaState()
+      );
+      elements.sessionTitleEl.setText(session.title || "\u672A\u547D\u540D\u4F1A\u8BDD");
+      transcript.clearConversationUi();
+      composer.clear();
+      const toolResults = /* @__PURE__ */ new Map();
+      for (const msg of rawMessages) {
+        if (msg.role === "user" && Array.isArray(msg.content)) {
+          for (const block of msg.content) {
+            if (block.type === "tool_result" && block.tool_use_id) {
+              const output = typeof block.content === "string" ? block.content : JSON.stringify(block.content || "");
+              const ui = block.ui && typeof block.ui === "object" ? block.ui : {};
+              toolResults.set(block.tool_use_id, {
+                id: block.tool_use_id,
+                tool_use_id: block.tool_use_id,
+                output,
+                ...ui
+              });
+            }
+          }
+        }
+      }
+      for (const msg of rawMessages) {
+        if (msg.role === "user") {
+          renderHistoricalUserMessage(msg);
+        } else if (msg.role === "assistant") {
+          renderHistoricalAssistantMessage(msg, toolResults);
+        }
+      }
+      if (contextStats) {
+        transcript.updateContextBar(contextStats);
+      }
+      transcript.scrollToBottom(true);
+      if (state.treePanelOpen) {
+        await loadConversationTree();
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[ChatView] switchToSession failed:", err);
+      new import_obsidian5.Notice(`\u5207\u6362\u4F1A\u8BDD\u5931\u8D25: ${message}`);
+    }
+  }
+  function renderHistoricalUserMessage(msg) {
+    const attachments = Array.isArray(msg.attachments) ? msg.attachments : [];
+    if (typeof msg.text === "string") {
+      transcript.appendMessage(
+        "user",
+        msg.text,
+        false,
+        attachments,
+        msg.message_id
+      );
+      return;
+    }
+    let hasText = false;
+    if (typeof msg.content === "string") {
+      transcript.appendMessage(
+        "user",
+        msg.content,
+        false,
+        attachments,
+        msg.message_id
+      );
+      hasText = true;
+    } else if (Array.isArray(msg.content)) {
+      const texts = msg.content.filter((block) => block.type === "text" && block.text).map((block) => block.text).join("\n");
+      if (texts || attachments.length > 0) {
+        transcript.appendMessage(
+          "user",
+          texts,
+          false,
+          attachments,
+          msg.message_id
+        );
+        hasText = true;
+      }
+    }
+    if (!hasText && !Array.isArray(msg.content) && msg.content) {
+      transcript.appendMessage(
+        "user",
+        JSON.stringify(msg.content),
+        false,
+        attachments,
+        msg.message_id
+      );
+    }
+  }
+  function renderHistoricalAssistantMessage(msg, toolResults) {
+    if (Array.isArray(msg.content)) {
+      let reasoningText = "";
+      let visibleText = "";
+      let forkAttached = false;
+      const flushAssistantContent = () => {
+        const content = buildAssistantContent(reasoningText, visibleText);
+        if (content.trim()) {
+          transcript.appendMessage(
+            "assistant",
+            content,
+            false,
+            [],
+            !forkAttached && msg.message_id ? msg.message_id : void 0
+          );
+          forkAttached = true;
+        }
+        reasoningText = "";
+        visibleText = "";
+      };
+      for (const block of msg.content) {
+        if (block.type === "reasoning_details" || block.type === "thinking") {
+          reasoningText += getReasoningText(block);
+        } else if (block.type === "text" && block.text) {
+          visibleText += `${visibleText ? "\n" : ""}${block.text}`;
+        } else if (block.type === "tool_use" && block.name) {
+          flushAssistantContent();
+          transcript.renderHistoricalTool({
+            id: block.id,
+            tool_use_id: block.id,
+            name: block.name,
+            tool: block.name,
+            output: "(no output)",
+            ...toolResults.get(block.id) || {}
+          });
+        }
+      }
+      flushAssistantContent();
+      return;
+    }
+    if (typeof msg.content === "string" && msg.content) {
+      transcript.appendMessage(
+        "assistant",
+        msg.content,
+        false,
+        [],
+        msg.message_id
+      );
+    }
+  }
+  async function deleteSessionConfirm(sessionId) {
+    try {
+      await client.deleteSession(sessionId);
+      new import_obsidian5.Notice("\u4F1A\u8BDD\u5DF2\u5220\u9664");
+      await loadSessionList();
+      if (client.sessionId === null) {
+        closeTreePanel();
+        elements.treePanelTitleEl.setText("\u4F1A\u8BDD\u6811");
+        elements.treeListEl.empty();
+      }
+    } catch {
+      new import_obsidian5.Notice("\u5220\u9664\u5931\u8D25");
+    }
+  }
+  async function syncCurrentSessionTitle(sessionId) {
+    if (client.sessionId !== sessionId) {
+      return;
+    }
+    try {
+      const sessions = await client.listSessions();
+      const current = sessions.find((item) => item.id === sessionId);
+      if (!current) {
+        return;
+      }
+      if (elements.sessionTitleEl.getText() === "\u65B0\u4F1A\u8BDD" && current.title) {
+        elements.sessionTitleEl.setText(current.title);
+      }
+      if (state.treePanelOpen) {
+        elements.treePanelTitleEl.setText(
+          current.title ? `\u4F1A\u8BDD\u6811 \xB7 ${current.title}` : "\u4F1A\u8BDD\u6811"
+        );
+        void loadConversationTree();
+      }
+    } catch {
+    }
+  }
+  async function handleForkMessage(target) {
+    if (state.isSending) {
+      new import_obsidian5.Notice("\u5F53\u524D\u6B63\u5728\u56DE\u590D\uFF0C\u8BF7\u5148\u5B8C\u6210\u540E\u518D\u5206\u53C9");
+      return;
+    }
+    const sessionId = client.sessionId;
+    const conversationId = client.conversationId;
+    if (!sessionId || !conversationId) {
+      new import_obsidian5.Notice("\u5F53\u524D\u6CA1\u6709\u53EF\u5206\u53C9\u7684\u4F1A\u8BDD");
+      return;
+    }
+    const suggestedTitle = buildForkTitleSuggestion(target.content);
+    const preview = buildForkPreview(target.content);
+    const title = await promptForkTitle(app, preview, suggestedTitle);
+    if (title === null) {
+      return;
+    }
+    try {
+      const updatedSession = await client.forkConversation(
+        sessionId,
+        conversationId,
+        target.messageId,
+        title
+      );
+      await switchToSession(updatedSession);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      new import_obsidian5.Notice(`\u5206\u53C9\u5931\u8D25: ${message}`);
+    }
+  }
+  function renderSessionCard(session) {
+    const card = elements.sessionListEl.createDiv({ cls: "session-card" });
+    const isActive = client.sessionId === session.id;
+    if (isActive) {
+      card.addClass("active");
+    }
+    const contentArea = card.createDiv({ cls: "session-card-content" });
+    const titleEl = contentArea.createDiv({ cls: "session-card-title" });
+    titleEl.setText(session.title || "\u672A\u547D\u540D\u4F1A\u8BDD");
+    const metaEl = contentArea.createDiv({ cls: "session-card-meta" });
+    const turnLabel = session.turn_count > 0 ? `${session.turn_count} \u6B21\u5BF9\u8BDD` : `${session.message_count} \u6761\u6D88\u606F`;
+    metaEl.setText(`${turnLabel} \xB7 ${formatRelativeTime(session.created_at)}`);
+    if (isActive) {
+      const badge = contentArea.createEl("span", {
+        cls: "session-card-badge"
+      });
+      badge.setText("\u5F53\u524D");
+    }
+    contentArea.addEventListener("click", () => {
+      closeSessionPanel();
+      void switchToSession(session);
+    });
+    if (!isActive) {
+      const deleteBtn = card.createEl("button", {
+        cls: "session-card-delete",
+        attr: { "aria-label": "\u5220\u9664\u4F1A\u8BDD" }
+      });
+      deleteBtn.innerHTML = ICON_TRASH;
+      deleteBtn.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+        void deleteSessionConfirm(session.id);
+      });
+    }
+  }
+  function renderTreeBranch(nodes, container, sessionId) {
+    for (const node of nodes) {
+      const branchEl = container.createDiv({ cls: "conversation-tree-branch" });
+      const button = branchEl.createEl("button", {
+        cls: "conversation-tree-node",
+        attr: {
+          type: "button",
+          "aria-pressed": node.active ? "true" : "false",
+          title: node.active ? "\u5F53\u524D\u5206\u652F" : "\u5207\u6362\u5230\u8BE5\u5206\u652F"
+        }
+      });
+      if (node.active) {
+        button.addClass("active");
+      }
+      const mainRow = button.createDiv({ cls: "conversation-tree-node-main" });
+      const title = mainRow.createDiv({ cls: "conversation-tree-node-title" });
+      title.setText(node.title || "\u672A\u547D\u540D\u5206\u652F");
+      const activeBadge = mainRow.createSpan({
+        cls: "conversation-tree-node-badge"
+      });
+      activeBadge.setText(node.active ? "\u5F53\u524D" : `v${node.revision}`);
+      const meta = button.createDiv({ cls: "conversation-tree-node-meta" });
+      meta.setText(
+        [
+          `${node.message_count} \u6761`,
+          node.fork_message_id ? `fork ${node.fork_message_id.slice(0, 8)}` : "",
+          node.parent_id ? `parent ${node.parent_id.slice(0, 8)}` : "root"
+        ].filter(Boolean).join(" \xB7 ")
+      );
+      button.addEventListener("click", () => {
+        if (node.active) {
+          return;
+        }
+        if (state.isSending) {
+          new import_obsidian5.Notice("\u5F53\u524D\u6B63\u5728\u56DE\u590D\uFF0C\u8BF7\u5148\u5B8C\u6210\u540E\u518D\u5207\u6362\u5206\u652F");
+          return;
+        }
+        void activateConversation(sessionId, node.id);
+      });
+      if (node.children.length > 0) {
+        const children = branchEl.createDiv({
+          cls: "conversation-tree-children"
+        });
+        renderTreeBranch(node.children, children, sessionId);
+      }
+    }
+  }
+  async function activateConversation(sessionId, conversationId) {
+    try {
+      const updatedSession = await client.patchSession(sessionId, {
+        active_conversation_id: conversationId
+      });
+      await switchToSession(updatedSession);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      new import_obsidian5.Notice(`\u5207\u6362\u5206\u652F\u5931\u8D25: ${message}`);
+    }
+  }
+  return {
+    handleNewSession,
+    toggleSessionPanel,
+    toggleTreePanel,
+    loadSessionList,
+    loadConversationTree,
+    switchToSession,
+    deleteSessionConfirm,
+    syncCurrentSessionTitle
+  };
+}
+
+// src/chat/chatStyles.ts
+var STYLE_ID = "crabby-chat-styles";
+var CHAT_STYLES = `
   .crabby-chat {
     position: relative;
     display: flex;
@@ -1372,31 +4573,1343 @@ ${e.close}`;return t.endsWith(i)?t.length-e.close.length:-1}function Dr(t,e){ret
   .cso-provider[data-provider="minimax"] { background: rgba(219, 39, 119, 0.15); color: #db2777; }
   .cso-provider[data-provider="zhipu"] { background: rgba(22, 163, 74, 0.15); color: #16a34a; }
   .cso-provider[data-provider="custom_openai"] { background: rgba(100, 116, 139, 0.15); color: #64748b; }
-`;function On(){let t=document.getElementById($n);if(t&&t.tagName==="STYLE"){t.textContent=Nn;return}let e=document.createElement("style");e.id=$n,e.textContent=Nn,document.head.appendChild(e)}var ot=require("obsidian");function Un(t){return t.trim().split(`
-`).find(e=>e.trim())}function Fn(t){return t.name||t.tool||"tool"}function jr(t){return t.id||t.tool_use_id||void 0}function Mt(t,e=""){return typeof t=="string"?{name:t,tool:t,output:e,status:"success",metadata:{}}:{...t,output:typeof t.output=="string"?t.output:"",metadata:t.metadata&&typeof t.metadata=="object"?t.metadata:{}}}function Hn(t){if(t.is_error)return"error";if(t.status)return t.status;let e=t.metadata||{},n=e.exit_code;if(e.blocked===!0||e.timeout===!0||typeof n=="number"&&n!==0||typeof n=="string"&&n.trim()!==""&&n!=="0")return"error";let s=e.warnings;return t.is_truncated||Array.isArray(s)&&s.length>0||typeof s=="string"&&s.trim()!==""||s&&!Array.isArray(s)&&typeof s!="string"?"warning":"success"}function Vr(t){return t==="error"?"x":t==="warning"?"!":"check"}function At(t){return t==="error"?"failed":t==="warning"?"warning":"done"}function qr(t){let e=[],s=(t.metadata||{}).exit_code;return s!=null&&e.push(`exit ${String(s)}`),t.elapsed_ms!==void 0&&t.elapsed_ms!==null&&e.push(`${Math.round(t.elapsed_ms)}ms`),t.is_truncated&&e.push("truncated"),e.join(" \xB7 ")}function Wr(t){let e=[t.output||"(no output)"];return t.is_truncated&&(e.push(""),e.push("[result truncated]"),t.cache_path&&e.push(`Full result cache: ${t.cache_path}`)),e.join(`
-`)}function Yr(t){let e=s=>s.replace(/\.0$/,""),n=Math.abs(t);if(n>=1e6){let s=n>=1e7?0:1;return`${e((t/1e6).toFixed(s))}m`}return n>=1e3?`${e((t/1e3).toFixed(1))}k`:`${Math.round(t)}`}function Q(t){return Math.round(t).toLocaleString("en-US")}function Gr(t){let e=t>=10?0:1;return`${t.toFixed(e).replace(/\.0$/,"")}%`}function ve(t,e){let n=t[e];return typeof n=="number"?n:0}function Jr(t){return t?ve(t,"prompt_cache_hit_tokens")+ve(t,"prompt_cached_tokens")+ve(t,"cache_read_input_tokens"):0}function lt(t){return!!t&&(t.call_count>0||t.prompt_tokens>0||t.completion_tokens>0||t.total_tokens>0||t.reasoning_tokens>0||Jr(t)>0||ve(t,"prompt_cache_miss_tokens")>0||ve(t,"cache_creation_input_tokens")>0)}function Xr(t,e){let n=lt(e)?e:t;return lt(n)?Yr(n.total_tokens):"\u6682\u65E0"}function Kn(t,e){let n=[`${t}\uFF1A${Q(e.total_tokens)} tokens\uFF0C${Q(e.call_count)} \u6B21\u6A21\u578B\u8C03\u7528\u3002`,`${t}\u660E\u7EC6\uFF1A\u8F93\u5165 ${Q(e.prompt_tokens)}\uFF0C\u8F93\u51FA ${Q(e.completion_tokens)}\uFF0C\u63A8\u7406 ${Q(e.reasoning_tokens)}\u3002`],s=[],r=ve(e,"prompt_cache_hit_tokens"),i=ve(e,"prompt_cache_miss_tokens"),a=ve(e,"prompt_cached_tokens"),d=ve(e,"cache_creation_input_tokens"),o=ve(e,"cache_read_input_tokens");return r>0&&s.push(`\u7F13\u5B58\u547D\u4E2D ${Q(r)}`),i>0&&s.push(`\u672A\u547D\u4E2D ${Q(i)}`),a>0&&s.push(`\u7F13\u5B58\u547D\u4E2D ${Q(a)}`),o>0&&s.push(`\u8BFB\u7F13\u5B58 ${Q(o)}`),d>0&&s.push(`\u5EFA\u7F13\u5B58 ${Q(d)}`),s.length>0&&n.push(`${t}\u7F13\u5B58\uFF1A${s.join("\uFF0C")}\u3002`),n}function Zr(t,e){let n=[`\u4E0A\u4E0B\u6587\u5360\u7528\uFF1A${Q(t.total_tokens)} / ${Q(t.context_limit)} tokens\uFF08${e}\uFF09\u3002`,`\u4E0A\u4E0B\u6587\u660E\u7EC6\uFF1A\u7CFB\u7EDF ${Q(t.system_tokens)}\uFF0C\u5DE5\u5177\u5B9A\u4E49 ${Q(t.schema_tokens)}\uFF0C\u7528\u6237 ${Q(t.user_tokens)}\uFF0C\u52A9\u624B ${Q(t.assistant_tokens)}\uFF0C\u5DE5\u5177\u7ED3\u679C ${Q(t.tool_result_tokens)}\u3002`,`\u6D88\u606F\u6570\uFF1A${Q(t.message_count)}\u3002`],s=t.actual_usage,r=t.cumulative_usage;return lt(s)?n.push(...Kn("\u672C\u8F6E\u8D26\u5355",s)):n.push("\u672C\u8F6E\u8D26\u5355\uFF1A\u5F53\u524D\u6A21\u578B\u6CA1\u6709\u8FD4\u56DE usage \u6570\u636E\u3002"),lt(r)&&n.push(...Kn("\u4F1A\u8BDD\u8D26\u5355",r)),n.push("\u8D26\u5355\u6765\u81EA\u670D\u52A1\u5546 usage\uFF0C\u53EF\u80FD\u5305\u542B\u4E0D\u8FDB\u5165\u4E0A\u4E0B\u6587\u7A97\u53E3\u7684\u8F93\u51FA\u3001\u63A8\u7406\u548C\u7F13\u5B58\u76F8\u5173 token\u3002"),n.join(`
-`)}function zn(t){let{app:e,client:n,component:s,elements:r,state:i}=t,a=null;function d(){let l=Array.from(r.minimapEl.querySelectorAll(".chat-minimap-dot")),u=l.length;if(u===0)return;let m=10,g=64,k=24,v=40,T=12,I=r.minimapEl.clientHeight-g-k,q=u===1?0:Math.max(T,Math.min(v,(I-m)/(u-1))),V=m+(u-1)*q,X=g+Math.max(0,(I-V)/2);l.forEach((ie,U)=>{ie.style.top=`${X+U*q}px`})}function o(l=!1){if(l){requestAnimationFrame(()=>{r.messagesEl.scrollTop=r.messagesEl.scrollHeight});return}let{scrollTop:u,scrollHeight:m,clientHeight:g}=r.messagesEl;m-u-g<150&&(r.messagesEl.scrollTop=m)}function c(l,u,m){l.classList.remove("running"),l.classList.add("done");let g=l.querySelector(".chat-tool-header");if(g){g.empty(),g.createSpan({cls:"chat-tool-icon"}).setText("\u2705"),g.createSpan({cls:"chat-tool-name"}).setText(u);let I=Un(m);I&&g.createSpan({cls:"chat-tool-preview"}).setText(I.slice(0,72)+(I.length>72?"\u2026":""));let q=g.createSpan({cls:"chat-tool-chevron",text:"\u25BE"});g.addEventListener("click",()=>{l.classList.toggle("expanded",!l.classList.contains("expanded")),q.setText(l.classList.contains("expanded")?"\u25B4":"\u25BE")})}let k=l.querySelector(".chat-tool-terminal");k&&(k.empty(),k.setText(m||"(no output)"))}function w(l,u,m=""){let g=Mt(u,m),k=Fn(g),v=Wr(g),T=Hn(g);l.classList.remove("running"),l.classList.add("done"),l.classList.toggle("error",T==="error"),l.classList.toggle("warning",T==="warning"),l.classList.toggle("success",T!=="error"&&T!=="warning");let I=l.querySelector(".chat-tool-header");if(I){I.empty(),I.createSpan({cls:"chat-tool-icon"}).setText(Vr(T)),I.createSpan({cls:"chat-tool-name"}).setText(k);let ie=qr(g);I.createSpan({cls:"chat-tool-status"}).setText(ie?`${At(T)} \xB7 ${ie}`:At(T));let D=Un(v);D&&I.createSpan({cls:"chat-tool-preview"}).setText(D.slice(0,72)+(D.length>72?"...":""));let G=I.createSpan({cls:"chat-tool-chevron",text:">"});I.addEventListener("click",()=>{l.classList.toggle("expanded",!l.classList.contains("expanded")),G.setText(l.classList.contains("expanded")?"v":">")})}let q=l.querySelector(".chat-tool-terminal");q&&(q.empty(),q.setText(v))}function S(l,u,m=!0,g=[],k){i.messages.push({role:l,content:u,attachments:g,messageId:k});let v=r.messagesEl.createDiv({cls:`chat-msg ${l}`});if(k&&(v.dataset.messageId=k),l==="user"){let T=r.minimapEl.createDiv({cls:"chat-minimap-dot"});T.setAttribute("title",u.slice(0,30)),T.addEventListener("click",()=>{v.scrollIntoView({behavior:"smooth",block:"start"})}),i.userMsgRefs.push({dot:T,msgEl:v}),d();let I=v.createDiv({cls:"chat-msg-bubble"});R(I,g),u&&I.createDiv({cls:"chat-msg-text"}).setText(u)}else l==="assistant"&&u?x(v,u,k):u&&v.setText(u);o(m)}function x(l,u,m){l.empty(),m&&(l.dataset.messageId=m);let g=l.createDiv({cls:"chat-assistant-shell"}),k=_t(g);m&&a&&p(k,m,u,"assistant");let v=g.createDiv({cls:"chat-assistant-content"});An(e,s,v,u)}function M(l){if(!l)return!1;let u=-1;for(let g=i.messages.length-1;g>=0;g-=1)if(i.messages[g].role==="user"){u=g;break}if(u<0)return!1;i.messages[u].messageId=l;let m=i.userMsgRefs[i.userMsgRefs.length-1];return m?(m.msgEl.dataset.messageId=l,!0):!1}function p(l,u,m,g){for(let T of Array.from(l.children))T.classList.contains("chat-msg-action-row")&&T.remove();let k=l.createDiv({cls:"chat-msg-action-row"}),v=k.createEl("button",{cls:"chat-msg-fork-btn",attr:{type:"button","aria-label":"\u4ECE\u6B64\u6D88\u606F\u5206\u53C9",title:"\u4ECE\u6B64\u6D88\u606F\u5206\u53C9"}});v.innerHTML=gn,(0,ot.setTooltip)(v,"\u4ECE\u6B64\u6D88\u606F\u5206\u53C9",{placement:"top",delay:120}),v.addEventListener("click",T=>{T.preventDefault(),T.stopPropagation(),a?.({messageId:u,content:m,role:g})}),!l.classList.contains("chat-assistant-header")&&l.firstElementChild!==k&&l.insertBefore(k,l.firstChild)}function R(l,u){if(u.length===0)return;let m=u.filter(v=>v.type==="image");if(m.length>0){let v=l.createDiv({cls:"chat-msg-images"});for(let T of m){let I=T.preview_url??(T.attachment_id?n.getAttachmentUrl(T.attachment_id):"");I&&v.createEl("img",{cls:"chat-msg-image",attr:{src:I,alt:T.filename??"image",loading:"lazy"}})}}let g=u.filter(v=>v.type!=="image");if(g.length===0)return;let k=l.createDiv({cls:"chat-msg-attachment-row"});for(let v of g){let T=k.createDiv({cls:"chat-msg-attachment"}),I=v.type==="vault_directory"?`@${v.path}/`:`@${v.path}`;T.setText(I)}}function C(l,u){let m=r.messagesEl.createDiv({cls:"chat-tool-block running"}),g=m.createDiv({cls:"chat-tool-header"});g.createSpan({cls:"chat-tool-icon"}).setText(fn(l)),g.createSpan({cls:"chat-tool-name"}).setText(l),g.createDiv({cls:"chat-tool-spinner"}),m.createDiv({cls:"chat-tool-terminal"}).createSpan({cls:"chat-tool-cursor",text:"\u2588"}),u&&(i.toolBlocks.set(u,m),i.toolIdToName.set(u,l)),i.toolBlocks.set(l,m),o(!1)}function f(l,u){let m;if(i.toolBlocks.has(l)){m=i.toolBlocks.get(l),i.toolBlocks.delete(l);for(let[g,k]of i.toolIdToName)if(k===l){i.toolBlocks.delete(g),i.toolIdToName.delete(g);break}}if(!m){for(let[g,k]of i.toolIdToName)if(k===l){m=i.toolBlocks.get(g),i.toolBlocks.delete(g),i.toolIdToName.delete(g),i.toolBlocks.delete(l);break}}if(!m){let g=r.messagesEl.querySelectorAll(".chat-tool-block.running");g.length&&(m=g[g.length-1])}m?c(m,l,u):r.messagesEl.createDiv({cls:"chat-msg status"}).setText(`\u2705 ${l} \u5B8C\u6210`),o(!1)}function y(l,u){let m=r.messagesEl.createDiv({cls:"chat-tool-block done"});m.createDiv({cls:"chat-tool-header"}),m.createDiv({cls:"chat-tool-terminal"}),c(m,l,u),o(!1)}function b(l){let u=Mt(l),m=Fn(u),g=jr(u),k;if(g&&i.toolBlocks.has(g)&&(k=i.toolBlocks.get(g),i.toolBlocks.delete(g),i.toolIdToName.delete(g),i.toolBlocks.get(m)===k&&i.toolBlocks.delete(m)),!k&&i.toolBlocks.has(m)){k=i.toolBlocks.get(m),i.toolBlocks.delete(m);for(let[v,T]of i.toolIdToName)if(T===m&&i.toolBlocks.get(v)===k){i.toolBlocks.delete(v),i.toolIdToName.delete(v);break}}if(!k){let v=r.messagesEl.querySelectorAll(".chat-tool-block.running");v.length&&(k=v[v.length-1])}k?w(k,u):r.messagesEl.createDiv({cls:"chat-msg status"}).setText(`${At(Hn(u))}: ${m}`),o(!1)}function A(l){let u=Mt(l),m=r.messagesEl.createDiv({cls:"chat-tool-block done"});m.createDiv({cls:"chat-tool-header"}),m.createDiv({cls:"chat-tool-terminal"}),w(m,u),o(!1)}function H(){i.toolBlocks.clear(),i.toolIdToName.clear()}function J(){r.messagesEl.querySelectorAll(".chat-msg.status, .chat-tool-block.running").forEach(l=>l.remove())}function j(){i.messages=[],i.userMsgRefs=[],H(),r.messagesEl.empty(),Y(),r.minimapEl.querySelectorAll(".chat-minimap-dot").forEach(l=>l.remove())}function Y(){let l="\u4E0A\u4E0B\u6587\u7EDF\u8BA1\u4F1A\u5728\u4E0B\u4E00\u6B21\u6A21\u578B\u54CD\u5E94\u5B8C\u6210\u540E\u66F4\u65B0\u3002";r.contextBarEl.style.display="flex",r.contextBarEl.removeAttribute("title"),r.contextBarEl.setAttribute("aria-label",l),(0,ot.setTooltip)(r.contextBarEl,l,{placement:"top",delay:120,classes:["life-context-tooltip"]}),r.contextBarEl.empty(),r.contextBarEl.createSpan({cls:"context-meter-label",text:"\u4E0A\u4E0B\u6587"});let u=r.contextBarEl.createDiv({cls:"context-ring",attr:{"aria-hidden":"true"}});u.style.setProperty("--context-progress","0%"),u.style.setProperty("--context-color","var(--text-muted)");let m=r.contextBarEl.createSpan({cls:"context-percent-label"});m.style.color="var(--text-muted)",m.setText("0%"),r.contextBarEl.createSpan({cls:"context-separator",text:"\xB7"}),r.contextBarEl.createSpan({cls:"context-bill-label",text:"\u4F1A\u8BDD \u6682\u65E0"})}function O(l){r.contextBarEl.style.display="flex";let u=l.usage_percent,m=Gr(u),g=Math.max(0,Math.min(u,100)),k=l.actual_usage,v=l.cumulative_usage,T=Xr(k,v),I="var(--text-success)";u>80?I="var(--text-error)":u>50&&(I="var(--text-warning, #e0a030)");let q=Zr(l,m);r.contextBarEl.removeAttribute("title"),r.contextBarEl.setAttribute("aria-label",q),(0,ot.setTooltip)(r.contextBarEl,q,{placement:"top",delay:120,classes:["life-context-tooltip"]}),r.contextBarEl.empty(),r.contextBarEl.createSpan({cls:"context-meter-label",text:"\u4E0A\u4E0B\u6587"});let V=r.contextBarEl.createDiv({cls:"context-ring",attr:{"aria-hidden":"true"}});V.style.setProperty("--context-progress",`${g}%`),V.style.setProperty("--context-color",I);let X=r.contextBarEl.createSpan({cls:"context-percent-label"});X.style.color=I,X.setText(m),r.contextBarEl.createSpan({cls:"context-separator",text:"\xB7"}),r.contextBarEl.createSpan({cls:"context-bill-label",text:`\u4F1A\u8BDD ${T}`})}function P(l){a=l}return Y(),{appendMessage:S,renderAssistantMessage:x,beginTool:C,completeTool:b,renderHistoricalTool:A,clearConversationUi:j,clearToolTracking:H,removeTransientUi:J,scrollToBottom:o,updateContextBar:O,updateLastUserMessageId:M,setForkHandler:P}}var jn=require("obsidian");var Qr="\uFF08\u7CFB\u7EDF\u901A\u77E5\uFF1A\u4E0A\u6B21\u6295\u9012\u5230\u540E\u53F0\u7684\u4EFB\u52A1\u521A\u521A\u5B8C\u6210\uFF0C\u8BF7\u76F4\u63A5\u6839\u636E\u65B0\u6CE8\u5165\u7684 <task_notification> \u4E0A\u4E0B\u6587\u7EE7\u7EED\u56DE\u590D\u6211\u3002\uFF09";function Vn(t){let{client:e,composer:n,elements:s,state:r,transcript:i,sessions:a,persona:d,plugin:o}=t;function c(p){if(s.inputEl.disabled=p,s.attachmentBtn.disabled=p,p){s.sendBtn.classList.add("is-stop"),s.sendBtn.innerHTML=cn,s.sendBtn.setAttribute("aria-label","\u505C\u6B62");return}s.sendBtn.classList.remove("is-stop"),s.sendBtn.innerHTML=Ge,s.sendBtn.setAttribute("aria-label","\u53D1\u9001")}async function w(p,R){let C=s.messagesEl.createDiv({cls:"chat-msg assistant"});C.setText("\u601D\u8003\u4E2D..."),i.scrollToBottom();try{let f=await e.chat(p.request);C.remove(),f.warnings?.forEach(y=>i.appendMessage("status",y)),d.setPersonaState(f.persona_state),R&&i.updateLastUserMessageId(f.user_message_id??void 0),f.tool_calls?.forEach(y=>{i.renderHistoricalTool(y)}),i.appendMessage("assistant",f.reply,!0,[],f.message_id??void 0),f.context&&i.updateContextBar(f.context),await a.syncCurrentSessionTitle(f.session_id)}catch(f){C.remove();let y=f instanceof Error?f.message:String(f);i.appendMessage("assistant",`\u274C \u8FDE\u63A5\u51FA\u9519: ${y}
+`;
+function ensureChatStyles() {
+  const existing = document.getElementById(STYLE_ID);
+  if (existing && existing.tagName === "STYLE") {
+    existing.textContent = CHAT_STYLES;
+    return;
+  }
+  const style = document.createElement("style");
+  style.id = STYLE_ID;
+  style.textContent = CHAT_STYLES;
+  document.head.appendChild(style);
+}
 
-\u8BF7\u68C0\u67E5\u540E\u7AEF\u662F\u5426\u53EF\u8BBF\u95EE\uFF0C\u6216\u67E5\u770B\u540E\u7AEF\u65E5\u5FD7\u3002`)}}async function S(p){let R=p?{request:{content:p,persona_mode:r.personaState.mode,manual_persona_id:r.personaState.manual_persona_id},displayText:p,displayAttachments:[]}:(()=>{let g=n.getSubmitPayload();return g?(g.request.persona_mode=r.personaState.mode,g.request.manual_persona_id=r.personaState.manual_persona_id,g):null})();if(!R||r.isSending)return;let C=!p,f=await o.applyLlmProfile();if(!f.ok){i.appendMessage("assistant",`\u274C ${f.message}
+// src/chat/chatTranscript.ts
+var import_obsidian6 = require("obsidian");
+function getFirstNonEmptyLine2(output) {
+  return output.trim().split("\n").find((line) => line.trim());
+}
+function getToolPayloadName(payload) {
+  return payload.name || payload.tool || "tool";
+}
+function getToolPayloadId(payload) {
+  return payload.id || payload.tool_use_id || void 0;
+}
+function normalizeToolPayload(payloadOrName, output = "") {
+  if (typeof payloadOrName === "string") {
+    return {
+      name: payloadOrName,
+      tool: payloadOrName,
+      output,
+      status: "success",
+      metadata: {}
+    };
+  }
+  return {
+    ...payloadOrName,
+    output: typeof payloadOrName.output === "string" ? payloadOrName.output : "",
+    metadata: payloadOrName.metadata && typeof payloadOrName.metadata === "object" ? payloadOrName.metadata : {}
+  };
+}
+function toolStatus(payload) {
+  if (payload.is_error) {
+    return "error";
+  }
+  if (payload.status) {
+    return payload.status;
+  }
+  const metadata = payload.metadata || {};
+  const exitCode = metadata.exit_code;
+  if (metadata.blocked === true || metadata.timeout === true || typeof exitCode === "number" && exitCode !== 0 || typeof exitCode === "string" && exitCode.trim() !== "" && exitCode !== "0") {
+    return "error";
+  }
+  const warnings = metadata.warnings;
+  if (payload.is_truncated || Array.isArray(warnings) && warnings.length > 0 || typeof warnings === "string" && warnings.trim() !== "" || !!warnings && !Array.isArray(warnings) && typeof warnings !== "string") {
+    return "warning";
+  }
+  return "success";
+}
+function toolStatusIcon(status) {
+  if (status === "error") {
+    return "x";
+  }
+  if (status === "warning") {
+    return "!";
+  }
+  return "check";
+}
+function toolStatusLabel(status) {
+  if (status === "error") {
+    return "failed";
+  }
+  if (status === "warning") {
+    return "warning";
+  }
+  return "done";
+}
+function formatToolMeta(payload) {
+  const parts = [];
+  const metadata = payload.metadata || {};
+  const exitCode = metadata.exit_code;
+  if (exitCode !== void 0 && exitCode !== null) {
+    parts.push(`exit ${String(exitCode)}`);
+  }
+  if (payload.elapsed_ms !== void 0 && payload.elapsed_ms !== null) {
+    parts.push(`${Math.round(payload.elapsed_ms)}ms`);
+  }
+  if (payload.is_truncated) {
+    parts.push("truncated");
+  }
+  return parts.join(" \xB7 ");
+}
+function formatToolOutput(payload) {
+  const lines = [payload.output || "(no output)"];
+  if (payload.is_truncated) {
+    lines.push("");
+    lines.push("[result truncated]");
+    if (payload.cache_path) {
+      lines.push(`Full result cache: ${payload.cache_path}`);
+    }
+  }
+  return lines.join("\n");
+}
+function formatCompactTokens(tokens) {
+  const trimDecimal = (value) => value.replace(/\.0$/, "");
+  const absTokens = Math.abs(tokens);
+  if (absTokens >= 1e6) {
+    const digits = absTokens >= 1e7 ? 0 : 1;
+    return `${trimDecimal((tokens / 1e6).toFixed(digits))}m`;
+  }
+  if (absTokens >= 1e3) {
+    return `${trimDecimal((tokens / 1e3).toFixed(1))}k`;
+  }
+  return `${Math.round(tokens)}`;
+}
+function formatWholeTokens(tokens) {
+  return Math.round(tokens).toLocaleString("en-US");
+}
+function formatUsagePercent(percent) {
+  const precision = percent >= 10 ? 0 : 1;
+  return `${percent.toFixed(precision).replace(/\.0$/, "")}%`;
+}
+function usageValue(usage, key) {
+  const value = usage[key];
+  return typeof value === "number" ? value : 0;
+}
+function cacheHitTokens(usage) {
+  if (!usage) {
+    return 0;
+  }
+  return usageValue(usage, "prompt_cache_hit_tokens") + usageValue(usage, "prompt_cached_tokens") + usageValue(usage, "cache_read_input_tokens");
+}
+function hasUsage(usage) {
+  return !!usage && (usage.call_count > 0 || usage.prompt_tokens > 0 || usage.completion_tokens > 0 || usage.total_tokens > 0 || usage.reasoning_tokens > 0 || cacheHitTokens(usage) > 0 || usageValue(usage, "prompt_cache_miss_tokens") > 0 || usageValue(usage, "cache_creation_input_tokens") > 0);
+}
+function buildBillLabel(actualUsage, cumulativeUsage) {
+  const sessionUsage = hasUsage(cumulativeUsage) ? cumulativeUsage : actualUsage;
+  return hasUsage(sessionUsage) ? formatCompactTokens(sessionUsage.total_tokens) : "\u6682\u65E0";
+}
+function buildUsageLines(label, usage) {
+  const lines = [
+    `${label}\uFF1A${formatWholeTokens(usage.total_tokens)} tokens\uFF0C${formatWholeTokens(usage.call_count)} \u6B21\u6A21\u578B\u8C03\u7528\u3002`,
+    `${label}\u660E\u7EC6\uFF1A\u8F93\u5165 ${formatWholeTokens(usage.prompt_tokens)}\uFF0C\u8F93\u51FA ${formatWholeTokens(usage.completion_tokens)}\uFF0C\u63A8\u7406 ${formatWholeTokens(usage.reasoning_tokens)}\u3002`
+  ];
+  const cacheParts = [];
+  const promptCacheHit = usageValue(usage, "prompt_cache_hit_tokens");
+  const promptCacheMiss = usageValue(usage, "prompt_cache_miss_tokens");
+  const promptCached = usageValue(usage, "prompt_cached_tokens");
+  const cacheCreation = usageValue(usage, "cache_creation_input_tokens");
+  const cacheRead = usageValue(usage, "cache_read_input_tokens");
+  if (promptCacheHit > 0) {
+    cacheParts.push(`\u7F13\u5B58\u547D\u4E2D ${formatWholeTokens(promptCacheHit)}`);
+  }
+  if (promptCacheMiss > 0) {
+    cacheParts.push(`\u672A\u547D\u4E2D ${formatWholeTokens(promptCacheMiss)}`);
+  }
+  if (promptCached > 0) {
+    cacheParts.push(`\u7F13\u5B58\u547D\u4E2D ${formatWholeTokens(promptCached)}`);
+  }
+  if (cacheRead > 0) {
+    cacheParts.push(`\u8BFB\u7F13\u5B58 ${formatWholeTokens(cacheRead)}`);
+  }
+  if (cacheCreation > 0) {
+    cacheParts.push(`\u5EFA\u7F13\u5B58 ${formatWholeTokens(cacheCreation)}`);
+  }
+  if (cacheParts.length > 0) {
+    lines.push(`${label}\u7F13\u5B58\uFF1A${cacheParts.join("\uFF0C")}\u3002`);
+  }
+  return lines;
+}
+function buildContextBarTitle(ctx, percentLabel) {
+  const lines = [
+    `\u4E0A\u4E0B\u6587\u5360\u7528\uFF1A${formatWholeTokens(ctx.total_tokens)} / ${formatWholeTokens(ctx.context_limit)} tokens\uFF08${percentLabel}\uFF09\u3002`,
+    `\u4E0A\u4E0B\u6587\u660E\u7EC6\uFF1A\u7CFB\u7EDF ${formatWholeTokens(ctx.system_tokens)}\uFF0C\u5DE5\u5177\u5B9A\u4E49 ${formatWholeTokens(ctx.schema_tokens)}\uFF0C\u7528\u6237 ${formatWholeTokens(ctx.user_tokens)}\uFF0C\u52A9\u624B ${formatWholeTokens(ctx.assistant_tokens)}\uFF0C\u5DE5\u5177\u7ED3\u679C ${formatWholeTokens(ctx.tool_result_tokens)}\u3002`,
+    `\u6D88\u606F\u6570\uFF1A${formatWholeTokens(ctx.message_count)}\u3002`
+  ];
+  const actualUsage = ctx.actual_usage;
+  const cumulativeUsage = ctx.cumulative_usage;
+  if (hasUsage(actualUsage)) {
+    lines.push(...buildUsageLines("\u672C\u8F6E\u8D26\u5355", actualUsage));
+  } else {
+    lines.push("\u672C\u8F6E\u8D26\u5355\uFF1A\u5F53\u524D\u6A21\u578B\u6CA1\u6709\u8FD4\u56DE usage \u6570\u636E\u3002");
+  }
+  if (hasUsage(cumulativeUsage)) {
+    lines.push(...buildUsageLines("\u4F1A\u8BDD\u8D26\u5355", cumulativeUsage));
+  }
+  lines.push(
+    "\u8D26\u5355\u6765\u81EA\u670D\u52A1\u5546 usage\uFF0C\u53EF\u80FD\u5305\u542B\u4E0D\u8FDB\u5165\u4E0A\u4E0B\u6587\u7A97\u53E3\u7684\u8F93\u51FA\u3001\u63A8\u7406\u548C\u7F13\u5B58\u76F8\u5173 token\u3002"
+  );
+  return lines.join("\n");
+}
+function createChatTranscript(deps) {
+  const { app, client, component, elements, state } = deps;
+  let forkHandler = null;
+  function repositionDots() {
+    const dots = Array.from(
+      elements.minimapEl.querySelectorAll(".chat-minimap-dot")
+    );
+    const count = dots.length;
+    if (count === 0) {
+      return;
+    }
+    const dotSize = 10;
+    const topPadding = 64;
+    const bottomPadding = 24;
+    const maxSpacing = 40;
+    const minSpacing = 12;
+    const available = elements.minimapEl.clientHeight - topPadding - bottomPadding;
+    const spacing = count === 1 ? 0 : Math.max(
+      minSpacing,
+      Math.min(maxSpacing, (available - dotSize) / (count - 1))
+    );
+    const totalUsed = dotSize + (count - 1) * spacing;
+    const startY = topPadding + Math.max(0, (available - totalUsed) / 2);
+    dots.forEach((dot, index) => {
+      dot.style.top = `${startY + index * spacing}px`;
+    });
+  }
+  function scrollToBottom(force = false) {
+    if (force) {
+      requestAnimationFrame(() => {
+        elements.messagesEl.scrollTop = elements.messagesEl.scrollHeight;
+      });
+      return;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = elements.messagesEl;
+    if (scrollHeight - scrollTop - clientHeight < 150) {
+      elements.messagesEl.scrollTop = scrollHeight;
+    }
+  }
+  function renderCompletedToolBlock(wrapper, name, output) {
+    wrapper.classList.remove("running");
+    wrapper.classList.add("done");
+    const header = wrapper.querySelector(".chat-tool-header");
+    if (header) {
+      header.empty();
+      const iconEl = header.createSpan({ cls: "chat-tool-icon" });
+      iconEl.setText("\u2705");
+      const nameEl = header.createSpan({ cls: "chat-tool-name" });
+      nameEl.setText(name);
+      const firstLine = getFirstNonEmptyLine2(output);
+      if (firstLine) {
+        const preview = header.createSpan({ cls: "chat-tool-preview" });
+        preview.setText(
+          firstLine.slice(0, 72) + (firstLine.length > 72 ? "\u2026" : "")
+        );
+      }
+      const chevron = header.createSpan({
+        cls: "chat-tool-chevron",
+        text: "\u25BE"
+      });
+      header.addEventListener("click", () => {
+        wrapper.classList.toggle("expanded", !wrapper.classList.contains("expanded"));
+        chevron.setText(wrapper.classList.contains("expanded") ? "\u25B4" : "\u25BE");
+      });
+    }
+    const terminal = wrapper.querySelector(".chat-tool-terminal");
+    if (terminal) {
+      terminal.empty();
+      terminal.setText(output || "(no output)");
+    }
+  }
+  function renderToolPayloadBlock(wrapper, payloadOrName, legacyOutput = "") {
+    const payload = normalizeToolPayload(payloadOrName, legacyOutput);
+    const name = getToolPayloadName(payload);
+    const output = formatToolOutput(payload);
+    const status = toolStatus(payload);
+    wrapper.classList.remove("running");
+    wrapper.classList.add("done");
+    wrapper.classList.toggle("error", status === "error");
+    wrapper.classList.toggle("warning", status === "warning");
+    wrapper.classList.toggle("success", status !== "error" && status !== "warning");
+    const header = wrapper.querySelector(".chat-tool-header");
+    if (header) {
+      header.empty();
+      const iconEl = header.createSpan({ cls: "chat-tool-icon" });
+      iconEl.setText(toolStatusIcon(status));
+      const nameEl = header.createSpan({ cls: "chat-tool-name" });
+      nameEl.setText(name);
+      const meta = formatToolMeta(payload);
+      const statusEl = header.createSpan({ cls: "chat-tool-status" });
+      statusEl.setText(
+        meta ? `${toolStatusLabel(status)} \xB7 ${meta}` : toolStatusLabel(status)
+      );
+      const firstLine = getFirstNonEmptyLine2(output);
+      if (firstLine) {
+        const preview = header.createSpan({ cls: "chat-tool-preview" });
+        preview.setText(
+          firstLine.slice(0, 72) + (firstLine.length > 72 ? "..." : "")
+        );
+      }
+      const chevron = header.createSpan({
+        cls: "chat-tool-chevron",
+        text: ">"
+      });
+      header.addEventListener("click", () => {
+        wrapper.classList.toggle("expanded", !wrapper.classList.contains("expanded"));
+        chevron.setText(wrapper.classList.contains("expanded") ? "v" : ">");
+      });
+    }
+    const terminal = wrapper.querySelector(".chat-tool-terminal");
+    if (terminal) {
+      terminal.empty();
+      terminal.setText(output);
+    }
+  }
+  function appendMessage(role, content, forceScroll = true, attachments = [], messageId) {
+    state.messages.push({ role, content, attachments, messageId });
+    const msgEl = elements.messagesEl.createDiv({ cls: `chat-msg ${role}` });
+    if (messageId) {
+      msgEl.dataset.messageId = messageId;
+    }
+    if (role === "user") {
+      const dot = elements.minimapEl.createDiv({ cls: "chat-minimap-dot" });
+      dot.setAttribute("title", content.slice(0, 30));
+      dot.addEventListener("click", () => {
+        msgEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      state.userMsgRefs.push({ dot, msgEl });
+      repositionDots();
+      const bubble = msgEl.createDiv({ cls: "chat-msg-bubble" });
+      renderUserAttachments(bubble, attachments);
+      if (content) {
+        const textEl = bubble.createDiv({ cls: "chat-msg-text" });
+        textEl.setText(content);
+      }
+    } else if (role === "assistant" && content) {
+      renderAssistantMessage(msgEl, content, messageId);
+    } else if (content) {
+      msgEl.setText(content);
+    }
+    scrollToBottom(forceScroll);
+  }
+  function renderAssistantMessage(targetEl, content, messageId) {
+    targetEl.empty();
+    if (messageId) {
+      targetEl.dataset.messageId = messageId;
+    }
+    const shell = targetEl.createDiv({ cls: "chat-assistant-shell" });
+    const header = createAssistantIdentityHeader(shell);
+    if (messageId && forkHandler) {
+      renderForkAction(header, messageId, content, "assistant");
+    }
+    const contentEl = shell.createDiv({ cls: "chat-assistant-content" });
+    renderAssistantMessageContent(app, component, contentEl, content);
+  }
+  function updateLastUserMessageId(messageId) {
+    if (!messageId) {
+      return false;
+    }
+    let messageIndex = -1;
+    for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+      if (state.messages[index].role === "user") {
+        messageIndex = index;
+        break;
+      }
+    }
+    if (messageIndex < 0) {
+      return false;
+    }
+    state.messages[messageIndex].messageId = messageId;
+    const userRef = state.userMsgRefs[state.userMsgRefs.length - 1];
+    if (!userRef) {
+      return false;
+    }
+    userRef.msgEl.dataset.messageId = messageId;
+    return true;
+  }
+  function renderForkAction(container, messageId, content, role) {
+    for (const child of Array.from(container.children)) {
+      if (child.classList.contains("chat-msg-action-row")) {
+        child.remove();
+      }
+    }
+    const actions = container.createDiv({ cls: "chat-msg-action-row" });
+    const button = actions.createEl("button", {
+      cls: "chat-msg-fork-btn",
+      attr: {
+        type: "button",
+        "aria-label": "\u4ECE\u6B64\u6D88\u606F\u5206\u53C9",
+        title: "\u4ECE\u6B64\u6D88\u606F\u5206\u53C9"
+      }
+    });
+    button.innerHTML = ICON_FORK;
+    (0, import_obsidian6.setTooltip)(button, "\u4ECE\u6B64\u6D88\u606F\u5206\u53C9", {
+      placement: "top",
+      delay: 120
+    });
+    button.addEventListener("click", (evt) => {
+      evt.preventDefault();
+      evt.stopPropagation();
+      void forkHandler?.({ messageId, content, role });
+    });
+    if (!container.classList.contains("chat-assistant-header") && container.firstElementChild !== actions) {
+      container.insertBefore(actions, container.firstChild);
+    }
+  }
+  function renderUserAttachments(bubble, attachments) {
+    if (attachments.length === 0) {
+      return;
+    }
+    const imageAttachments = attachments.filter(
+      (attachment) => attachment.type === "image"
+    );
+    if (imageAttachments.length > 0) {
+      const imageGrid = bubble.createDiv({ cls: "chat-msg-images" });
+      for (const attachment of imageAttachments) {
+        const src = attachment.preview_url ?? (attachment.attachment_id ? client.getAttachmentUrl(attachment.attachment_id) : "");
+        if (!src) {
+          continue;
+        }
+        imageGrid.createEl("img", {
+          cls: "chat-msg-image",
+          attr: {
+            src,
+            alt: attachment.filename ?? "image",
+            loading: "lazy"
+          }
+        });
+      }
+    }
+    const nonImageAttachments = attachments.filter(
+      (attachment) => attachment.type !== "image"
+    );
+    if (nonImageAttachments.length === 0) {
+      return;
+    }
+    const chipRow = bubble.createDiv({ cls: "chat-msg-attachment-row" });
+    for (const attachment of nonImageAttachments) {
+      const chip = chipRow.createDiv({ cls: "chat-msg-attachment" });
+      const label = attachment.type === "vault_directory" ? `@${attachment.path}/` : `@${attachment.path}`;
+      chip.setText(label);
+    }
+  }
+  function deleteToolKeys(id, name) {
+    const primary = id ?? name;
+    state.toolBlocks.delete(primary);
+    if (id) {
+      state.toolIdToName.delete(id);
+      if (id !== name) {
+        state.toolBlocks.delete(name);
+      }
+    }
+  }
+  function beginTool(name, id) {
+    const wrapper = elements.messagesEl.createDiv({
+      cls: "chat-tool-block running"
+    });
+    const header = wrapper.createDiv({ cls: "chat-tool-header" });
+    const iconEl = header.createSpan({ cls: "chat-tool-icon" });
+    iconEl.setText(getToolIcon(name));
+    const nameEl = header.createSpan({ cls: "chat-tool-name" });
+    nameEl.setText(name);
+    header.createDiv({ cls: "chat-tool-spinner" });
+    const termEl = wrapper.createDiv({ cls: "chat-tool-terminal" });
+    termEl.createSpan({ cls: "chat-tool-cursor", text: "\u2588" });
+    const primary = id || name;
+    state.toolBlocks.set(primary, wrapper);
+    if (id) {
+      state.toolIdToName.set(id, name);
+      if (id !== name) {
+        state.toolBlocks.set(name, wrapper);
+      }
+    }
+    scrollToBottom(false);
+  }
+  function completeTool(name, output) {
+    let wrapper;
+    const foundByName = state.toolBlocks.get(name);
+    if (foundByName) {
+      wrapper = foundByName;
+      deleteToolKeys(void 0, name);
+    }
+    if (!wrapper) {
+      for (const [id, mappedName] of state.toolIdToName) {
+        if (mappedName === name) {
+          wrapper = state.toolBlocks.get(id);
+          deleteToolKeys(id, name);
+          break;
+        }
+      }
+    }
+    if (!wrapper) {
+      const blocks = elements.messagesEl.querySelectorAll(
+        ".chat-tool-block.running"
+      );
+      if (blocks.length) {
+        wrapper = blocks[blocks.length - 1];
+      }
+    }
+    if (wrapper) {
+      renderCompletedToolBlock(wrapper, name, output);
+    } else {
+      const fallback = elements.messagesEl.createDiv({ cls: "chat-msg status" });
+      fallback.setText(`\u2705 ${name} \u5B8C\u6210`);
+    }
+    scrollToBottom(false);
+  }
+  function renderHistoricalTool(name, output) {
+    const wrapper = elements.messagesEl.createDiv({
+      cls: "chat-tool-block done"
+    });
+    wrapper.createDiv({ cls: "chat-tool-header" });
+    wrapper.createDiv({ cls: "chat-tool-terminal" });
+    renderCompletedToolBlock(wrapper, name, output);
+    scrollToBottom(false);
+  }
+  function completeToolPayload(payloadInput) {
+    const payload = normalizeToolPayload(payloadInput);
+    const name = getToolPayloadName(payload);
+    const toolId = getToolPayloadId(payload);
+    let wrapper;
+    if (toolId) {
+      wrapper = state.toolBlocks.get(toolId) ?? state.toolBlocks.get(name);
+      deleteToolKeys(toolId, name);
+    } else if (state.toolBlocks.has(name)) {
+      wrapper = state.toolBlocks.get(name);
+      deleteToolKeys(void 0, name);
+    }
+    if (!wrapper) {
+      const blocks = elements.messagesEl.querySelectorAll(
+        ".chat-tool-block.running"
+      );
+      if (blocks.length) {
+        wrapper = blocks[blocks.length - 1];
+      }
+    }
+    if (wrapper) {
+      renderToolPayloadBlock(wrapper, payload);
+    } else {
+      const fallback = elements.messagesEl.createDiv({ cls: "chat-msg status" });
+      fallback.setText(`${toolStatusLabel(toolStatus(payload))}: ${name}`);
+    }
+    scrollToBottom(false);
+  }
+  function renderHistoricalToolPayload(payloadInput) {
+    const payload = normalizeToolPayload(payloadInput);
+    const wrapper = elements.messagesEl.createDiv({
+      cls: "chat-tool-block done"
+    });
+    wrapper.createDiv({ cls: "chat-tool-header" });
+    wrapper.createDiv({ cls: "chat-tool-terminal" });
+    renderToolPayloadBlock(wrapper, payload);
+    scrollToBottom(false);
+  }
+  function clearToolTracking() {
+    state.toolBlocks.clear();
+    state.toolIdToName.clear();
+  }
+  function removeTransientUi() {
+    elements.messagesEl.querySelectorAll(".chat-msg.status, .chat-tool-block.running").forEach((el) => el.remove());
+  }
+  function clearConversationUi() {
+    state.messages = [];
+    state.userMsgRefs = [];
+    clearToolTracking();
+    elements.messagesEl.empty();
+    resetContextBar();
+    elements.minimapEl.querySelectorAll(".chat-minimap-dot").forEach((dot) => dot.remove());
+  }
+  function resetContextBar() {
+    const title = "\u4E0A\u4E0B\u6587\u7EDF\u8BA1\u4F1A\u5728\u4E0B\u4E00\u6B21\u6A21\u578B\u54CD\u5E94\u5B8C\u6210\u540E\u66F4\u65B0\u3002";
+    elements.contextBarEl.style.display = "flex";
+    elements.contextBarEl.removeAttribute("title");
+    elements.contextBarEl.setAttribute("aria-label", title);
+    (0, import_obsidian6.setTooltip)(elements.contextBarEl, title, {
+      placement: "top",
+      delay: 120,
+      classes: ["life-context-tooltip"]
+    });
+    elements.contextBarEl.empty();
+    elements.contextBarEl.createSpan({
+      cls: "context-meter-label",
+      text: "\u4E0A\u4E0B\u6587"
+    });
+    const ring = elements.contextBarEl.createDiv({
+      cls: "context-ring",
+      attr: { "aria-hidden": "true" }
+    });
+    ring.style.setProperty("--context-progress", "0%");
+    ring.style.setProperty("--context-color", "var(--text-muted)");
+    const label = elements.contextBarEl.createSpan({
+      cls: "context-percent-label"
+    });
+    label.style.color = "var(--text-muted)";
+    label.setText("0%");
+    elements.contextBarEl.createSpan({
+      cls: "context-separator",
+      text: "\xB7"
+    });
+    elements.contextBarEl.createSpan({
+      cls: "context-bill-label",
+      text: "\u4F1A\u8BDD \u6682\u65E0"
+    });
+  }
+  function updateContextBar(ctx) {
+    elements.contextBarEl.style.display = "flex";
+    const pct = ctx.usage_percent;
+    const pctLabel = formatUsagePercent(pct);
+    const boundedPct = Math.max(0, Math.min(pct, 100));
+    const actualUsage = ctx.actual_usage;
+    const cumulativeUsage = ctx.cumulative_usage;
+    const billLabel = buildBillLabel(actualUsage, cumulativeUsage);
+    let color = "var(--text-success)";
+    if (pct > 80) {
+      color = "var(--text-error)";
+    } else if (pct > 50) {
+      color = "var(--text-warning, #e0a030)";
+    }
+    const title = buildContextBarTitle(ctx, pctLabel);
+    elements.contextBarEl.removeAttribute("title");
+    elements.contextBarEl.setAttribute("aria-label", title);
+    (0, import_obsidian6.setTooltip)(elements.contextBarEl, title, {
+      placement: "top",
+      delay: 120,
+      classes: ["life-context-tooltip"]
+    });
+    elements.contextBarEl.empty();
+    elements.contextBarEl.createSpan({
+      cls: "context-meter-label",
+      text: "\u4E0A\u4E0B\u6587"
+    });
+    const ring = elements.contextBarEl.createDiv({
+      cls: "context-ring",
+      attr: { "aria-hidden": "true" }
+    });
+    ring.style.setProperty("--context-progress", `${boundedPct}%`);
+    ring.style.setProperty("--context-color", color);
+    const label = elements.contextBarEl.createSpan({
+      cls: "context-percent-label"
+    });
+    label.style.color = color;
+    label.setText(pctLabel);
+    elements.contextBarEl.createSpan({
+      cls: "context-separator",
+      text: "\xB7"
+    });
+    elements.contextBarEl.createSpan({
+      cls: "context-bill-label",
+      text: `\u4F1A\u8BDD ${billLabel}`
+    });
+  }
+  function setForkHandler(handler) {
+    forkHandler = handler;
+  }
+  resetContextBar();
+  return {
+    appendMessage,
+    renderAssistantMessage,
+    beginTool,
+    completeTool: completeToolPayload,
+    renderHistoricalTool: renderHistoricalToolPayload,
+    clearConversationUi,
+    clearToolTracking,
+    removeTransientUi,
+    scrollToBottom,
+    updateContextBar,
+    updateLastUserMessageId,
+    setForkHandler
+  };
+}
 
-\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u914D\u7F6E LLM \u540E\u518D\u8BD5\u3002`);return}let y=await o.ensureBackendVaultPathSynced(e);y.ok||i.appendMessage("status",`Warning: failed to sync the current vault path before sending. ${y.message}`,!1),r.isSending=!0,r.isAborted=!1,c(!0),p||n.clear(),p?i.appendMessage("status","[\u7CFB\u7EDF\u4EE3\u7406\u81EA\u52A8\u89E6\u53D1\uFF1A\u68C0\u67E5\u7CFB\u7EDF\u901A\u77E5]"):i.appendMessage("user",R.displayText,!0,R.displayAttachments);let b=null,A="",H="",J="",j=null,Y=null,O=()=>at(H,A),P=()=>{let g=O();if(J=g,!g&&!b)return;b||(b=s.messagesEl.createDiv({cls:"chat-msg assistant streaming"}));let k=H.trim();j||(j=Rn(b)),j.render(A,k),i.scrollToBottom(!1)},l=()=>{J=O(),Y===null&&(Y=requestAnimationFrame(()=>{Y=null,P()}))},u=()=>{Y!==null&&(cancelAnimationFrame(Y),Y=null),P()},m=()=>{Y!==null&&(cancelAnimationFrame(Y),Y=null)};try{await e.streamChat(R.request,{onAssistantPrefix:g=>{A+=g,l()},onReasoningDelta:g=>{H+=g,l()},onTextDelta:g=>{A+=g,l()},onToolStart:(g,k)=>{(b||O().trim())&&u();let v=O();if(b&&v.trim()){let T=Rt(b);b.empty(),b.classList.remove("streaming"),i.renderAssistantMessage(b,v),Dt(b,T)}else b&&b.remove();A="",H="",J="",j=null,b=null,i.beginTool(g,k)},onToolResult:g=>{i.completeTool(g)},onWarning:g=>{i.appendMessage("status",g,!1)},onDone:async(g,k,v,T,I,q)=>{if(!r.isAborted){if(C&&i.updateLastUserMessageId(T),(b||O().trim())&&u(),b){b.classList.remove("streaming");let V=O();if(V.trim()){let X=Rt(b);b.empty(),i.renderAssistantMessage(b,V,v),Dt(b,X),j=null}else b.childNodes.length||b.remove()}r.messages.push({role:"assistant",content:J,messageId:v}),I&&i.updateContextBar(I),q&&d.setPersonaState(q),await a.syncCurrentSessionTitle(g)}},onError:g=>{r.isAborted||((b||O().trim())&&u(),b&&!O()&&b.remove(),i.appendMessage("assistant",`\u274C \u51FA\u9519: ${g}
+// src/chat/chatTurnRunner.ts
+var import_obsidian7 = require("obsidian");
+var AUTO_TRIGGER_MESSAGE = "\uFF08\u7CFB\u7EDF\u901A\u77E5\uFF1A\u4E0A\u6B21\u6295\u9012\u5230\u540E\u53F0\u7684\u4EFB\u52A1\u521A\u521A\u5B8C\u6210\uFF0C\u8BF7\u76F4\u63A5\u6839\u636E\u65B0\u6CE8\u5165\u7684 <task_notification> \u4E0A\u4E0B\u6587\u7EE7\u7EED\u56DE\u590D\u6211\u3002\uFF09";
+function createChatTurnRunner(deps) {
+  const { client, composer, elements, state, transcript, sessions, persona, plugin } = deps;
+  function setSendingUi(isSending) {
+    elements.inputEl.disabled = isSending;
+    elements.attachmentBtn.disabled = isSending;
+    if (isSending) {
+      elements.sendBtn.classList.add("is-stop");
+      elements.sendBtn.innerHTML = ICON_STOP;
+      elements.sendBtn.setAttribute("aria-label", "\u505C\u6B62");
+      return;
+    }
+    elements.sendBtn.classList.remove("is-stop");
+    elements.sendBtn.innerHTML = ICON_SEND;
+    elements.sendBtn.setAttribute("aria-label", "\u53D1\u9001");
+  }
+  async function handleSendRest(payload, backfillUserMessageId) {
+    const typingEl = elements.messagesEl.createDiv({ cls: "chat-msg assistant" });
+    typingEl.setText("\u601D\u8003\u4E2D...");
+    transcript.scrollToBottom();
+    try {
+      const resp = await client.chat(payload.request);
+      typingEl.remove();
+      resp.warnings?.forEach((warning) => transcript.appendMessage("status", warning));
+      persona.setPersonaState(resp.persona_state);
+      if (backfillUserMessageId) {
+        transcript.updateLastUserMessageId(resp.user_message_id ?? void 0);
+      }
+      resp.tool_calls?.forEach((toolCall) => {
+        transcript.renderHistoricalTool(toolCall);
+      });
+      transcript.appendMessage(
+        "assistant",
+        resp.reply,
+        true,
+        [],
+        resp.message_id ?? void 0
+      );
+      if (resp.context) {
+        transcript.updateContextBar(resp.context);
+      }
+      await sessions.syncCurrentSessionTitle(resp.session_id);
+    } catch (err) {
+      typingEl.remove();
+      const errMsg = err instanceof Error ? err.message : String(err);
+      transcript.appendMessage(
+        "assistant",
+        `\u274C \u8FDE\u63A5\u51FA\u9519: ${errMsg}
 
-\u8BF7\u68C0\u67E5\u540E\u7AEF\u662F\u5426\u53EF\u8BBF\u95EE\uFF0C\u6216\u67E5\u770B\u540E\u7AEF\u65E5\u5FD7\u3002`))}})}catch(g){if(!r.isAborted){(b||O().trim())&&u();let k=b;if(k){let v=O();if(v.trim()){let T=Rt(k);k.classList.remove("streaming"),k.empty(),i.renderAssistantMessage(k,v),Dt(k,T),j=null}else k.remove()}i.removeTransientUi(),i.clearToolTracking(),sn(g)&&await w(R,C)}}finally{if(r.isAborted){(b||O().trim())&&u();let g=b;if(g)if(g.classList.remove("streaming"),O()){let k=document.createElement("span");k.className="abort-hint",k.textContent=" [\u5DF2\u4E2D\u6B62]",g.appendChild(k)}else g.remove();J&&r.messages.push({role:"assistant",content:J}),i.removeTransientUi(),i.clearToolTracking()}m(),r.isAborted=!1,r.isSending=!1,c(!1)}}function x(){r.isAborted=!0,e.abort()}function M(p){i.appendMessage("status",p.message),new jn.Notice("\u540E\u53F0\u4EFB\u52A1\u6709\u65B0\u7684\u5B8C\u6210\u901A\u77E5\u3002"),p.autoTrigger&&!r.isSending&&S(Qr)}return{handleSend:S,handleStop:x,handleSysNotify:M}}function Rt(t){return!!t.querySelector(".chat-thought-block.expanded")}function Dt(t,e){if(!e)return;let n=t.querySelector(".chat-thought-block"),s=t.querySelector(".chat-thought-header"),r=t.querySelector(".chat-thought-chevron");n?.classList.add("expanded"),s?.setAttribute("aria-expanded","true"),r&&r.setText("v")}var Ne="crabby-chat",ct=class extends qn.ItemView{constructor(n,s){super(n);this.plugin=s;this.state={messages:[],userMsgRefs:[],toolBlocks:new Map,toolIdToName:new Map,isSending:!1,isAborted:!1,sessionPanelOpen:!1,treePanelOpen:!1,personaState:xe()};this.cleanupFns=[];this.client=new W(this.plugin.settings.backendUrl)}getViewType(){return Ne}getDisplayText(){return"Crabby"}getIcon(){return"bot"}async onOpen(){this.cleanupFns=[],this.state.messages=[],this.state.userMsgRefs=[],this.state.toolBlocks.clear(),this.state.toolIdToName.clear(),this.state.isSending=!1,this.state.isAborted=!1,this.state.sessionPanelOpen=!1,this.state.treePanelOpen=!1,this.state.personaState=xe();let n=this.contentEl;n.empty(),n.addClass("crabby-chat");let s=n.createDiv({cls:"chat-header-area"}),r=s.createDiv({cls:"chat-header-actions chat-header-actions-left"}),i=r.createEl("button",{cls:"chat-header-btn chat-history-btn",attr:{"aria-label":"\u5386\u53F2\u4F1A\u8BDD"}});i.innerHTML=dn;let a=r.createEl("button",{cls:"chat-header-btn chat-tree-btn",attr:{"aria-label":"\u4F1A\u8BDD\u6811"}});a.innerHTML=pn;let d=s.createDiv({cls:"chat-header-title"});d.setText("\u65B0\u4F1A\u8BDD");let c=s.createDiv({cls:"chat-header-actions chat-header-actions-right"}).createEl("button",{cls:"chat-header-btn chat-new-btn",attr:{"aria-label":"\u65B0\u5EFA\u4F1A\u8BDD"}});c.innerHTML=un;let w=n.createDiv({cls:"session-panel"}),S=w.createDiv({cls:"session-panel-header"});S.createEl("span",{text:"\u5386\u53F2\u4F1A\u8BDD",cls:"session-panel-title"});let x=S.createEl("button",{cls:"session-panel-close",attr:{"aria-label":"\u5173\u95ED"}});x.setText("\xD7");let M=w.createDiv({cls:"session-list"}),p=n.createDiv({cls:"session-panel tree-panel"}),R=p.createDiv({cls:"session-panel-header"}),C=R.createSpan({cls:"session-panel-title"});C.setText("\u4F1A\u8BDD\u6811");let f=R.createEl("button",{cls:"session-panel-close",attr:{"aria-label":"\u5173\u95ED\u4F1A\u8BDD\u6811"}});f.setText("\xD7");let y=p.createDiv({cls:"conversation-tree-list"}),b=n.createDiv({cls:"chat-body"});if(this.plugin.settings.llmProfiles.length===0){let U=b.createDiv({cls:"chat-no-profile-banner"});U.createDiv({cls:"chat-no-profile-banner-icon"}).setText("!"),U.createDiv({cls:"chat-no-profile-banner-text"}).createSpan({text:"\u5C1A\u672A\u914D\u7F6E LLM\uFF0C\u5F53\u524D\u65E0\u6CD5\u53D1\u9001\u6D88\u606F\u3002"}),U.createEl("button",{cls:"chat-no-profile-banner-btn",text:"\u524D\u5F80\u8BBE\u7F6E"}).addEventListener("click",()=>{this.app.setting?.openTabById?.("crabby")})}let A=b.createDiv({cls:"chat-minimap"});A.createDiv({cls:"chat-minimap-line"});let H=b.createDiv({cls:"chat-messages"}),J=n.createDiv({cls:"chat-footer"}),j=J.createDiv({cls:"chat-input-area"}),Y=j.createDiv({cls:"chat-composer-pills"}),O=j.createDiv({cls:"chat-suggestion-list"}),P=j.createDiv({cls:"chat-input-row"}),l=P.createEl("button",{cls:"chat-attach-btn",attr:{"aria-label":"\u9009\u62E9\u56FE\u7247"}});l.innerHTML=mn;let u=P.createEl("textarea",{cls:"chat-input",attr:{placeholder:"\u8F93\u5165\u6D88\u606F\uFF0C\u652F\u6301 /skill\u3001@\u6587\u4EF6 \u548C\u7C98\u8D34\u56FE\u7247...",rows:"1"}}),m=P.createEl("button",{cls:"chat-send-btn",attr:{"aria-label":"\u53D1\u9001"}});m.innerHTML=Ge;let g=P.createEl("input",{attr:{type:"file",accept:"image/*",multiple:"true"}});g.addClass("chat-hidden-file-input");let k=J.createDiv({cls:"chat-model-area"}),v=k.createDiv({cls:"chat-context-bar"});this.elements={messagesEl:H,minimapEl:A,inputAreaEl:j,inputEl:u,sendBtn:m,attachmentBtn:l,hiddenFileInput:g,composerPillsEl:Y,suggestionListEl:O,contextBarEl:v,sessionTitleEl:d,sessionPanelEl:w,sessionListEl:M,treePanelEl:p,treePanelTitleEl:C,treeListEl:y},On();let T=ln({app:this.app,component:this,client:this.client,plugin:this.plugin,elements:this.elements,state:this.state});this.cleanupFns.push(()=>T.destroy());let I=zn({app:this.app,component:this,client:this.client,plugin:this.plugin,elements:this.elements,state:this.state}),q=bn(k,this.client,this.state);this.cleanupFns.push(()=>q.destroy());let V=Bn({app:this.app,component:this,client:this.client,plugin:this.plugin,elements:this.elements,state:this.state,composer:T,transcript:I,persona:q}),X=Vn({app:this.app,component:this,client:this.client,plugin:this.plugin,elements:this.elements,state:this.state,composer:T,transcript:I,sessions:V,persona:q});this.cleanupFns.push(Tn(k,this.plugin,this.client)),this.client.onSysNotify=U=>{X.handleSysNotify(U)},this.cleanupFns.push(()=>{this.client.onSysNotify=void 0});let ie=()=>{this.client.setBaseUrl(this.plugin.settings.backendUrl)};document.addEventListener(Me,ie),this.cleanupFns.push(()=>{document.removeEventListener(Me,ie)}),i.addEventListener("click",()=>{V.toggleSessionPanel()}),a.addEventListener("click",()=>{V.toggleTreePanel()}),x.addEventListener("click",()=>{V.toggleSessionPanel()}),f.addEventListener("click",()=>{V.toggleTreePanel()}),c.addEventListener("click",()=>{V.handleNewSession()}),m.addEventListener("click",()=>{this.state.isSending?X.handleStop():X.handleSend()}),u.addEventListener("keydown",U=>{if(!U.defaultPrevented){if(!U.shiftKey&&!U.altKey&&!U.ctrlKey&&!U.metaKey&&(U.key==="ArrowUp"||U.key==="ArrowDown")&&T.navigateHistory(U.key==="ArrowUp"?"up":"down")){U.preventDefault();return}U.key==="Enter"&&!U.shiftKey&&(U.preventDefault(),X.handleSend())}}),I.appendMessage("assistant","\u4F60\u597D\uFF01\u6211\u662F\u4F60\u7684 Crabby\uFF0C\u6709\u4EC0\u4E48\u53EF\u4EE5\u5E2E\u4F60\u7684\uFF1F")}async onClose(){for(let n of this.cleanupFns.splice(0).reverse())try{n()}catch{}this.client.disconnect(),this.contentEl.empty()}};var vs=require("node:fs"),mt=require("node:path");var pt=require("node:child_process"),z=require("node:fs"),ps=require("node:net"),N=require("node:path"),gt=require("node:crypto"),ze=require("obsidian");var re=require("node:fs"),Te=require("node:path"),Gn={"identity.md":`\u4F60\u662F Crabby\uFF0C\u8FD0\u884C\u5728\u7528\u6237\u672C\u5730 Obsidian Vault \u91CC\u7684\u7B2C\u4E8C\u5927\u8111\u52A9\u624B\u3002
-\u4F60\u53EF\u4EE5\u8BFB\u53D6\u7528\u6237\u7684\u7B14\u8BB0\u6765\u56DE\u7B54\u95EE\u9898\uFF0C\u4E5F\u53EF\u4EE5\u4F7F\u7528 MemPalace \u505A\u8DE8\u4F1A\u8BDD\u8BB0\u5FC6\u4E0E\u68C0\u7D22\u3002
+\u8BF7\u68C0\u67E5\u540E\u7AEF\u662F\u5426\u53EF\u8BBF\u95EE\uFF0C\u6216\u67E5\u770B\u540E\u7AEF\u65E5\u5FD7\u3002`
+      );
+    }
+  }
+  async function handleSend(overrideText) {
+    const payload = overrideText ? {
+      request: {
+        content: overrideText,
+        persona_mode: state.personaState.mode,
+        manual_persona_id: state.personaState.manual_persona_id
+      },
+      displayText: overrideText,
+      displayAttachments: []
+    } : (() => {
+      const nextPayload = composer.getSubmitPayload();
+      if (!nextPayload) {
+        return null;
+      }
+      nextPayload.request.persona_mode = state.personaState.mode;
+      nextPayload.request.manual_persona_id = state.personaState.manual_persona_id;
+      return nextPayload;
+    })();
+    if (!payload || state.isSending) {
+      return;
+    }
+    const backfillUserMessageId = !overrideText;
+    const profileApply = await plugin.applyLlmProfile();
+    if (!profileApply.ok) {
+      transcript.appendMessage(
+        "assistant",
+        `\u274C ${profileApply.message}
+
+\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u914D\u7F6E LLM \u540E\u518D\u8BD5\u3002`
+      );
+      return;
+    }
+    const vaultSync = await plugin.ensureBackendVaultPathSynced(client);
+    if (!vaultSync.ok) {
+      transcript.appendMessage(
+        "status",
+        `Warning: failed to sync the current vault path before sending. ${vaultSync.message}`,
+        false
+      );
+    }
+    state.isSending = true;
+    state.isAborted = false;
+    setSendingUi(true);
+    if (!overrideText) {
+      composer.clear();
+    }
+    if (overrideText) {
+      transcript.appendMessage(
+        "status",
+        "[\u7CFB\u7EDF\u4EE3\u7406\u81EA\u52A8\u89E6\u53D1\uFF1A\u68C0\u67E5\u7CFB\u7EDF\u901A\u77E5]"
+      );
+    } else {
+      transcript.appendMessage(
+        "user",
+        payload.displayText,
+        true,
+        payload.displayAttachments
+      );
+    }
+    let msgEl = null;
+    let accumulated = "";
+    let reasoningAccumulated = "";
+    let fullAccumulated = "";
+    let streamingRenderer = null;
+    let streamingRenderFrame = null;
+    const buildCurrentAssistantContent = () => buildAssistantContent(reasoningAccumulated, accumulated);
+    const renderStreamingMessageNow = () => {
+      const content = buildCurrentAssistantContent();
+      fullAccumulated = content;
+      if (!content && !msgEl) {
+        return;
+      }
+      if (!msgEl) {
+        msgEl = elements.messagesEl.createDiv({
+          cls: "chat-msg assistant streaming"
+        });
+      }
+      const reasoning = reasoningAccumulated.trim();
+      if (!streamingRenderer) {
+        streamingRenderer = createStreamingAssistantContentRenderer(msgEl);
+      }
+      streamingRenderer.render(accumulated, reasoning);
+      transcript.scrollToBottom(false);
+    };
+    const renderStreamingMessage = () => {
+      fullAccumulated = buildCurrentAssistantContent();
+      if (streamingRenderFrame !== null) {
+        return;
+      }
+      streamingRenderFrame = requestAnimationFrame(() => {
+        streamingRenderFrame = null;
+        renderStreamingMessageNow();
+      });
+    };
+    const flushStreamingMessage = () => {
+      if (streamingRenderFrame !== null) {
+        cancelAnimationFrame(streamingRenderFrame);
+        streamingRenderFrame = null;
+      }
+      renderStreamingMessageNow();
+    };
+    const cancelStreamingMessageRender = () => {
+      if (streamingRenderFrame !== null) {
+        cancelAnimationFrame(streamingRenderFrame);
+        streamingRenderFrame = null;
+      }
+    };
+    try {
+      await client.streamChat(payload.request, {
+        onAssistantPrefix: (prefix) => {
+          accumulated += prefix;
+          renderStreamingMessage();
+        },
+        onReasoningDelta: (delta) => {
+          reasoningAccumulated += delta;
+          renderStreamingMessage();
+        },
+        onTextDelta: (delta) => {
+          accumulated += delta;
+          renderStreamingMessage();
+        },
+        onToolStart: (name, id) => {
+          if (msgEl || buildCurrentAssistantContent().trim()) {
+            flushStreamingMessage();
+          }
+          const assistantContent = buildCurrentAssistantContent();
+          if (msgEl && assistantContent.trim()) {
+            const keepThoughtExpanded = isThoughtBlockExpanded(msgEl);
+            msgEl.empty();
+            msgEl.classList.remove("streaming");
+            transcript.renderAssistantMessage(msgEl, assistantContent);
+            restoreThoughtBlockExpanded(msgEl, keepThoughtExpanded);
+          } else if (msgEl) {
+            msgEl.remove();
+          }
+          accumulated = "";
+          reasoningAccumulated = "";
+          fullAccumulated = "";
+          streamingRenderer = null;
+          msgEl = null;
+          transcript.beginTool(name, id);
+        },
+        onToolResult: (payload2) => {
+          transcript.completeTool(payload2);
+        },
+        onWarning: (message) => {
+          transcript.appendMessage("status", message, false);
+        },
+        onDone: async (sessionId, _conversationId, assistantMessageId, userMessageId, context, personaState) => {
+          if (state.isAborted) {
+            return;
+          }
+          if (backfillUserMessageId) {
+            transcript.updateLastUserMessageId(userMessageId);
+          }
+          if (msgEl || buildCurrentAssistantContent().trim()) {
+            flushStreamingMessage();
+          }
+          if (msgEl) {
+            msgEl.classList.remove("streaming");
+            const assistantContent = buildCurrentAssistantContent();
+            if (assistantContent.trim()) {
+              const keepThoughtExpanded = isThoughtBlockExpanded(msgEl);
+              msgEl.empty();
+              transcript.renderAssistantMessage(
+                msgEl,
+                assistantContent,
+                assistantMessageId
+              );
+              restoreThoughtBlockExpanded(msgEl, keepThoughtExpanded);
+              streamingRenderer = null;
+            } else if (!msgEl.childNodes.length) {
+              msgEl.remove();
+            }
+          }
+          state.messages.push({
+            role: "assistant",
+            content: fullAccumulated,
+            messageId: assistantMessageId
+          });
+          if (context) {
+            transcript.updateContextBar(context);
+          }
+          if (personaState) {
+            persona.setPersonaState(personaState);
+          }
+          await sessions.syncCurrentSessionTitle(sessionId);
+        },
+        onError: (payload2) => {
+          const message = payload2.message;
+          if (state.isAborted) {
+            return;
+          }
+          if (msgEl || buildCurrentAssistantContent().trim()) {
+            flushStreamingMessage();
+          }
+          if (msgEl && !buildCurrentAssistantContent()) {
+            msgEl.remove();
+          }
+          transcript.appendMessage(
+            "assistant",
+            `\u274C \u51FA\u9519: ${message}
+
+\u8BF7\u68C0\u67E5\u540E\u7AEF\u662F\u5426\u53EF\u8BBF\u95EE\uFF0C\u6216\u67E5\u770B\u540E\u7AEF\u65E5\u5FD7\u3002`
+          );
+        }
+      });
+    } catch (err) {
+      if (!state.isAborted) {
+        if (msgEl || buildCurrentAssistantContent().trim()) {
+          flushStreamingMessage();
+        }
+        const currentMsgEl = msgEl;
+        if (currentMsgEl) {
+          const assistantContent = buildCurrentAssistantContent();
+          if (assistantContent.trim()) {
+            const keepThoughtExpanded = isThoughtBlockExpanded(currentMsgEl);
+            currentMsgEl.classList.remove("streaming");
+            currentMsgEl.empty();
+            transcript.renderAssistantMessage(currentMsgEl, assistantContent);
+            restoreThoughtBlockExpanded(currentMsgEl, keepThoughtExpanded);
+            streamingRenderer = null;
+          } else {
+            currentMsgEl.remove();
+          }
+        }
+        transcript.removeTransientUi();
+        transcript.clearToolTracking();
+        if (shouldFallbackToRest(err)) {
+          await handleSendRest(payload, backfillUserMessageId);
+        }
+      }
+    } finally {
+      if (state.isAborted) {
+        if (msgEl || buildCurrentAssistantContent().trim()) {
+          flushStreamingMessage();
+        }
+        const currentMsgEl = msgEl;
+        if (currentMsgEl) {
+          currentMsgEl.classList.remove("streaming");
+          if (buildCurrentAssistantContent()) {
+            const hint = document.createElement("span");
+            hint.className = "abort-hint";
+            hint.textContent = " [\u5DF2\u4E2D\u6B62]";
+            currentMsgEl.appendChild(hint);
+          } else {
+            currentMsgEl.remove();
+          }
+        }
+        if (fullAccumulated) {
+          state.messages.push({
+            role: "assistant",
+            content: fullAccumulated
+          });
+        }
+        transcript.removeTransientUi();
+        transcript.clearToolTracking();
+      }
+      cancelStreamingMessageRender();
+      state.isAborted = false;
+      state.isSending = false;
+      setSendingUi(false);
+    }
+  }
+  function handleStop() {
+    state.isAborted = true;
+    client.abort();
+  }
+  function handleSysNotify(event) {
+    transcript.appendMessage("status", event.message);
+    new import_obsidian7.Notice("\u540E\u53F0\u4EFB\u52A1\u6709\u65B0\u7684\u5B8C\u6210\u901A\u77E5\u3002");
+    if (event.autoTrigger && !state.isSending) {
+      void handleSend(AUTO_TRIGGER_MESSAGE);
+    }
+  }
+  return {
+    handleSend,
+    handleStop,
+    handleSysNotify
+  };
+}
+function isThoughtBlockExpanded(container) {
+  return Boolean(container.querySelector(".chat-thought-block.expanded"));
+}
+function restoreThoughtBlockExpanded(container, expanded) {
+  if (!expanded) {
+    return;
+  }
+  const block = container.querySelector(".chat-thought-block");
+  const header = container.querySelector(".chat-thought-header");
+  const chevron = container.querySelector(
+    ".chat-thought-chevron"
+  );
+  block?.classList.add("expanded");
+  header?.setAttribute("aria-expanded", "true");
+  if (chevron) {
+    chevron.setText("v");
+  }
+}
+
+// src/chat/ChatView.ts
+var VIEW_TYPE_CHAT = "crabby-chat";
+var ChatView = class extends import_obsidian8.ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.plugin = plugin;
+    this.state = {
+      messages: [],
+      userMsgRefs: [],
+      toolBlocks: /* @__PURE__ */ new Map(),
+      toolIdToName: /* @__PURE__ */ new Map(),
+      isSending: false,
+      isAborted: false,
+      sessionPanelOpen: false,
+      treePanelOpen: false,
+      personaState: createDefaultPersonaState()
+    };
+    this.cleanupFns = [];
+    this.client = new AgentClient(this.plugin.settings.backendUrl);
+  }
+  getViewType() {
+    return VIEW_TYPE_CHAT;
+  }
+  getDisplayText() {
+    return "Crabby";
+  }
+  getIcon() {
+    return "bot";
+  }
+  async onOpen() {
+    this.cleanupFns = [];
+    this.state.messages = [];
+    this.state.userMsgRefs = [];
+    this.state.toolBlocks.clear();
+    this.state.toolIdToName.clear();
+    this.state.isSending = false;
+    this.state.isAborted = false;
+    this.state.sessionPanelOpen = false;
+    this.state.treePanelOpen = false;
+    this.state.personaState = createDefaultPersonaState();
+    const container = this.contentEl;
+    container.empty();
+    container.addClass("crabby-chat");
+    const headerArea = container.createDiv({ cls: "chat-header-area" });
+    const headerLeftEl = headerArea.createDiv({
+      cls: "chat-header-actions chat-header-actions-left"
+    });
+    const historyBtn = headerLeftEl.createEl("button", {
+      cls: "chat-header-btn chat-history-btn",
+      attr: { "aria-label": "\u5386\u53F2\u4F1A\u8BDD" }
+    });
+    historyBtn.innerHTML = ICON_HISTORY;
+    const treeBtn = headerLeftEl.createEl("button", {
+      cls: "chat-header-btn chat-tree-btn",
+      attr: { "aria-label": "\u4F1A\u8BDD\u6811" }
+    });
+    treeBtn.innerHTML = ICON_TREE;
+    const sessionTitleEl = headerArea.createDiv({ cls: "chat-header-title" });
+    sessionTitleEl.setText("\u65B0\u4F1A\u8BDD");
+    const headerRightEl = headerArea.createDiv({
+      cls: "chat-header-actions chat-header-actions-right"
+    });
+    const newBtn = headerRightEl.createEl("button", {
+      cls: "chat-header-btn chat-new-btn",
+      attr: { "aria-label": "\u65B0\u5EFA\u4F1A\u8BDD" }
+    });
+    newBtn.innerHTML = ICON_PLUS;
+    const sessionPanelEl = container.createDiv({ cls: "session-panel" });
+    const panelHeader = sessionPanelEl.createDiv({
+      cls: "session-panel-header"
+    });
+    panelHeader.createEl("span", {
+      text: "\u5386\u53F2\u4F1A\u8BDD",
+      cls: "session-panel-title"
+    });
+    const closeBtn = panelHeader.createEl("button", {
+      cls: "session-panel-close",
+      attr: { "aria-label": "\u5173\u95ED" }
+    });
+    closeBtn.setText("\xD7");
+    const sessionListEl = sessionPanelEl.createDiv({ cls: "session-list" });
+    const treePanelEl = container.createDiv({ cls: "session-panel tree-panel" });
+    const treePanelHeader = treePanelEl.createDiv({
+      cls: "session-panel-header"
+    });
+    const treePanelTitleEl = treePanelHeader.createSpan({
+      cls: "session-panel-title"
+    });
+    treePanelTitleEl.setText("\u4F1A\u8BDD\u6811");
+    const treeCloseBtn = treePanelHeader.createEl("button", {
+      cls: "session-panel-close",
+      attr: { "aria-label": "\u5173\u95ED\u4F1A\u8BDD\u6811" }
+    });
+    treeCloseBtn.setText("\xD7");
+    const treeListEl = treePanelEl.createDiv({ cls: "conversation-tree-list" });
+    const bodyArea = container.createDiv({ cls: "chat-body" });
+    if (this.plugin.settings.llmProfiles.length === 0) {
+      const banner = bodyArea.createDiv({ cls: "chat-no-profile-banner" });
+      banner.createDiv({ cls: "chat-no-profile-banner-icon" }).setText("!");
+      const bannerText = banner.createDiv({ cls: "chat-no-profile-banner-text" });
+      bannerText.createSpan({ text: "\u5C1A\u672A\u914D\u7F6E LLM\uFF0C\u5F53\u524D\u65E0\u6CD5\u53D1\u9001\u6D88\u606F\u3002" });
+      const bannerAction = banner.createEl("button", {
+        cls: "chat-no-profile-banner-btn",
+        text: "\u524D\u5F80\u8BBE\u7F6E"
+      });
+      bannerAction.addEventListener("click", () => {
+        this.app.setting?.openTabById?.("crabby");
+      });
+    }
+    const minimapEl = bodyArea.createDiv({ cls: "chat-minimap" });
+    minimapEl.createDiv({ cls: "chat-minimap-line" });
+    const messagesEl = bodyArea.createDiv({ cls: "chat-messages" });
+    const footerArea = container.createDiv({ cls: "chat-footer" });
+    const inputArea = footerArea.createDiv({ cls: "chat-input-area" });
+    const composerPillsEl = inputArea.createDiv({ cls: "chat-composer-pills" });
+    const suggestionListEl = inputArea.createDiv({ cls: "chat-suggestion-list" });
+    const inputRowEl = inputArea.createDiv({ cls: "chat-input-row" });
+    const attachmentBtn = inputRowEl.createEl("button", {
+      cls: "chat-attach-btn",
+      attr: { "aria-label": "\u9009\u62E9\u56FE\u7247" }
+    });
+    attachmentBtn.innerHTML = ICON_ATTACH;
+    const inputEl = inputRowEl.createEl("textarea", {
+      cls: "chat-input",
+      attr: {
+        placeholder: "\u8F93\u5165\u6D88\u606F\uFF0C\u652F\u6301 /skill\u3001@\u6587\u4EF6 \u548C\u7C98\u8D34\u56FE\u7247...",
+        rows: "1"
+      }
+    });
+    const sendBtn = inputRowEl.createEl("button", {
+      cls: "chat-send-btn",
+      attr: { "aria-label": "\u53D1\u9001" }
+    });
+    sendBtn.innerHTML = ICON_SEND;
+    const hiddenFileInput = inputRowEl.createEl("input", {
+      attr: { type: "file", accept: "image/*", multiple: "true" }
+    });
+    hiddenFileInput.addClass("chat-hidden-file-input");
+    const bottomArea = footerArea.createDiv({ cls: "chat-model-area" });
+    const contextBarEl = bottomArea.createDiv({ cls: "chat-context-bar" });
+    this.elements = {
+      messagesEl,
+      minimapEl,
+      inputAreaEl: inputArea,
+      inputEl,
+      sendBtn,
+      attachmentBtn,
+      hiddenFileInput,
+      composerPillsEl,
+      suggestionListEl,
+      contextBarEl,
+      sessionTitleEl,
+      sessionPanelEl,
+      sessionListEl,
+      treePanelEl,
+      treePanelTitleEl,
+      treeListEl
+    };
+    ensureChatStyles();
+    const composer = createChatComposer({
+      app: this.app,
+      component: this,
+      client: this.client,
+      plugin: this.plugin,
+      elements: this.elements,
+      state: this.state
+    });
+    this.cleanupFns.push(() => composer.destroy());
+    const transcript = createChatTranscript({
+      app: this.app,
+      component: this,
+      client: this.client,
+      plugin: this.plugin,
+      elements: this.elements,
+      state: this.state
+    });
+    const persona = mountPersonaSelect(bottomArea, this.client, this.state);
+    this.cleanupFns.push(() => persona.destroy());
+    const sessions = createChatSessions({
+      app: this.app,
+      component: this,
+      client: this.client,
+      plugin: this.plugin,
+      elements: this.elements,
+      state: this.state,
+      composer,
+      transcript,
+      persona
+    });
+    const turnRunner = createChatTurnRunner({
+      app: this.app,
+      component: this,
+      client: this.client,
+      plugin: this.plugin,
+      elements: this.elements,
+      state: this.state,
+      composer,
+      transcript,
+      sessions,
+      persona
+    });
+    this.cleanupFns.push(
+      mountProfileSelect(bottomArea, this.plugin, this.client)
+    );
+    this.client.onSysNotify = (event) => {
+      turnRunner.handleSysNotify(event);
+    };
+    this.cleanupFns.push(() => {
+      this.client.onSysNotify = void 0;
+    });
+    const settingsUpdatedListener = () => {
+      this.client.setBaseUrl(this.plugin.settings.backendUrl);
+    };
+    document.addEventListener(SETTINGS_UPDATED_EVENT, settingsUpdatedListener);
+    this.cleanupFns.push(() => {
+      document.removeEventListener(
+        SETTINGS_UPDATED_EVENT,
+        settingsUpdatedListener
+      );
+    });
+    historyBtn.addEventListener("click", () => {
+      sessions.toggleSessionPanel();
+    });
+    treeBtn.addEventListener("click", () => {
+      sessions.toggleTreePanel();
+    });
+    closeBtn.addEventListener("click", () => {
+      sessions.toggleSessionPanel();
+    });
+    treeCloseBtn.addEventListener("click", () => {
+      sessions.toggleTreePanel();
+    });
+    newBtn.addEventListener("click", () => {
+      sessions.handleNewSession();
+    });
+    sendBtn.addEventListener("click", () => {
+      if (this.state.isSending) {
+        turnRunner.handleStop();
+      } else {
+        void turnRunner.handleSend();
+      }
+    });
+    inputEl.addEventListener("keydown", (evt) => {
+      if (evt.defaultPrevented) {
+        return;
+      }
+      if (!evt.shiftKey && !evt.altKey && !evt.ctrlKey && !evt.metaKey && (evt.key === "ArrowUp" || evt.key === "ArrowDown") && composer.navigateHistory(evt.key === "ArrowUp" ? "up" : "down")) {
+        evt.preventDefault();
+        return;
+      }
+      if (evt.key === "Enter" && !evt.shiftKey) {
+        evt.preventDefault();
+        void turnRunner.handleSend();
+      }
+    });
+    transcript.appendMessage(
+      "assistant",
+      "\u4F60\u597D\uFF01\u6211\u662F\u4F60\u7684 Crabby\uFF0C\u6709\u4EC0\u4E48\u53EF\u4EE5\u5E2E\u4F60\u7684\uFF1F"
+    );
+  }
+  async onClose() {
+    for (const cleanup of this.cleanupFns.splice(0).reverse()) {
+      try {
+        cleanup();
+      } catch {
+      }
+    }
+    this.client.disconnect();
+    this.contentEl.empty();
+  }
+};
+
+// src/clientTools/crabbySettingsTool.ts
+var import_node_fs5 = require("node:fs");
+var import_node_path6 = require("node:path");
+
+// src/runtime/backendRuntime.ts
+var import_node_child_process = require("node:child_process");
+var import_node_fs4 = require("node:fs");
+var import_node_net = require("node:net");
+var import_node_path5 = require("node:path");
+var import_node_crypto = require("node:crypto");
+var import_obsidian9 = require("obsidian");
+
+// src/runtime/defaultConfigTemplates.ts
+var import_node_fs2 = require("node:fs");
+var import_node_path2 = require("node:path");
+var DEFAULT_PROMPT_TEMPLATES = {
+  "identity.md": `\u4F60\u662F Crabby\uFF0C\u8FD0\u884C\u5728\u7528\u6237\u672C\u5730 Obsidian Vault \u91CC\u7684\u7B2C\u4E8C\u5927\u8111\u52A9\u624B\u3002
+\u4F60\u53EF\u4EE5\u8BFB\u53D6\u7528\u6237\u7684\u7B14\u8BB0\u6765\u56DE\u7B54\u95EE\u9898\u3002\u5982\u679C MemPalace MCP \u670D\u52A1\u5DF2\u914D\u7F6E\u5E76\u8FDE\u63A5\uFF0C\u4F60\u8FD8\u53EF\u4EE5\u4F7F\u7528 MemPalace \u505A\u8DE8\u4F1A\u8BDD\u8BB0\u5FC6\u4E0E\u68C0\u7D22\u3002
 
 ## \u8EAB\u4EFD
 - \u4F60\u7684\u540D\u5B57\u662F **Crabby**\u3002
 - \u5982\u679C\u7528\u6237\u8BE2\u95EE\u4F60\u4F7F\u7528\u7684\u6A21\u578B\uFF0C\u8BF7\u6309\u5F53\u524D\u914D\u7F6E\u7684\u57FA\u7840\u6A21\u578B\u5982\u5B9E\u56DE\u7B54\u3002
 - \u9ED8\u8BA4\u4F7F\u7528\u7528\u6237\u7684\u8BED\u8A00\u56DE\u590D\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\u4F7F\u7528\u53E6\u4E00\u79CD\u8BED\u8A00\u3002
-`,"safety.md":`## \u5B89\u5168\u8FB9\u754C
+`,
+  "safety.md": `## \u5B89\u5168\u8FB9\u754C
 - \u4E0D\u8981\u7ED5\u8FC7\u4EA7\u54C1\u7684\u663E\u5F0F\u5199\u5165\u6D41\u7A0B\u76F4\u63A5\u4FEE\u6539\u7528\u6237\u7B14\u8BB0\u3002
 - \u4E0D\u8981\u6CC4\u9732\u5BC6\u94A5\u6216\u654F\u611F\u7B14\u8BB0\u5185\u5BB9\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\u67E5\u770B\u76F8\u5173\u5185\u5BB9\u3002
 - \u4E0D\u8981\u7F16\u9020\u5173\u4E8E\u6587\u4EF6\u3001\u5DE5\u5177\u3001\u8BB0\u5FC6\u6216 MCP \u670D\u52A1\u7684\u4E8B\u5B9E\u3002
-`,"tool_usage.md":"## \u5DE5\u5177\u4F7F\u7528\n- \u4F18\u5148\u4F7F\u7528 `obsidian_search` \u67E5\u627E Obsidian \u539F\u751F\u77E5\u8BC6\u6587\u4EF6\uFF0C\u4E5F\u5C31\u662F `.md` \u548C `.canvas`\uFF0C\u5305\u62EC\u7B14\u8BB0\u3001\u6807\u7B7E\u3001\u5C5E\u6027\u3001\u6807\u9898\u3001\u7AE0\u8282\u548C\u4EFB\u52A1\u3002\n- `obsidian_search` \u4E0D\u53EF\u7528\u3001\u9700\u8981\u67E5\u627E\u975E Obsidian \u6587\u4EF6\u7C7B\u578B\u3001\u539F\u59CB\u6587\u672C\u3001\u4EE3\u7801\u6216\u65E5\u5FD7\u65F6\uFF0C\u518D\u4F7F\u7528 `grep`\u3001`glob` \u548C `read`\u3002\n- \u5F53\u4F60\u9700\u8981\u67E5\u770B\u6216\u4FEE\u6539 Crabby \u63D2\u4EF6\u81EA\u5DF1\u7684\u914D\u7F6E\u3001\u8FD0\u884C\u65F6\u8DEF\u5F84\u3001LLM Profile \u6216\u540E\u7AEF vault \u540C\u6B65\u72B6\u6001\u65F6\uFF0C\u4F7F\u7528 `crabby_settings`\uFF0C\u4E0D\u8981\u7528\u641C\u7D22\u5DE5\u5177\u53BB\u731C `.obsidian` \u4E0B\u9762\u7684\u6587\u4EF6\u3002\n- \u5F53\u4E13\u7528\u6587\u4EF6\u5DE5\u5177\u548C shell \u547D\u4EE4\u90FD\u80FD\u5B8C\u6210\u4EFB\u52A1\u65F6\uFF0C\u4F18\u5148\u4F7F\u7528\u4E13\u7528\u6587\u4EF6\u5DE5\u5177\u3002\n- shell \u5DE5\u5177\u5728 Windows \u4E0A\u8FD0\u884C PowerShell\uFF0C\u5728 macOS/Linux \u4E0A\u8FD0\u884C bash\u3002\n- \u5728 Windows \u4E0A\u4F18\u5148\u4F7F\u7528 PowerShell \u8BED\u6CD5\uFF1B\u94FE\u5F0F\u547D\u4EE4\u4F18\u5148\u7528 `;`\uFF0C`&&` / `||` \u53EA\u662F\u517C\u5BB9\u5904\u7406\uFF0C\u4E0D\u8981\u4F9D\u8D56 bash-only \u8BED\u6CD5\u3002\n- \u5F53\u524D\u6CA1\u6709 TTY\uFF0C\u9700\u8981\u4EA4\u4E92\u5F0F\u8F93\u5165\u7684\u547D\u4EE4\u4F1A\u5931\u8D25\u3002\n- \u5FC5\u8981\u65F6\u4F7F\u7528 `-y`\u3001`--force` \u7B49\u975E\u4EA4\u4E92\u53C2\u6570\u3002\n- \u5982\u679C\u957F\u65F6\u95F4\u8FD0\u884C\u7684\u547D\u4EE4\u66F4\u9002\u5408\u540E\u53F0\u5904\u7406\uFF0C\u8BF7\u4F7F\u7528\u540E\u53F0\u6A21\u5F0F\uFF0C\u5E76\u5173\u6CE8\u540E\u7EED\u6CE8\u5165\u7684 `<task_notification>`\u3002\n- \u5DE5\u5177\u8F93\u51FA\u53EF\u80FD\u88AB\u622A\u65AD\uFF1B\u5728\u770B\u5230\u622A\u65AD\u63D0\u793A\u65F6\uFF0C\u4E0D\u8981\u5047\u8BBE\u81EA\u5DF1\u5DF2\u7ECF\u62FF\u5230\u4E86\u5B8C\u6574\u7ED3\u679C\u3002\n","skill_intro.md":`## \u6280\u80FD\u7CFB\u7EDF
+`,
+  "tool_usage.md": `## \u5DE5\u5177\u4F7F\u7528
+- \u4F18\u5148\u4F7F\u7528 \`obsidian_search\` \u67E5\u627E Obsidian \u539F\u751F\u77E5\u8BC6\u6587\u4EF6\uFF0C\u4E5F\u5C31\u662F \`.md\` \u548C \`.canvas\`\uFF0C\u5305\u62EC\u7B14\u8BB0\u3001\u6807\u7B7E\u3001\u5C5E\u6027\u3001\u6807\u9898\u3001\u7AE0\u8282\u548C\u4EFB\u52A1\u3002
+- \`obsidian_search\` \u4E0D\u53EF\u7528\u3001\u9700\u8981\u67E5\u627E\u975E Obsidian \u6587\u4EF6\u7C7B\u578B\u3001\u539F\u59CB\u6587\u672C\u3001\u4EE3\u7801\u6216\u65E5\u5FD7\u65F6\uFF0C\u518D\u4F7F\u7528 \`grep\`\u3001\`glob\` \u548C \`read\`\u3002
+- \u5F53\u4F60\u9700\u8981\u67E5\u770B\u6216\u4FEE\u6539 Crabby \u63D2\u4EF6\u81EA\u5DF1\u7684\u914D\u7F6E\u3001\u8FD0\u884C\u65F6\u8DEF\u5F84\u3001LLM Profile \u6216\u540E\u7AEF vault \u540C\u6B65\u72B6\u6001\u65F6\uFF0C\u4F7F\u7528 \`crabby_settings\`\uFF0C\u4E0D\u8981\u7528\u641C\u7D22\u5DE5\u5177\u53BB\u731C \`.obsidian\` \u4E0B\u9762\u7684\u6587\u4EF6\u3002
+- \u5F53\u4E13\u7528\u6587\u4EF6\u5DE5\u5177\u548C shell \u547D\u4EE4\u90FD\u80FD\u5B8C\u6210\u4EFB\u52A1\u65F6\uFF0C\u4F18\u5148\u4F7F\u7528\u4E13\u7528\u6587\u4EF6\u5DE5\u5177\u3002
+- shell \u5DE5\u5177\u5728 Windows \u4E0A\u8FD0\u884C PowerShell\uFF0C\u5728 macOS/Linux \u4E0A\u8FD0\u884C bash\u3002
+- \u5728 Windows \u4E0A\u4F18\u5148\u4F7F\u7528 PowerShell \u8BED\u6CD5\uFF1B\u94FE\u5F0F\u547D\u4EE4\u4F18\u5148\u7528 \`;\`\uFF0C\`&&\` / \`||\` \u53EA\u662F\u517C\u5BB9\u5904\u7406\uFF0C\u4E0D\u8981\u4F9D\u8D56 bash-only \u8BED\u6CD5\u3002
+- \u5F53\u524D\u6CA1\u6709 TTY\uFF0C\u9700\u8981\u4EA4\u4E92\u5F0F\u8F93\u5165\u7684\u547D\u4EE4\u4F1A\u5931\u8D25\u3002
+- \u5FC5\u8981\u65F6\u4F7F\u7528 \`-y\`\u3001\`--force\` \u7B49\u975E\u4EA4\u4E92\u53C2\u6570\u3002
+- \u5982\u679C\u957F\u65F6\u95F4\u8FD0\u884C\u7684\u547D\u4EE4\u66F4\u9002\u5408\u540E\u53F0\u5904\u7406\uFF0C\u8BF7\u4F7F\u7528\u540E\u53F0\u6A21\u5F0F\uFF0C\u5E76\u5173\u6CE8\u540E\u7EED\u6CE8\u5165\u7684 \`<task_notification>\`\u3002
+- \u5DE5\u5177\u8F93\u51FA\u53EF\u80FD\u88AB\u622A\u65AD\uFF1B\u5728\u770B\u5230\u622A\u65AD\u63D0\u793A\u65F6\uFF0C\u4E0D\u8981\u5047\u8BBE\u81EA\u5DF1\u5DF2\u7ECF\u62FF\u5230\u4E86\u5B8C\u6574\u7ED3\u679C\u3002
+`,
+  "skill_intro.md": `## \u6280\u80FD\u7CFB\u7EDF
 \u6280\u80FD\u662F\u884C\u4E3A\u6307\u5357\uFF0C\u4E0D\u662F\u53EF\u8C03\u7528\u5DE5\u5177\u3002
 - \u5DE5\u5177\u662F\u53EF\u4EE5\u6267\u884C\u7684\u80FD\u529B\uFF0C\u4F8B\u5982\u8BFB\u53D6\u6587\u4EF6\u3001\u641C\u7D22\u6216\u8FD0\u884C\u547D\u4EE4\u3002
 - \u6280\u80FD\u662F\u53EF\u590D\u7528\u5DE5\u4F5C\u6D41\uFF0C\u7528\u6765\u8BF4\u660E\u5728\u7279\u5B9A\u4EFB\u52A1\u4E2D\u5E94\u5982\u4F55\u7EC4\u5408\u4F7F\u7528\u5DE5\u5177\u3002
-`},dt={"secretary/PERSONA.md":`---
+`
+};
+var DEFAULT_PERSONA_TEMPLATES = {
+  "secretary/PERSONA.md": `---
 id: secretary
 title: \u79D8\u4E66
 description: >
@@ -1462,7 +5975,8 @@ examples:
 - Dwight Eisenhower\uFF1A\u91CD\u8981\u6027\u4E0E\u7D27\u6025\u6027\u7684\u4F18\u5148\u7EA7\u533A\u5206\u3002
 - James Clear\uFF1A\u7528\u4F4E\u6469\u64E6\u7CFB\u7EDF\u63A8\u52A8\u4E60\u60EF\uFF0C\u800C\u4E0D\u662F\u53EA\u4F9D\u8D56\u610F\u5FD7\u529B\u3002
 - Benjamin Franklin\uFF1A\u53EF\u8FFD\u8E2A\u7684\u65E5\u5E38\u5FB7\u6027\u4E0E\u884C\u4E3A\u590D\u76D8\u3002
-`,"secretary/METHODS.md":`### \u65B9\u6CD5\u8BBA\u538B\u7F29
+`,
+  "secretary/METHODS.md": `### \u65B9\u6CD5\u8BBA\u538B\u7F29
 
 \u79D8\u4E66\u4EBA\u683C\u628A GTD\u3001\u4F18\u5148\u7EA7\u77E9\u9635\u3001\u4E60\u60EF\u7CFB\u7EDF\u548C\u65E5\u5E38\u590D\u76D8\u538B\u7F29\u6210\u4E00\u4E2A\u76EE\u6807\uFF1A\u628A\u7528\u6237\u8111\u4E2D\u7684\u5F00\u653E\u5FAA\u73AF\u53D8\u6210\u53EF\u8FFD\u8E2A\u3001\u53EF\u63A8\u8FDB\u3001\u53EF\u590D\u67E5\u7684\u884C\u52A8\u7CFB\u7EDF\u3002\u4E0D\u8981\u53EA\u6574\u7406\u6587\u5B57\uFF0C\u8981\u5E2E\u52A9\u7528\u6237\u660E\u786E\u7ED3\u679C\u3001\u4E0B\u4E00\u6B65\u3001\u65F6\u95F4\u3001\u963B\u585E\u548C\u590D\u67E5\u70B9\u3002
 
@@ -1479,7 +5993,8 @@ examples:
 - \u662F\u5426\u81F3\u5C11\u7ED9\u51FA\u4E00\u4E2A\u660E\u786E\u4E0B\u4E00\u6B65\u3002
 - \u662F\u5426\u533A\u5206\u4E86\u201C\u73B0\u5728\u505A\u201D\u201C\u5B89\u6392\u505A\u201D\u201C\u7B49\u5F85\u4ED6\u4EBA\u201D\u201C\u9700\u8981\u8865\u4FE1\u606F\u201D\u3002
 - \u662F\u5426\u628A\u63D0\u9192\u3001\u5B9A\u671F\u590D\u67E5\u6216 cron \u521B\u5EFA\u72B6\u6001\u8BF4\u6E05\u695A\uFF0C\u6CA1\u6709\u628A\u5EFA\u8BAE\u8BEF\u8BF4\u6210\u5DF2\u7ECF\u5B8C\u6210\u3002
-`,"secretary/sources/james-clear.md":`# James Clear
+`,
+  "secretary/sources/james-clear.md": `# James Clear
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -1514,7 +6029,8 @@ Atomic Habits \u5F3A\u8C03\u5C0F\u884C\u4E3A\u3001\u73AF\u5883\u8BBE\u8BA1\u548C
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://jamesclear.com/atomic-habits-summary
-`,"secretary/sources/david-allen.md":`# David Allen
+`,
+  "secretary/sources/david-allen.md": `# David Allen
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -1549,7 +6065,8 @@ GTD \u5F3A\u8C03\u628A\u6240\u6709\u5F00\u653E\u5FAA\u73AF\u5148\u6355\u6349\u52
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://gettingthingsdone.com/what-is-gtd/
-`,"secretary/sources/benjamin-franklin.md":`# Benjamin Franklin
+`,
+  "secretary/sources/benjamin-franklin.md": `# Benjamin Franklin
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -1584,7 +6101,8 @@ GTD \u5F3A\u8C03\u628A\u6240\u6709\u5F00\u653E\u5FAA\u73AF\u5148\u6355\u6349\u52
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://www.gutenberg.org/files/20203/20203-h/20203-h.htm
-`,"secretary/sources/dwight-eisenhower.md":`# Dwight Eisenhower
+`,
+  "secretary/sources/dwight-eisenhower.md": `# Dwight Eisenhower
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -1618,7 +6136,8 @@ GTD \u5F3A\u8C03\u628A\u6240\u6709\u5F00\u653E\u5FAA\u73AF\u5148\u6355\u6349\u52
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://www.eisenhower.me/eisenhower-matrix/
-`,"archivist/PERSONA.md":`---
+`,
+  "archivist/PERSONA.md": `---
 id: archivist
 title: \u6863\u6848\u5B98
 description: >
@@ -1685,7 +6204,8 @@ examples:
 - Vannevar Bush\uFF1A\u5173\u8054\u5F0F\u8DEF\u5F84\u548C\u53EF\u8FFD\u6EAF\u7684\u77E5\u8BC6\u7EBF\u7D22\u3002
 - Umberto Eco\uFF1A\u7814\u7A76\u5361\u7247\u3001\u6587\u732E\u7BA1\u7406\u548C\u5199\u4F5C\u524D\u7684\u6750\u6599\u7EC4\u7EC7\u3002
 - Leonardo da Vinci\uFF1A\u89C2\u5BDF\u3001\u56FE\u50CF\u5316\u8BB0\u5F55\u548C\u8DE8\u9886\u57DF\u8054\u60F3\u3002
-`,"archivist/METHODS.md":`### \u65B9\u6CD5\u8BBA\u538B\u7F29
+`,
+  "archivist/METHODS.md": `### \u65B9\u6CD5\u8BBA\u538B\u7F29
 
 \u6863\u6848\u5B98\u4EBA\u683C\u628A CODE/PARA\u3001\u5361\u7247\u76D2\u3001\u8054\u60F3\u8DEF\u5F84\u3001\u6587\u732E\u5361\u7247\u548C\u89C2\u5BDF\u5F0F\u8BB0\u5F55\u538B\u7F29\u6210\u4E00\u4E2A\u76EE\u6807\uFF1A\u8BA9\u4FE1\u606F\u672A\u6765\u80FD\u88AB\u627E\u5230\u3001\u8FDE\u63A5\u3001\u590D\u7528\u548C\u8F93\u51FA\u3002\u4E0D\u8981\u4E3A\u4E86\u5206\u7C7B\u800C\u5206\u7C7B\uFF0C\u8981\u56F4\u7ED5\u7528\u6237\u672A\u6765\u7684\u4F7F\u7528\u573A\u666F\u7EC4\u7EC7\u77E5\u8BC6\u3002
 
@@ -1703,7 +6223,8 @@ examples:
 - \u662F\u5426\u7ED9\u51FA\u5EFA\u8BAE\u6807\u9898\u3001\u8DEF\u5F84\u3001\u6807\u7B7E\u3001\u522B\u540D\u6216\u94FE\u63A5\u5173\u7CFB\u3002
 - \u662F\u5426\u533A\u5206\u539F\u59CB\u8D44\u6599\u3001\u4E2A\u4EBA\u7406\u89E3\u3001\u5F85\u9A8C\u8BC1\u4FE1\u606F\u548C\u53EF\u884C\u52A8\u6D1E\u5BDF\u3002
 - \u662F\u5426\u8BF4\u660E\u8FD9\u6761\u77E5\u8BC6\u672A\u6765\u53EF\u4EE5\u5728\u4EC0\u4E48\u95EE\u9898\u6216\u9879\u76EE\u4E2D\u88AB\u53EC\u56DE\u3002
-`,"archivist/sources/umberto-eco.md":`# Umberto Eco
+`,
+  "archivist/sources/umberto-eco.md": `# Umberto Eco
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -1739,7 +6260,8 @@ examples:
 
 - https://mitpress.mit.edu/9780262527132/how-to-write-a-thesis/
 - https://thereader.mitpress.mit.edu/umberto-eco-how-to-write-a-thesis/
-`,"archivist/sources/leonardo-da-vinci.md":`# Leonardo da Vinci
+`,
+  "archivist/sources/leonardo-da-vinci.md": `# Leonardo da Vinci
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -1774,7 +6296,8 @@ examples:
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://www.vam.ac.uk/articles/leonardo-da-vincis-notebooks
-`,"archivist/sources/niklas-luhmann.md":`# Niklas Luhmann
+`,
+  "archivist/sources/niklas-luhmann.md": `# Niklas Luhmann
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -1810,7 +6333,8 @@ examples:
 
 - https://niklas-luhmann-archiv.de/nachlass/zettelkasten
 - https://zettelkasten.de/posts/overview/
-`,"archivist/sources/tiago-forte.md":`# Tiago Forte
+`,
+  "archivist/sources/tiago-forte.md": `# Tiago Forte
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -1845,7 +6369,8 @@ Building a Second Brain \u4F7F\u7528 CODE \u5904\u7406\u4FE1\u606F\uFF1A\u6355\u
 
 - https://fortelabs.com/blog/basboverview/
 - https://fortelabs.com/blog/para/
-`,"archivist/sources/vannevar-bush.md":`# Vannevar Bush
+`,
+  "archivist/sources/vannevar-bush.md": `# Vannevar Bush
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -1881,7 +6406,8 @@ Memex \u60F3\u8C61\u4E86\u4E00\u79CD\u6309\u8054\u60F3\u8DEF\u5F84\u7EC4\u7EC7\u
 
 - https://www.theatlantic.com/magazine/archive/1945/07/as-we-may-think/303881/
 - https://www2.cs.sfu.ca/mmbook/VBushArticle/vbush-all.html
-`,"researcher/PERSONA.md":`---
+`,
+  "researcher/PERSONA.md": `---
 id: researcher
 title: \u7814\u7A76\u5458
 description: >
@@ -1952,7 +6478,8 @@ examples:
 - Santiago Ram\xF3n y Cajal\uFF1A\u7814\u7A76\u8010\u5FC3\u3001\u539F\u521B\u6027\u548C\u957F\u671F\u79EF\u7D2F\u3002
 - Charlie Munger\uFF1A\u591A\u5143\u601D\u7EF4\u6A21\u578B\u3001\u53CD\u5411\u601D\u8003\u548C\u6FC0\u52B1\u5206\u6790\u3002
 - John Boyd\uFF1AOODA \u5FAA\u73AF\u548C\u5FEB\u901F\u4FEE\u6B63\u3002
-`,"researcher/METHODS.md":`### \u65B9\u6CD5\u8BBA\u538B\u7F29
+`,
+  "researcher/METHODS.md": `### \u65B9\u6CD5\u8BBA\u538B\u7F29
 
 \u7814\u7A76\u5458\u4EBA\u683C\u628A\u6E05\u695A\u89E3\u91CA\u3001\u53EF\u8BC1\u4F2A\u6027\u3001\u6000\u7591\u5DE5\u5177\u7BB1\u3001\u504F\u5DEE\u68C0\u67E5\u3001\u6709\u9650\u7406\u6027\u3001\u591A\u5143\u6A21\u578B\u3001\u5FEB\u901F\u4FEE\u6B63\u548C\u957F\u671F\u8010\u5FC3\u538B\u7F29\u6210\u4E00\u4E2A\u76EE\u6807\uFF1A\u5C3D\u91CF\u63A5\u8FD1\u771F\u5B9E\uFF0C\u800C\u4E0D\u662F\u5FEB\u901F\u7ED9\u51FA\u597D\u542C\u7684\u7ED3\u8BBA\u3002\u4EFB\u4F55\u7ED3\u8BBA\u90FD\u8981\u80FD\u8BF4\u660E\u8BC1\u636E\u3001\u53CD\u4F8B\u3001\u8FB9\u754C\u548C\u4F1A\u6539\u53D8\u5224\u65AD\u7684\u65B0\u4FE1\u606F\u3002
 
@@ -1971,7 +6498,8 @@ examples:
 - \u662F\u5426\u7ED9\u51FA\u6682\u5B9A\u7ED3\u8BBA\u6216\u65E0\u6CD5\u4E0B\u7ED3\u8BBA\u7684\u539F\u56E0\u3002
 - \u662F\u5426\u6807\u6CE8\u7F6E\u4FE1\u5EA6\u3001\u5173\u952E\u8BC1\u636E\u7F3A\u53E3\u3001\u53EF\u80FD\u53CD\u4F8B\u548C\u9002\u7528\u8FB9\u754C\u3002
 - \u662F\u5426\u8BF4\u660E\u4EC0\u4E48\u65B0\u8BC1\u636E\u4F1A\u6539\u53D8\u5F53\u524D\u7ED3\u8BBA\u3002
-`,"researcher/sources/karl-popper.md":`# Karl Popper
+`,
+  "researcher/sources/karl-popper.md": `# Karl Popper
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2006,7 +6534,8 @@ examples:
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://plato.stanford.edu/entries/popper/
-`,"researcher/sources/carl-sagan.md":`# Carl Sagan
+`,
+  "researcher/sources/carl-sagan.md": `# Carl Sagan
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2042,7 +6571,8 @@ examples:
 
 - https://www.loc.gov/item/2006575795/
 - https://www.themarginalian.org/2014/01/03/baloney-detection-kit-carl-sagan/
-`,"researcher/sources/charlie-munger.md":`# Charlie Munger
+`,
+  "researcher/sources/charlie-munger.md": `# Charlie Munger
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2078,7 +6608,8 @@ examples:
 
 - https://fs.blog/great-talks/a-lesson-on-worldly-wisdom/
 - https://jamesclear.com/great-speeches/a-lesson-on-elementary-worldly-wisdom-by-charlie-munger
-`,"researcher/sources/daniel-kahneman.md":`# Daniel Kahneman
+`,
+  "researcher/sources/daniel-kahneman.md": `# Daniel Kahneman
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2113,7 +6644,8 @@ examples:
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://www.nobelprize.org/prizes/economic-sciences/2002/kahneman/facts/
-`,"researcher/sources/herbert-simon.md":`# Herbert Simon
+`,
+  "researcher/sources/herbert-simon.md": `# Herbert Simon
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2148,7 +6680,8 @@ examples:
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://www.nobelprize.org/prizes/economic-sciences/1978/simon/lecture/
-`,"researcher/sources/richard-feynman.md":`# Richard Feynman
+`,
+  "researcher/sources/richard-feynman.md": `# Richard Feynman
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2183,7 +6716,8 @@ examples:
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://calteches.library.caltech.edu/51/2/CargoCult.htm
-`,"researcher/sources/santiago-ramon-y-cajal.md":`# Santiago Ram\xF3n y Cajal
+`,
+  "researcher/sources/santiago-ramon-y-cajal.md": `# Santiago Ram\xF3n y Cajal
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2219,7 +6753,8 @@ examples:
 
 - https://mitpress.mit.edu/9780262681506/advice-for-a-young-investigator/
 - https://pubmed.ncbi.nlm.nih.gov/37595797/
-`,"researcher/sources/john-boyd.md":`# John Boyd
+`,
+  "researcher/sources/john-boyd.md": `# John Boyd
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2253,7 +6788,8 @@ OODA \u5FAA\u73AF\u5F3A\u8C03\u89C2\u5BDF\u3001\u5B9A\u5411\u3001\u51B3\u7B56\u3
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://www.airuniversity.af.edu/Portals/10/AUPress/Books/B_0151_BOYD_DISCOURSE_WINNING_LOSING.PDF
-`,"philosopher/PERSONA.md":`---
+`,
+  "philosopher/PERSONA.md": `---
 id: philosopher
 title: \u54F2\u5B66\u5BB6
 description: >
@@ -2321,7 +6857,8 @@ examples:
 - Clayton Christensen\uFF1A\u7528\u4EBA\u751F\u8861\u91CF\u6807\u51C6\u5BA1\u89C6\u8D44\u6E90\u914D\u7F6E\u548C\u5173\u7CFB\u3002
 - Socrates\uFF1A\u901A\u8FC7\u8FFD\u95EE\u66B4\u9732\u542B\u6DF7\u6982\u5FF5\u548C\u672A\u7ECF\u68C0\u9A8C\u7684\u4FE1\u5FF5\u3002
 - Stoicism\uFF1A\u533A\u5206\u53EF\u63A7\u4E0E\u4E0D\u53EF\u63A7\uFF0C\u7528\u5FB7\u6027\u548C\u884C\u52A8\u9762\u5BF9\u5916\u90E8\u6CE2\u52A8\u3002
-`,"philosopher/METHODS.md":`### \u65B9\u6CD5\u8BBA\u538B\u7F29
+`,
+  "philosopher/METHODS.md": `### \u65B9\u6CD5\u8BBA\u538B\u7F29
 
 \u54F2\u5B66\u5BB6\u4EBA\u683C\u628A\u4F18\u52BF\u3001\u4EF7\u503C\u89C2\u3001\u8D21\u732E\u3001\u4EE5\u7EC8\u4E3A\u59CB\u3001\u4EBA\u751F\u8861\u91CF\u6807\u51C6\u3001\u82CF\u683C\u62C9\u5E95\u8FFD\u95EE\u548C\u65AF\u591A\u845B\u533A\u5206\u538B\u7F29\u6210\u4E00\u4E2A\u76EE\u6807\uFF1A\u5E2E\u52A9\u7528\u6237\u770B\u6E05\u65B9\u5411\u3001\u4EE3\u4EF7\u3001\u8D23\u4EFB\u548C\u957F\u671F\u4E00\u81F4\u6027\u3002\u4E0D\u8981\u66FF\u7528\u6237\u5BA3\u5E03\u7B54\u6848\uFF0C\u8981\u5E2E\u52A9\u7528\u6237\u66F4\u6E05\u9192\u5730\u627F\u62C5\u9009\u62E9\u3002
 
@@ -2339,7 +6876,8 @@ examples:
 - \u662F\u5426\u6307\u51FA\u4E00\u4E2A\u6838\u5FC3\u53D6\u820D\u6216\u4EF7\u503C\u51B2\u7A81\u3002
 - \u662F\u5426\u63D0\u51FA\u80FD\u8BA9\u7528\u6237\u66F4\u6E05\u9192\u7684\u8FFD\u95EE\uFF0C\u800C\u4E0D\u662F\u7ED9\u5EC9\u4EF7\u7B54\u6848\u3002
 - \u662F\u5426\u6536\u675F\u5230\u4E00\u4E2A\u53CD\u601D\u6846\u67B6\u3001\u5C0F\u5B9E\u9A8C\u6216\u4E0B\u4E00\u6B65\u51B3\u7B56\u52A8\u4F5C\u3002
-`,"philosopher/sources/stoicism.md":`# Stoicism
+`,
+  "philosopher/sources/stoicism.md": `# Stoicism
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2375,7 +6913,8 @@ examples:
 
 - https://www.gutenberg.org/files/2680/2680-h/2680-h.htm
 - https://classics.mit.edu/Epictetus/epicench.html
-`,"philosopher/sources/peter-drucker.md":`# Peter Drucker
+`,
+  "philosopher/sources/peter-drucker.md": `# Peter Drucker
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2410,7 +6949,8 @@ examples:
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://hbr.org/2005/01/managing-oneself
-`,"philosopher/sources/socrates.md":`# Socrates
+`,
+  "philosopher/sources/socrates.md": `# Socrates
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2445,7 +6985,8 @@ examples:
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://plato.stanford.edu/entries/socrates/
-`,"philosopher/sources/stephen-covey.md":`# Stephen Covey
+`,
+  "philosopher/sources/stephen-covey.md": `# Stephen Covey
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2480,7 +7021,8 @@ examples:
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://www.franklincovey.com/the-7-habits/habit-2/
-`,"philosopher/sources/clayton-christensen.md":`# Clayton Christensen
+`,
+  "philosopher/sources/clayton-christensen.md": `# Clayton Christensen
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2515,7 +7057,8 @@ examples:
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://hbr.org/2010/07/how-will-you-measure-your-life
-`,"mentor/PERSONA.md":`---
+`,
+  "mentor/PERSONA.md": `---
 id: mentor
 title: \u5BFC\u5E08
 description: >
@@ -2581,7 +7124,8 @@ examples:
 - Donald Knuth\uFF1A\u628A\u77E5\u8BC6\u5199\u6210\u53EF\u8BFB\u3001\u53EF\u89E3\u91CA\u3001\u53EF\u63A8\u6F14\u7684\u7CFB\u7EDF\u3002
 - Richard Feynman\uFF1A\u7528\u7B80\u5355\u89E3\u91CA\u66B4\u9732\u7406\u89E3\u7F3A\u53E3\u3002
 - Socratic questioning\uFF1A\u901A\u8FC7\u8FFD\u95EE\u8BA9\u5B66\u4E60\u8005\u4E3B\u52A8\u5EFA\u6784\u7406\u89E3\u3002
-`,"mentor/METHODS.md":`### \u65B9\u6CD5\u8BBA\u538B\u7F29
+`,
+  "mentor/METHODS.md": `### \u65B9\u6CD5\u8BBA\u538B\u7F29
 
 \u5BFC\u5E08\u4EBA\u683C\u628A\u91D1\u5B57\u5854\u7ED3\u6784\u3001\u53EF\u63A8\u6F14\u8868\u8FBE\u3001\u8D39\u66FC\u6559\u5B66\u548C\u82CF\u683C\u62C9\u5E95\u8FFD\u95EE\u538B\u7F29\u6210\u4E00\u4E2A\u76EE\u6807\uFF1A\u8BA9\u7528\u6237\u771F\u6B63\u7406\u89E3\u3001\u7EC3\u4E60\u5E76\u5185\u5316\uFF0C\u800C\u4E0D\u662F\u53EA\u542C\u5B8C\u4E00\u4E2A\u7B54\u6848\u3002\u6559\u5B66\u8981\u4ECE\u76F4\u89C9\u8FDB\u5165\u673A\u5236\uFF0C\u518D\u901A\u8FC7\u4F8B\u5B50\u3001\u53CD\u4F8B\u548C\u68C0\u67E5\u9898\u786E\u8BA4\u638C\u63E1\u3002
 
@@ -2599,7 +7143,8 @@ examples:
 - \u662F\u5426\u5148\u7ED9\u51FA\u4E00\u4E2A\u7B80\u5355\u76F4\u89C9\u6216\u6838\u5FC3\u7ED3\u8BBA\u3002
 - \u662F\u5426\u81F3\u5C11\u5305\u542B\u4E00\u4E2A\u4F8B\u5B50\u3001\u53CD\u4F8B\u3001\u7EC3\u4E60\u9898\u6216\u590D\u8FF0\u68C0\u67E5\u3002
 - \u662F\u5426\u7ED9\u51FA\u4E0B\u4E00\u6B65\u5B66\u4E60\u8DEF\u5F84\u3001\u590D\u4E60\u52A8\u4F5C\u6216\u8FC1\u79FB\u5E94\u7528\u3002
-`,"mentor/sources/feynman-teaching.md":`# Feynman Teaching Method
+`,
+  "mentor/sources/feynman-teaching.md": `# Feynman Teaching Method
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2634,7 +7179,8 @@ examples:
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://calteches.library.caltech.edu/51/2/CargoCult.htm
-`,"mentor/sources/donald-knuth.md":`# Donald Knuth
+`,
+  "mentor/sources/donald-knuth.md": `# Donald Knuth
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2669,7 +7215,8 @@ Knuth \u7684 literate programming \u5F3A\u8C03\u8BA9\u7A0B\u5E8F\u548C\u89E3\u91
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://www-cs-faculty.stanford.edu/~knuth/lp.html
-`,"mentor/sources/socratic-questioning.md":`# Socratic Questioning
+`,
+  "mentor/sources/socratic-questioning.md": `# Socratic Questioning
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2704,7 +7251,8 @@ Knuth \u7684 literate programming \u5F3A\u8C03\u8BA9\u7A0B\u5E8F\u548C\u89E3\u91
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://plato.stanford.edu/entries/socrates/
-`,"mentor/sources/barbara-minto.md":`# Barbara Minto
+`,
+  "mentor/sources/barbara-minto.md": `# Barbara Minto
 
 ## \u65B9\u6CD5\u8BBA\u6458\u8981
 
@@ -2739,102 +7287,3993 @@ Knuth \u7684 literate programming \u5F3A\u8C03\u8BA9\u7A0B\u5E8F\u548C\u89E3\u91
 ## \u6765\u6E90\u94FE\u63A5
 
 - https://www.barbaraminto.com/
-`},It={"feynman/PERSONA.md":`---
-id: feynman
-title: \u8D39\u66FC
-description: >
-  \u5F53\u7528\u6237\u9700\u8981\u628A\u6982\u5FF5\u8BB2\u6E05\u695A\u3001\u60F3\u4ECE\u771F\u6B63\u7406\u89E3\u51FA\u53D1\u5B66\u4E60\u3001\u5E0C\u671B\u5C11\u7528\u672F\u8BED\u6216\u8981\u6C42\u4E00\u6B65\u6B65\u6559\u5B66\u65F6\uFF0C\u4F7F\u7528\u8FD9\u4E2A\u4EBA\u683C\u3002
-routing_hints:
-  - \u89E3\u91CA\u6E05\u695A
-  - \u6559\u6211
-  - \u7B80\u5316\u6982\u5FF5
-  - \u65B0\u624B\u53CB\u597D
-examples:
-  - \u7528\u6700\u7B80\u5355\u7684\u8BDD\u89E3\u91CA\u8FD9\u4E2A\u6982\u5FF5
-  - \u50CF\u6559\u65B0\u624B\u4E00\u6837\u8BB2\u6E05\u695A
-  - \u5E2E\u6211\u628A\u590D\u6742\u5185\u5BB9\u8BB2\u660E\u767D
----
-
-# \u8D39\u66FC\u4EBA\u683C
-
-\u50CF\u4E00\u4F4D\u6709\u8010\u5FC3\u7684\u89E3\u91CA\u8005\u4E00\u6837\u601D\u8003\u3002
-
-- \u5148\u51CF\u5C11\u672F\u8BED\uFF1B\u5FC5\u8981\u672F\u8BED\u5FC5\u987B\u7528\u767D\u8BDD\u5B9A\u4E49\u3002
-- \u4F18\u5148\u4F7F\u7528\u5177\u4F53\u4F8B\u5B50\u3001\u7C7B\u6BD4\u548C\u5C0F\u6B65\u9AA4\u62C6\u89E3\u3002
-- \u5F53\u7528\u6237\u7684\u7406\u89E3\u53EF\u80FD\u5361\u4F4F\u65F6\uFF0C\u76F4\u63A5\u6307\u51FA\u7F3A\u5931\u7684\u90A3\u4E00\u73AF\u3002
-- \u76EE\u6807\u662F\u8BA9\u7528\u6237\u4EA7\u751F\u201C\u6211\u7EC8\u4E8E\u61C2\u4E86\u201D\u7684\u611F\u89C9\uFF0C\u800C\u4E0D\u662F\u663E\u5F97\u4E13\u4E1A\u3002
-- \u5982\u679C\u4E3B\u9898\u590D\u6742\uFF0C\u6309\u201C\u76F4\u89C9 -> \u673A\u5236 -> \u5E94\u7528\u201D\u7684\u987A\u5E8F\u63A8\u8FDB\u3002
-`,"first-principles/PERSONA.md":`---
-id: first_principles
-title: \u7B2C\u4E00\u6027\u539F\u7406
-description: >
-  \u5F53\u7528\u6237\u60F3\u91CD\u65B0\u8BBE\u8BA1\u65B9\u6848\u3001\u628A\u95EE\u9898\u62C6\u5230\u5E95\u5C42\u3001\u6311\u6218\u5047\u8BBE\uFF0C\u6216\u5BFB\u627E\u66F4\u76F4\u63A5\u7684\u89E3\u6CD5\u8DEF\u5F84\u65F6\uFF0C\u4F7F\u7528\u8FD9\u4E2A\u4EBA\u683C\u3002
-routing_hints:
-  - \u62C6\u5230\u5E95\u5C42
-  - \u6311\u6218\u5047\u8BBE
-  - \u4ECE\u96F6\u91CD\u6784
-  - \u5728\u7EA6\u675F\u4E0B\u4F18\u5316
-examples:
-  - \u4ECE\u7B2C\u4E00\u6027\u539F\u7406\u5206\u6790
-  - \u4E0D\u6CBF\u7528\u73B0\u6210\u505A\u6CD5\uFF0C\u91CD\u65B0\u62C6\u89E3
-  - \u5148\u627E\u5E95\u5C42\u7EA6\u675F\u518D\u63A8\u65B9\u6848
----
-
-# \u7B2C\u4E00\u6027\u539F\u7406\u4EBA\u683C
-
-\u50CF\u4E00\u4F4D\u5173\u6CE8\u7EA6\u675F\u7684\u95EE\u9898\u62C6\u89E3\u8005\u4E00\u6837\u601D\u8003\u3002
-
-- \u533A\u5206\u4E8B\u5B9E\u3001\u5047\u8BBE\u548C\u6CBF\u88AD\u4E0B\u6765\u7684\u60EF\u4F8B\u3002
-- \u628A\u95EE\u9898\u8FD8\u539F\u4E3A\u6838\u5FC3\u76EE\u6807\u3001\u7EA6\u675F\u6761\u4EF6\uFF0C\u4EE5\u53CA\u7269\u7406\u6216\u903B\u8F91\u4E0A\u7684\u9650\u5236\u3002
-- \u4ECE\u8FD9\u4E9B\u5E95\u5C42\u8981\u7D20\u91CD\u65B0\u6784\u5EFA\u65B9\u6848\uFF0C\u800C\u4E0D\u662F\u590D\u5236\u5DF2\u6709\u505A\u6CD5\u3002
-- \u6307\u51FA\u90A3\u4E9B\u770B\u4F3C\u88AB\u666E\u904D\u63A5\u53D7\u3001\u4F46\u6280\u672F\u4E0A\u5E76\u4E0D\u7262\u56FA\u7684\u5047\u8BBE\u3002
-- \u5728\u6EE1\u8DB3\u7EA6\u675F\u7684\u524D\u63D0\u4E0B\uFF0C\u4F18\u5148\u9009\u62E9\u7B80\u5355\u3001\u76F4\u63A5\u7684\u673A\u5236\uFF0C\u800C\u4E0D\u662F\u5C42\u5C42\u53E0\u52A0\u7684\u60EF\u4F8B\u3002
-`,"munger-models/PERSONA.md":`---
-id: munger_models
-title: \u8292\u683C-\u591A\u5143\u601D\u7EF4\u6A21\u578B
-description: >
-  \u5F53\u7528\u6237\u6B63\u5728\u505A\u51B3\u7B56\u3001\u6BD4\u8F83\u65B9\u6848\u3001\u8BC4\u4F30\u53D6\u820D\uFF0C\u6216\u9700\u8981\u98CE\u9669\u5206\u6790\u3001\u4E8C\u9636\u6548\u5E94\u548C\u8DE8\u5B66\u79D1\u89C6\u89D2\u65F6\uFF0C\u4F7F\u7528\u8FD9\u4E2A\u4EBA\u683C\u3002
-routing_hints:
-  - \u505A\u51B3\u7B56
-  - \u6BD4\u8F83\u65B9\u6848
-  - \u6743\u8861\u5206\u6790
-  - \u98CE\u9669\u548C\u6FC0\u52B1
-examples:
-  - \u5E2E\u6211\u5206\u6790\u8FD9\u4E2A\u51B3\u7B56
-  - \u6BD4\u8F83\u4E24\u4E2A\u65B9\u6848\u7684\u5229\u5F0A
-  - \u4ECE\u4E0D\u540C\u6A21\u578B\u770B\u8FD9\u4EF6\u4E8B
----
-
-# \u8292\u683C\u591A\u5143\u601D\u7EF4\u6A21\u578B\u4EBA\u683C
-
-\u50CF\u4E00\u4F4D\u4E25\u8C28\u7684\u51B3\u7B56\u5206\u6790\u8005\u4E00\u6837\u601D\u8003\u3002
-
-- \u4ECE\u591A\u4E2A\u89C6\u89D2\u91CD\u6784\u95EE\u9898\uFF1A\u6FC0\u52B1\u3001\u673A\u4F1A\u6210\u672C\u3001\u6982\u7387\u3001\u7CFB\u7EDF\u6548\u5E94\u548C\u4EBA\u7C7B\u504F\u8BEF\u3002
-- \u4E0D\u53EA\u5217\u773C\u524D\u5229\u5F0A\uFF0C\u4E5F\u8981\u6307\u51FA\u4E8C\u9636\u540E\u679C\u3002
-- \u8BF4\u660E\u8FD8\u7F3A\u54EA\u4E9B\u4FE1\u606F\uFF0C\u4EE5\u53CA\u8FD9\u4E9B\u4E0D\u786E\u5B9A\u6027\u4F1A\u5982\u4F55\u6539\u53D8\u5EFA\u8BAE\u3002
-- \u4F18\u5148\u4F7F\u7528\u53CD\u5411\u601D\u8003\u548C\u8BC1\u4F2A\uFF1A\u95EE\u6E05\u695A\u4EC0\u4E48\u60C5\u51B5\u4F1A\u8BA9\u5F53\u524D\u65B9\u6848\u5931\u8D25\u3002
-- \u6709\u5E2E\u52A9\u65F6\uFF0C\u4EE5\u6700\u5173\u952E\u7684\u53D6\u820D\u548C\u4E00\u4E2A\u63A8\u8350\u9009\u62E9\u6536\u5C3E\u3002
-`};function Jn(t,e){if((0,re.mkdirSync)(t,{recursive:!0}),(0,re.readdirSync)(t).length>0)return!1;for(let[n,s]of Object.entries(e))$t(t,n,s);return!0}function Xn(t){(0,re.mkdirSync)(t,{recursive:!0});let e=ei(t);if(e.length===0)return Wn(t,dt),{seeded:!0,migrated:!1};if(!ni(t))return ti(e)?{seeded:Wn(t,dt),migrated:!1}:{seeded:!1,migrated:!1};for(let n of Object.keys(It)){let s=n.split("/")[0];(0,re.rmSync)((0,Te.join)(t,s),{recursive:!0,force:!0})}for(let[n,s]of Object.entries(dt))$t(t,n,s);return{seeded:!1,migrated:!0}}function Wn(t,e){let n=!1;for(let[s,r]of Object.entries(e)){let i=(0,Te.join)(t,...s.split("/"));(0,re.existsSync)(i)||($t(t,s,r),n=!0)}return n}function ei(t){return Bt(t).filter(e=>e.split("/").pop()==="PERSONA.md").sort()}function ti(t){let e=Object.keys(dt).filter(n=>n.endsWith("/PERSONA.md")).sort();return t.length>0&&t.every(n=>e.includes(n))}function ni(t){let e=Bt(t).sort(),n=Object.keys(It).sort();return e.length!==n.length||!e.every((s,r)=>s===n[r])?!1:n.every(s=>{let r=(0,Te.join)(t,...s.split("/")),i=Yn((0,re.readFileSync)(r,"utf8")),a=Yn(It[s]);return i===a})}function Bt(t,e=""){let n=e?(0,Te.join)(t,...e.split("/")):t,s=(0,re.readdirSync)(n,{withFileTypes:!0}),r=[];for(let i of s){let a=e?`${e}/${i.name}`:i.name;i.isDirectory()?r.push(...Bt(t,a)):i.isFile()&&r.push(a)}return r}function $t(t,e,n){let s=(0,Te.join)(t,...e.split("/"));(0,re.mkdirSync)((0,Te.dirname)(s),{recursive:!0}),(0,re.writeFileSync)(s,n.endsWith(`
-`)?n:`${n}
-`,"utf8")}function Yn(t){return t.replace(/\r\n/g,`
-`).replace(/\r/g,`
-`).trimEnd()}var Z=require("node:fs"),Ke=require("node:path");function si(t){let{legacyPath:e,targetPath:n}=t;if(!(0,Z.existsSync)(e))return Ae(t,"missing",0,0,"legacy directory is absent");try{if(!(0,Z.statSync)(e).isDirectory())return Ae(t,"blocked",0,1,"legacy path is not a directory");if(!(0,Z.existsSync)(n))return(0,Z.mkdirSync)((0,Ke.dirname)(n),{recursive:!0}),es(e,n),Ae(t,"moved",1,0,"moved legacy directory");if(!(0,Z.statSync)(n).isDirectory())return Ae(t,"blocked",0,1,"target path is not a directory");let s=Qn(e,n);return ts(e),s.movedEntries>0?Ae(t,"merged",s.movedEntries,s.skippedEntries,"merged missing legacy entries into existing directory"):Ae(t,s.skippedEntries>0?"skipped":"merged",s.movedEntries,s.skippedEntries,s.skippedEntries>0?"existing target entries were kept":"legacy directory was empty")}catch(s){let r=s instanceof Error?s.message:String(s);return Ae(t,"failed",0,1,r)}}function Zn(t){return t.map(e=>si(e))}function Qn(t,e){let n={movedEntries:0,skippedEntries:0};(0,Z.mkdirSync)(e,{recursive:!0});for(let s of(0,Z.readdirSync)(t)){let r=(0,Ke.join)(t,s),i=(0,Ke.join)(e,s);if(!(0,Z.existsSync)(i)){es(r,i),n.movedEntries+=1;continue}let a=(0,Z.statSync)(r),d=(0,Z.statSync)(i);if(a.isDirectory()&&d.isDirectory()){let o=Qn(r,i);n.movedEntries+=o.movedEntries,n.skippedEntries+=o.skippedEntries,ts(r);continue}n.skippedEntries+=1}return n}function es(t,e){try{(0,Z.renameSync)(t,e)}catch{(0,Z.cpSync)(t,e,{recursive:!0,errorOnExist:!0,force:!1})}}function ts(t){try{(0,Z.rmdirSync)(t)}catch{}}function Ae(t,e,n,s,r){return{...t,status:e,movedEntries:n,skippedEntries:s,message:r}}var ae=require("node:path");function ns(t){return t===".."||t.startsWith(`..${ae.sep}`)}function ss(t,e){let n=(0,ae.resolve)(t),s=(0,ae.resolve)(n,e),r=(0,ae.relative)(n,s);return!r||(0,ae.isAbsolute)(r)||ns(r)?s:r}function rs(t,e){let n=e?.trim();if(!n)return null;let s=(0,ae.resolve)(t),r=(0,ae.resolve)(s,n);if((0,ae.isAbsolute)(n))return r;let i=(0,ae.relative)(s,r);return!i||(0,ae.isAbsolute)(i)||ns(i)?null:r}var ri="crabby",be="127.0.0.1",is=8e3,ii=15e3,as=2500,Nt=1200,ai=5e3,oi=180;function Ht(t){if(!ze.Platform.isDesktopApp)throw new Error("Crabby \u540E\u7AEF\u8FD0\u884C\u65F6\u9700\u8981 Obsidian \u684C\u9762\u7248\u3002");let e=t.vault.adapter;if(!(e instanceof ze.FileSystemAdapter))throw new Error("\u65E0\u6CD5\u89E3\u6790\u684C\u9762\u7AEF vault \u6587\u4EF6\u7CFB\u7EDF\u8DEF\u5F84\u3002");let n=e.getBasePath(),s=(0,N.join)(n,t.vault.configDir,"plugins",ri),r=(0,N.join)(n,".crabby"),i=(0,N.join)(r,"config"),a=(0,N.join)(r,"data"),d=(0,N.join)(r,"logs"),o=(0,N.join)(s,"runtime");return{pluginDir:s,userDataDir:r,configDir:i,envPath:(0,N.join)(i,".env"),mcpConfigPath:(0,N.join)(i,"mcp_servers.json"),promptsDir:(0,N.join)(i,"prompts"),personasDir:(0,N.join)(i,"personas"),dataDir:a,sessionsDir:(0,N.join)(a,"sessions"),attachmentsDir:(0,N.join)(a,"attachments"),logsDir:d,runtimeDir:o,statePath:(0,N.join)(o,"state.json"),heartbeatPath:(0,N.join)(o,"host-heartbeat.json"),devRuntimePath:(0,N.join)(s,".dev-runtime.json")}}var ut=class{constructor(e,n){this.app=e;this.settings=n;this.child=null;this.externalBackend=null;this.heartbeatTimer=null;this.statusDetail="\u540E\u7AEF\u8FD0\u884C\u65F6\u5C1A\u672A\u542F\u52A8\u3002";this.layout=Ht(e)}getLayout(){return this.layout}async ensureRuntimeLayout(){this.migrateLegacyRuntimeData();for(let r of[this.layout.userDataDir,this.layout.configDir,this.layout.promptsDir,this.layout.personasDir,this.layout.sessionsDir,this.layout.attachmentsDir,this.layout.logsDir,this.layout.runtimeDir,(0,N.dirname)(this.layout.statePath)])(0,z.mkdirSync)(r,{recursive:!0});let e=this.ensureAdminToken();Be(this.layout.envPath,{CRABBY_ADMIN_ENABLED:"true",CRABBY_ADMIN_TOKEN:e,...this.getHostWatchdogEnv(),CRABBY_BACKEND_RELOADER_PARENT:"false",VAULT_PATH:this.getVaultBasePath(),HOST:be,PROMPTS_DIR:this.layout.promptsDir,PERSONAS_DIR:this.layout.personasDir}),this.startHostHeartbeat();let n=Jn(this.layout.promptsDir,Gn),s=Xn(this.layout.personasDir);return n&&this.appendRuntimeLog("seeded default prompt templates"),s.seeded&&this.appendRuntimeLog("seeded default persona templates"),s.migrated&&this.appendRuntimeLog("migrated legacy default persona templates"),(0,z.existsSync)(this.layout.mcpConfigPath)||(0,z.writeFileSync)(this.layout.mcpConfigPath,`${JSON.stringify({mcpServers:{}},null,2)}
-`,"utf8"),this.settings.backendEnvPath=this.layout.envPath,this.settings.backendMcpConfigPath=this.layout.mcpConfigPath,this.settings.backendPath="",this.appendRuntimeLog("runtime layout ensured"),this.layout}async start(){if(await this.ensureRuntimeLayout(),this.appendRuntimeLog("start requested"),this.child&&!this.child.killed)return this.appendRuntimeLog(`start skipped because child is already running: pid=${this.child.pid??"unknown"}`),this.getStatus();if(this.externalBackend){let x=this.ensureAdminToken();if(await Ot(this.externalBackend.backendUrl,x))return this.appendRuntimeLog(`start skipped because existing backend is reachable: ${this.externalBackend.backendUrl}`),this.getStatus();this.appendRuntimeLog(`discarding unreachable existing backend: ${this.externalBackend.backendUrl}`),this.externalBackend=null}let e=this.resolveLaunchConfig();if(!e)return this.statusDetail="\u751F\u4EA7\u6A21\u5F0F\u540E\u7AEF\u8FD0\u884C\u65F6\u5C1A\u672A\u5B89\u88C5\u3002",this.appendRuntimeLog("start aborted: no launch config"),this.getStatus();let n=await this.reuseExistingBackendIfAvailable(e);if(n)return n;let s=await ci(is),r=`http://${be}:${s}`,i=e.mode==="dev"?ls(e.args,be,s):e.args,a=cs(i);this.appendRuntimeLog(`launch config resolved: mode=${e.mode} command=${e.command} args=${JSON.stringify(e.args)} cwd=${e.cwd} port=${s}`);let d=this.ensureAdminToken();Be(this.layout.envPath,{CRABBY_ADMIN_ENABLED:"true",CRABBY_ADMIN_TOKEN:d,...this.getHostWatchdogEnv(),CRABBY_BACKEND_RELOADER_PARENT:a,VAULT_PATH:this.getVaultBasePath(),HOST:be,PORT:String(s),PROMPTS_DIR:this.layout.promptsDir,PERSONAS_DIR:this.layout.personasDir});let o=(0,z.createWriteStream)((0,N.join)(this.layout.logsDir,"backend-out.log"),{flags:"a"}),c=(0,z.createWriteStream)((0,N.join)(this.layout.logsDir,"backend-error.log"),{flags:"a"}),w={...process.env,VAULT_PATH:this.getVaultBasePath(),MCP_CONFIG_FILE:this.layout.mcpConfigPath,DATA_DIR:this.layout.dataDir,LOG_DIR:this.layout.logsDir,...this.getHostWatchdogEnv(),CRABBY_BACKEND_RELOADER_PARENT:a,HOST:be,PORT:String(s),PROMPTS_DIR:this.layout.promptsDir,PERSONAS_DIR:this.layout.personasDir,PYTHONUNBUFFERED:"1",PYTHONIOENCODING:"utf-8"},S=ui(w);w[S]=pi(w[S]),this.appendRuntimeLog(`spawning backend: ${e.command} ${i.join(" ")}`);try{this.child=(0,pt.spawn)(e.command,i,{cwd:e.cwd,env:w,windowsHide:!0})}catch(x){let M=x instanceof Error?x.message:String(x);return this.statusDetail=`\u540E\u7AEF\u8FDB\u7A0B\u542F\u52A8\u5931\u8D25\uFF1A${M}`,this.appendRuntimeLog(`spawn threw synchronously: ${M}`),o.end(),c.end(),this.getStatus()}this.child.stdout.pipe(o),this.child.stderr.pipe(c),this.child.once("error",x=>{this.statusDetail=`\u540E\u7AEF\u8FDB\u7A0B\u542F\u52A8\u5931\u8D25\uFF1A${x.message}`,this.appendRuntimeLog(`child error: ${x.message}`),this.child=null,o.end(),c.end()}),this.child.once("exit",(x,M)=>{this.statusDetail=`\u540E\u7AEF\u8FDB\u7A0B\u5DF2\u9000\u51FA\uFF0C\u9000\u51FA\u7801 ${x??"null"}\uFF0C\u4FE1\u53F7 ${M??"null"}\u3002`,this.appendRuntimeLog(`child exited: code=${x??"null"} signal=${M??"null"}`),this.child=null,o.end(),c.end()}),this.settings.backendUrl=r,this.writeState({mode:e.mode,version:e.version,platform:process.platform,executablePath:e.command,port:s,pid:this.child.pid,startedAt:new Date().toISOString()});try{await mi(r,ii),this.statusDetail=`\u540E\u7AEF\u6B63\u5728\u4EE5${e.mode==="dev"?"\u5F00\u53D1":"\u751F\u4EA7"}\u6A21\u5F0F\u8FD0\u884C\u3002`,this.appendRuntimeLog(`health check passed: ${r}`)}catch(x){this.statusDetail=x instanceof Error?x.message:"\u540E\u7AEF\u5065\u5EB7\u68C0\u67E5\u5931\u8D25\u3002",this.appendRuntimeLog(`health check failed: ${this.statusDetail}`)}return this.getStatus()}async stop(){this.stopHostHeartbeat();let e=this.child;if(!e||e.killed)return this.stopExistingBackendWithoutChild();let n=this.ensureAdminToken(),s=this.settings.backendUrl;try{await os(s,n),await gs(e,as)}catch{await fi(e)}return this.child=null,this.statusDetail="\u540E\u7AEF\u8FD0\u884C\u65F6\u5DF2\u505C\u6B62\u3002",this.getStatus()}async restart(){return await this.stop(),this.start()}async installRuntime(e){await this.ensureRuntimeLayout();let n=e.trim();if(!n)throw new Error("\u5C1A\u672A\u914D\u7F6E\u8FD0\u884C\u65F6\u6E05\u5355 URL\u3002");let s=await fetch(n);if(!s.ok)throw new Error(`\u8FD0\u884C\u65F6\u6E05\u5355\u4E0B\u8F7D\u5931\u8D25\uFF1AHTTP ${s.status}`);let r=await s.json(),i=r.platforms?.[process.platform];if(!i)throw new Error(`\u5F53\u524D\u5E73\u53F0\u6CA1\u6709\u53EF\u7528\u7684\u540E\u7AEF\u8FD0\u884C\u65F6\uFF1A${process.platform}\u3002`);let a=await fetch(i.url);if(!a.ok)throw new Error(`\u540E\u7AEF\u8FD0\u884C\u65F6\u4E0B\u8F7D\u5931\u8D25\uFF1AHTTP ${a.status}`);let d=Buffer.from(await a.arrayBuffer());if((0,gt.createHash)("sha256").update(d).digest("hex").toLowerCase()!==i.sha256.toLowerCase())throw new Error("\u540E\u7AEF\u8FD0\u884C\u65F6 SHA256 \u6821\u9A8C\u5931\u8D25\u3002");let c=i.executableName??(process.platform==="win32"?"crabby-backend.exe":"crabby-backend"),w=(0,N.join)(this.layout.runtimeDir,"backend",r.version,process.platform);(0,z.mkdirSync)(w,{recursive:!0});let S=(0,N.join)(w,c);return(0,z.writeFileSync)(S,d),process.platform!=="win32"&&(0,z.chmodSync)(S,493),this.writeState({mode:"production",version:r.version,platform:process.platform,executablePath:S}),this.statusDetail=`\u5DF2\u5B89\u88C5\u540E\u7AEF\u8FD0\u884C\u65F6 ${r.version}\u3002`,this.getStatus()}getStatus(){let e=this.readState(),n=this.readDevRuntimeConfig(),s=n?"dev":"production",r=this.externalBackend?.port??us(this.settings.backendUrl)??e?.port??null,i=!!(this.child&&!this.child.killed)||!!this.externalBackend;return{mode:s,installed:!!(n||e?.executablePath),running:i,backendUrl:r!==null?`http://${be}:${r}`:this.settings.backendUrl,port:r,pid:i?this.child?.pid??this.externalBackend?.pid??null:null,envPath:this.layout.envPath,mcpConfigPath:this.layout.mcpConfigPath,promptsDir:this.layout.promptsDir,personasDir:this.layout.personasDir,dataDir:this.layout.dataDir,logsDir:this.layout.logsDir,detail:this.statusDetail}}resolveLaunchConfig(){let e=this.readDevRuntimeConfig();if(e)return{mode:"dev",command:e.backendCommand,args:e.backendArgs,cwd:e.backendCwd};let n=this.readState(),s=n?.mode==="production"?rs(this.layout.runtimeDir,n.executablePath):null;return n?.mode==="production"&&s&&(0,z.existsSync)(s)?{mode:"production",command:s,args:[],cwd:(0,N.dirname)(s),version:n.version}:null}async reuseExistingBackendIfAvailable(e){let n=this.ensureAdminToken(),s=await this.findExistingManagedBackend(n);if(!s)return null;this.externalBackend=s,this.settings.backendUrl=s.backendUrl,this.startHostHeartbeat();let r=e.mode==="dev"?ls(e.args,be,s.port):e.args;return Be(this.layout.envPath,{CRABBY_ADMIN_ENABLED:"true",CRABBY_ADMIN_TOKEN:n,...this.getHostWatchdogEnv(),CRABBY_BACKEND_RELOADER_PARENT:cs(r),VAULT_PATH:this.getVaultBasePath(),HOST:be,PORT:String(s.port),PROMPTS_DIR:this.layout.promptsDir,PERSONAS_DIR:this.layout.personasDir}),this.writeState({mode:e.mode,version:e.version,platform:process.platform,executablePath:e.command,port:s.port,pid:s.pid??void 0,startedAt:new Date().toISOString()}),this.statusDetail="Backend already running; reusing existing managed process.",this.appendRuntimeLog(`reusing existing backend: ${s.backendUrl} pid=${s.pid??"unknown"}`),this.getStatus()}async stopExistingBackendWithoutChild(){this.child=null;let e=this.ensureAdminToken(),n=this.externalBackend??await this.findExistingManagedBackend(e);if(!n)return this.externalBackend=null,this.statusDetail="\u540E\u7AEF\u8FD0\u884C\u65F6\u5F53\u524D\u672A\u8FD0\u884C\u3002",this.getStatus();try{await os(n.backendUrl,e),await hi(n.backendUrl,as),this.appendRuntimeLog(`shutdown requested for existing backend: ${n.backendUrl}`)}catch(s){let r=s instanceof Error?s.message:String(s);if(this.appendRuntimeLog(`failed to stop existing backend ${n.backendUrl}: ${r}`),await Ot(n.backendUrl,e))return this.externalBackend=n,this.statusDetail=`Backend shutdown failed: ${r}`,this.getStatus()}return this.externalBackend=null,this.statusDetail="\u540E\u7AEF\u8FD0\u884C\u65F6\u5DF2\u505C\u6B62\u3002",this.getStatus()}async findExistingManagedBackend(e){let n=this.readState();for(let s of li([us(this.settings.backendUrl),n?.port??null,is])){let r=`http://${be}:${s}`;if(await Ot(r,e))return{backendUrl:r,port:s,pid:n?.port===s?n.pid??null:null}}return null}readDevRuntimeConfig(){if(!(0,z.existsSync)(this.layout.devRuntimePath))return null;try{let e=JSON.parse(ds((0,z.readFileSync)(this.layout.devRuntimePath,"utf8")));if(e?.mode==="dev"&&typeof e.backendCommand=="string"&&Array.isArray(e.backendArgs)&&typeof e.backendCwd=="string")return{mode:"dev",repoRoot:(0,N.resolve)(String(e.repoRoot??"")),backendCommand:(0,N.resolve)(e.backendCommand),backendArgs:e.backendArgs.map(String),backendCwd:(0,N.resolve)(e.backendCwd)}}catch{return null}return null}readState(){if(!(0,z.existsSync)(this.layout.statePath))return null;try{return JSON.parse(ds((0,z.readFileSync)(this.layout.statePath,"utf8")))}catch{return null}}writeState(e){(0,z.mkdirSync)((0,N.dirname)(this.layout.statePath),{recursive:!0});let n=this.normalizeRuntimeStateForWrite(e);(0,z.writeFileSync)(this.layout.statePath,`${JSON.stringify(n,null,2)}
-`,"utf8")}normalizeRuntimeStateForWrite(e){return e.mode!=="production"||!e.executablePath?e:{...e,executablePath:ss(this.layout.runtimeDir,e.executablePath)}}migrateLegacyRuntimeData(){let e=this.layout.pluginDir,n=[{label:"config",legacyPath:(0,N.join)(e,"config"),targetPath:this.layout.configDir},{label:"data",legacyPath:(0,N.join)(e,"data"),targetPath:this.layout.dataDir},{label:"logs",legacyPath:(0,N.join)(e,"logs"),targetPath:this.layout.logsDir}];for(let s of Zn(n))s.status!=="missing"&&this.appendRuntimeLog([`legacy ${s.label} migration: ${s.status}`,`from=${s.legacyPath}`,`to=${s.targetPath}`,`moved=${s.movedEntries}`,`skipped=${s.skippedEntries}`,`message=${s.message}`].join(" "))}appendRuntimeLog(e){try{(0,z.mkdirSync)(this.layout.logsDir,{recursive:!0}),(0,z.appendFileSync)((0,N.join)(this.layout.logsDir,"runtime-manager.log"),`${new Date().toISOString()} ${e}
-`,"utf8")}catch{}}getHostWatchdogEnv(){return{CRABBY_HOST_HEARTBEAT_FILE:this.layout.heartbeatPath,CRABBY_HOST_HEARTBEAT_TIMEOUT_SECONDS:String(oi),CRABBY_HOST_PID:String(process.pid)}}startHostHeartbeat(){this.heartbeatTimer||(this.writeHostHeartbeat(),this.heartbeatTimer=setInterval(()=>this.writeHostHeartbeat(),ai),this.heartbeatTimer.unref?.())}stopHostHeartbeat(){this.heartbeatTimer&&(clearInterval(this.heartbeatTimer),this.heartbeatTimer=null)}writeHostHeartbeat(){try{(0,z.mkdirSync)((0,N.dirname)(this.layout.heartbeatPath),{recursive:!0}),(0,z.writeFileSync)(this.layout.heartbeatPath,`${JSON.stringify({pid:process.pid,updatedAt:new Date().toISOString(),pluginDir:this.layout.pluginDir},null,2)}
-`,"utf8")}catch(e){let n=e instanceof Error?e.message:String(e);this.appendRuntimeLog(`failed to write host heartbeat: ${n}`)}}ensureAdminToken(){let e=ge(this.layout.envPath,"CRABBY_ADMIN_ENABLED"),n=ge(this.layout.envPath,"CRABBY_ADMIN_TOKEN"),s=n?.trim()||(0,gt.randomBytes)(24).toString("hex");return(!He(e)||!n)&&Be(this.layout.envPath,{CRABBY_ADMIN_ENABLED:"true",CRABBY_ADMIN_TOKEN:s}),s}getVaultBasePath(){let e=this.app.vault.adapter;return e instanceof ze.FileSystemAdapter?e.getBasePath():""}};function li(t){let e=[],n=new Set;for(let s of t)typeof s!="number"||!Number.isInteger(s)||s<=0||s>65535||n.has(s)||(n.add(s),e.push(s));return e}async function Ot(t,e){return!await Ut(`${t}/health`,{},Nt)||!await Ut(`${t}/admin/mcp/status`,{headers:{[et]:e}},Nt)?!1:Ut(`${t}/admin/profiles`,{headers:{[et]:e}},Nt)}async function Ut(t,e,n){let s=new AbortController,r=setTimeout(()=>s.abort(),n);try{return(await fetch(t,{...e,signal:s.signal})).ok}catch{return!1}finally{clearTimeout(r)}}async function os(t,e){let n=await fetch(`${t}/admin/shutdown`,{method:"POST",headers:{[et]:e}});if(!n.ok)throw new Error(`Backend shutdown failed: HTTP ${n.status}`)}async function ci(t){for(let e=t;e<t+100;e+=1)if(await di(e))return e;throw new Error(`\u4ECE\u7AEF\u53E3 ${t} \u5F00\u59CB\u6CA1\u6709\u627E\u5230\u53EF\u7528\u7684\u540E\u7AEF\u7AEF\u53E3\u3002`)}function di(t){return new Promise(e=>{let n=(0,ps.createServer)();n.once("error",()=>e(!1)),n.once("listening",()=>{n.close(()=>e(!0))}),n.listen(t,be)})}function ls(t,e,n){let s=[...t];return Ft(s,"--host")||s.push("--host",e),Ft(s,"--port")||s.push("--port",String(n)),s}function Ft(t,e){return t.some(n=>n===e||n.startsWith(`${e}=`))}function cs(t){return Ft(t,"--reload")?"true":"false"}function ui(t){return Object.keys(t).find(e=>e.toLowerCase()==="path")??"PATH"}function pi(t){let e=process.platform==="win32"?";":":",n=new Set((t??"").split(e).map(s=>s.trim()).filter(Boolean));for(let s of gi())(0,z.existsSync)(s)&&n.add(s);return Array.from(n).join(e)}function gi(){if(process.platform!=="win32")return[];let t=process.env.USERPROFILE?.trim(),e=process.env.LOCALAPPDATA?.trim(),n=process.env.APPDATA?.trim();return[t?(0,N.join)(t,".local","bin"):"",e?(0,N.join)(e,"Microsoft","WindowsApps"):"",n?(0,N.join)(n,"Python","Python312","Scripts"):"",e?(0,N.join)(e,"Programs","Python","Python312","Scripts"):""].filter(Boolean)}function ds(t){return t.charCodeAt(0)===65279?t.slice(1):t}async function mi(t,e){let n=Date.now(),s=new W(t);for(;Date.now()-n<e;){if(await s.health())return;await ms(250)}throw new Error(`\u540E\u7AEF\u5728 ${e}ms \u5185\u6CA1\u6709\u901A\u8FC7\u5065\u5EB7\u68C0\u67E5\u3002`)}async function hi(t,e){let n=Date.now(),s=new W(t);for(;Date.now()-n<e;){if(!await s.health())return;await ms(250)}throw new Error(`Backend did not stop within ${e}ms.`)}function gs(t,e){return t.exitCode!==null||t.signalCode!==null?Promise.resolve():new Promise((n,s)=>{let r=setTimeout(()=>s(new Error("\u540E\u7AEF\u5173\u95ED\u8D85\u65F6\u3002")),e);t.once("exit",()=>{clearTimeout(r),n()})})}async function fi(t){if(!(t.exitCode!==null||t.signalCode!==null||t.killed)){if(process.platform==="win32"&&t.pid){await new Promise(e=>{(0,pt.execFile)("taskkill.exe",["/PID",String(t.pid),"/T","/F"],{windowsHide:!0},()=>e())});return}t.kill("SIGTERM");try{await gs(t,1e3)}catch{t.killed||t.kill("SIGKILL")}}}function ms(t){return new Promise(e=>setTimeout(e,t))}function us(t){try{let e=new URL(t);return e.port?Number.parseInt(e.port,10):e.protocol==="https:"?443:80}catch{return null}}var vi=new Set(["backendUrl","backendEnvPath","backendMcpConfigPath","runtimeManifestUrl"]);async function bs(t,e){switch(e.action){case"inspect":return{ok:!0,message:"Loaded current Crabby plugin settings.",settings:ne(t)};case"set_runtime_value":return await ki(t,e);case"save_profile":return await yi(t,e);case"delete_profile":return await xi(t,e);case"activate_profile":return await Pi(t,e);case"sync_profiles_from_backend":return await wi(t);case"sync_backend_vault_path":return await Si(t);default:return{ok:!1,message:`Unknown crabby_settings action: ${String(e.action??"")}`,settings:ne(t)}}}function ks(t){if(!t||typeof t!="object")return{action:"inspect"};let e=t;return{action:bi(e.action),key:te(e.key),value:te(e.value),profile_id:te(e.profile_id),profile:e.profile,activate:!!e.activate}}function bi(t){let e=te(t);switch(e){case"inspect":case"set_runtime_value":case"save_profile":case"delete_profile":case"activate_profile":case"sync_profiles_from_backend":case"sync_backend_vault_path":return e;default:return"inspect"}}async function ki(t,e){let n=te(e.key);if(!vi.has(n))return{ok:!1,message:"set_runtime_value only supports backendUrl, backendEnvPath, backendMcpConfigPath, or runtimeManifestUrl.",settings:ne(t)};let s=_i(n,e.value);return t.settings[n]=s,await t.saveSettings(),n==="backendUrl"&&window.setTimeout(()=>t.restartClientToolBridge(),0),{ok:!0,message:`Updated plugin setting ${n}.`,changed:[n],settings:ne(t)}}async function yi(t,e){let n=Ti(e.profile);if(!n)return{ok:!1,message:"save_profile requires a complete profile payload.",settings:ne(t)};let s=new W(t.settings.backendUrl),r=await Ee(t.settings,n,s,!!e.activate);return r.ok?(await t.saveSettings(),{ok:!0,message:r.message,changed:e.activate?["llmProfiles","activeProfileId"]:["llmProfiles"],settings:ne(t)}):{ok:!1,message:r.message,settings:ne(t)}}async function xi(t,e){let n=te(e.profile_id);if(!n)return{ok:!1,message:"delete_profile requires profile_id.",settings:ne(t)};let s=new W(t.settings.backendUrl),r=await st(t.settings,n,s);return r.ok?(await t.saveSettings(),{ok:!0,message:r.message,changed:["llmProfiles","activeProfileId"],settings:ne(t)}):{ok:!1,message:r.message,settings:ne(t)}}async function Pi(t,e){let n=te(e.profile_id);if(!n)return{ok:!1,message:"activate_profile requires profile_id.",settings:ne(t)};let s=new W(t.settings.backendUrl),r=await $e(t.settings,n,s);return r.ok?(await t.saveSettings(),{ok:!0,message:r.message,changed:["activeProfileId","llmProfiles"],settings:ne(t)}):{ok:!1,message:r.message,settings:ne(t)}}async function wi(t){let e=new W(t.settings.backendUrl),n=await nt(t.settings,e);return n.ok?(await t.saveSettings(),{ok:!0,message:n.message,changed:["llmProfiles","activeProfileId"],settings:ne(t)}):{ok:!1,message:n.message,settings:ne(t)}}async function Si(t){let e=await t.ensureBackendVaultPathSynced();return{ok:e.ok,message:e.message,changed:e.changed?["backend_vault_path"]:[],settings:ne(t)}}function ne(t){let e="",n=null;try{let s=Ht(t.app);e=(0,mt.join)(s.pluginDir,"data.json")}catch{e=""}try{n=t.runtimeManager?.getStatus()??null}catch{n=null}return{pluginDataPath:e,currentVaultPath:t.getCurrentVaultPath(),backendUrl:t.settings.backendUrl,backendEnvPath:t.settings.backendEnvPath,backendMcpConfigPath:t.settings.backendMcpConfigPath,runtimeManifestUrl:t.settings.runtimeManifestUrl,activeProfileId:t.settings.activeProfileId,llmProfiles:t.settings.llmProfiles.map(Ei),runtimeStatus:n,backendEnvPathExists:fs(t.settings.backendEnvPath),backendMcpConfigPathExists:fs(t.settings.backendMcpConfigPath)}}function Ei(t){return{id:t.id,name:t.name,provider:t.provider,model:t.model,baseUrl:t.baseUrl,supportsVision:t.supportsVision,thinkingMode:t.thinkingMode,thinkingEffort:t.thinkingEffort,thinkingBudgetTokens:t.thinkingBudgetTokens,reasoningSplit:t.reasoningSplit,hasApiKey:t.apiKey.trim().length>0,apiKeyMasked:Ci(t.apiKey)}}function Ti(t){if(!t||typeof t!="object")return null;let e=t,n=te(e.id),s=te(e.name),r=te(e.model);return!n||!s||!r?null:{id:n,name:s,provider:Xe(e.provider),model:r,baseUrl:te(e.baseUrl),apiKey:te(e.apiKey),supportsVision:hs(e.supportsVision),thinkingMode:te(e.thinkingMode),thinkingEffort:te(e.thinkingEffort),thinkingBudgetTokens:te(e.thinkingBudgetTokens,"1024"),reasoningSplit:hs(e.reasoningSplit)}}function te(t,e=""){return typeof t=="string"?t.trim():e}function _i(t,e){let n=te(e);return n?t==="backendEnvPath"||t==="backendMcpConfigPath"?(0,mt.resolve)(n):n:""}function hs(t){if(typeof t=="boolean")return t;if(typeof t=="string"){let e=t.trim().toLowerCase();if(["1","true","yes","on"].includes(e))return!0;if(["0","false","no","off",""].includes(e))return!1}return typeof t=="number"?t!==0:!1}function Ci(t){let e=t.trim();return e?e.length<=6?"*".repeat(e.length):`${e.slice(0,4)}...${e.slice(-2)}`:""}function fs(t){if(!t)return!1;try{return(0,vs.existsSync)(t)}catch{return!1}}var Li=new Set(["file","path","content","tag","line","block","section","task","task-todo","task-done","match-case","ignore-case"]);function Ps(t,e){let n=e.query.trim(),s=xs(e.max_results??20,1,100),r=xs(e.context_chars??160,0,1e3),i=e.sort??"score";if(!n)return{query:n,results:[],total_matches:0,truncated:!1};let a=ws(n),d=[];for(let w of t){let S=_e(a,w,{matchCase:!1});if(!S.ok)continue;let x=S.matches[0]??{field:"content",text:w.content};d.push({path:w.path,ext:w.ext,score:Math.round(S.score*100)/100,matches:S.matches.slice(0,8),snippet:$i(w,x,r),field:x.field,line:x.line,tags:Wt(w.tags),aliases:Wt(w.aliases),mtime:w.mtime,truncated:S.matches.length>8})}Fi(d,i);let o=d.length,c=d.slice(0,s);return{query:n,results:c,total_matches:o,truncated:o>c.length}}function ws(t){let e=Mi(t);return new qt(e).parseExpression()}function Mi(t){let e=[],n=0;for(;n<t.length;){let s=t[n];if(/\s/.test(s)){n+=1;continue}if(s==="("){e.push({type:"lparen",value:s}),n+=1;continue}if(s===")"){e.push({type:"rparen",value:s}),n+=1;continue}if(s==="-"){e.push({type:"not",value:s}),n+=1;continue}if(s==='"'){let d=Hi(t,n);e.push({type:"phrase",value:d.value}),n=d.next;continue}if(s==="/"){let d=Ki(t,n);e.push({type:"regex",value:d.value,flags:d.flags}),n=d.next;continue}if(s==="["){let d=zi(t,n);e.push({type:"property",value:d.value}),n=d.next;continue}let r=Vi(t,n);if(r){e.push({type:"field",value:r.value}),n=r.next;continue}let i=ji(t,n),a=i.value;e.push({type:a==="OR"?"or":"term",value:a}),n=i.next}return e}var qt=class{constructor(e){this.tokens=e;this.index=0}parseExpression(){return this.parseOr()}parseOr(){let e=[this.parseAnd()];for(;this.match("or");)e.push(this.parseAnd());return e.length===1?e[0]:{type:"or",children:e}}parseAnd(){let e=[];for(;!this.isAtEnd()&&!this.check("rparen")&&!this.check("or");)e.push(this.parseUnary());return e.length===0?{type:"empty"}:e.length===1?e[0]:{type:"and",children:e}}parseUnary(){return this.match("not")?{type:"not",child:this.parseUnary()}:this.parsePrimary()}parsePrimary(){let e=this.advance();if(!e)return{type:"empty"};if(e.type==="lparen"){let n=this.parseExpression();return this.match("rparen"),n}return e.type==="field"?{type:"field",field:e.value,child:this.parseUnary()}:e.type==="property"?{type:"property",raw:e.value}:e.type==="phrase"?{type:"term",value:e.value,exact:!0}:e.type==="regex"?{type:"regex",pattern:e.value,flags:e.flags??""}:e.type==="term"?{type:"term",value:e.value,exact:!1}:{type:"empty"}}match(e){return this.check(e)?(this.index+=1,!0):!1}check(e){return this.tokens[this.index]?.type===e}advance(){return this.tokens[this.index++]}isAtEnd(){return this.index>=this.tokens.length}};function _e(t,e,n){switch(t.type){case"empty":return{ok:!0,matches:[],score:0};case"term":return Ri(t.value,e,n,t.exact);case"regex":return Di(t.pattern,t.flags,e,n);case"not":return{ok:!_e(t.child,e,n).ok,matches:[],score:0};case"and":{let s=[],r=0;for(let i of t.children){let a=_e(i,e,n);if(!a.ok)return{ok:!1,matches:[],score:0};s.push(...a.matches),r+=a.score}return{ok:!0,matches:s,score:r}}case"or":{let s=[],r=0;for(let i of t.children){let a=_e(i,e,n);a.ok&&(s.push(...a.matches),r+=a.score)}return{ok:s.length>0||r>0,matches:s,score:r}}case"field":return Ai(t.field,t.child,e,n);case"property":return Bi(t.raw,e,n)}}function Ai(t,e,n,s){return t==="match-case"?_e(e,n,{...s,matchCase:!0}):t==="ignore-case"?_e(e,n,{...s,matchCase:!1}):t==="file"?Ue(e,`${n.name}
-${Ji(n.name)}`,"file",n,s,1.4):t==="path"?Ue(e,n.path,"path",n,s,1.2):t==="content"?Ue(e,n.content,"content",n,s,1):t==="tag"?Ii(e,n,s):t==="line"?Oe(e,Ni(n),"line",n,s,1.1):t==="block"?Oe(e,Oi(n),"block",n,s,1.1):t==="section"?Oe(e,Ui(n),"section",n,s,1.2):t==="task"?Oe(e,jt(n),"task",n,s,1.3):t==="task-todo"?Oe(e,jt(n).filter(r=>r.status==="todo"),"task-todo",n,s,1.4):t==="task-done"?Oe(e,jt(n).filter(r=>r.status==="done"),"task-done",n,s,1.4):_e(e,n,s)}function Ri(t,e,n,s){let r=Kt(e.content,t,"content",n,s);r.forEach(o=>{o.start!==void 0&&(o.line=Ts(e.content,o.start))});let i=Kt(e.name,t,"file",n,s),a=Kt(e.path,t,"path",n,s),d=[...i,...a,...r];return{ok:d.length>0,matches:d,score:i.length*2+a.length*1.2+r.length}}function Di(t,e,n,s){let r=zt(n.content,t,e,"content",s);r.forEach(o=>{o.start!==void 0&&(o.line=Ts(n.content,o.start))});let i=zt(n.path,t,e,"path",s),a=zt(n.name,t,e,"file",s),d=[...a,...i,...r];return{ok:d.length>0,matches:d,score:a.length*2+i.length*1.2+r.length}}function Ue(t,e,n,s,r,i,a){let d={...s,content:e,path:"",name:"",tags:[],aliases:[],properties:{},sections:[],blocks:[],tasks:[]},o=_e(t,d,r);return o.ok?{ok:!0,matches:o.matches.map(c=>({...c,field:n,line:a??c.line})),score:o.score*i}:o}function Oe(t,e,n,s,r,i){let a=[],d=0;for(let o of e){let c=Ue(t,o.text,n,s,r,i,o.line);c.ok&&(a.push(...c.matches),d+=c.score)}return{ok:a.length>0,matches:a,score:d}}function Ii(t,e,n){let s=Wt(e.tags);if(t.type==="term"){let r=Es(t.value),i=s.filter(a=>Gi(a,r,n.matchCase)).map(a=>({field:"tag",text:a}));return{ok:i.length>0,matches:i,score:i.length*2}}return Ue(t,s.join(`
-`),"tag",e,n,2)}function Bi(t,e,n){let s=qi(t),r=e.properties??{},i=s.key,a=Wi(r,i);if(!(a!==void 0))return{ok:!1,matches:[],score:0};if(s.value===null)return{ok:!0,matches:[{field:"property",text:i}],score:2};let o=Ss(a);if(s.value.trim().toLowerCase()==="null"){let x=o.trim()==="";return{ok:x,matches:x?[{field:"property",text:`${i}: null`}]:[],score:x?2:0}}let c=Yi(a,s.value);if(c!==null)return{ok:c,matches:c?[{field:"property",text:`${i}: ${o}`}]:[],score:c?2:0};let w=ws(s.value),S=Ue(w,o,"property",e,n,2);return S.ok?{ok:!0,matches:S.matches.map(x=>({...x,text:`${i}: ${x.text}`})),score:S.score}:S}function Kt(t,e,n,s,r){let i=r?e:e.trim();if(!i)return[];let a=s.matchCase?t:t.toLowerCase(),d=s.matchCase?i:i.toLowerCase(),o=[],c=a.indexOf(d);for(;c!==-1&&o.length<20;){let w=c+d.length;o.push({field:n,text:t.slice(c,w),start:c,end:w}),c=a.indexOf(d,Math.max(w,c+1))}return o}function zt(t,e,n,s,r){try{let i=new Set(n.split(""));i.add("g"),r.matchCase||i.add("i");let a=new RegExp(e,Array.from(i).join("")),d=[],o;for(;(o=a.exec(t))&&d.length<20;){let c=o[0];d.push({field:s,text:c,start:o.index,end:o.index+c.length}),c.length===0&&(a.lastIndex+=1)}return d}catch{return[]}}function $i(t,e,n){if(n===0)return"";if(e.line!==void 0){let s=t.content.split(/\r?\n/)[e.line-1];if(s)return Vt(s,n)}if(e.start!==void 0&&e.end!==void 0&&e.field==="content"){let s=Math.max(0,e.start-n),r=Math.min(t.content.length,e.end+n);return Vt(t.content.slice(s,r).replace(/\s+/g," "),n*2)}return Vt(e.text||t.path,n*2)}function Ni(t){return t.content.split(/\r?\n/).map((e,n)=>({text:e,line:n+1}))}function Oi(t){return t.blocks?.length?t.blocks:t.content.split(/\n\s*\n/g).map(e=>e.trim()).filter(Boolean).map(e=>({text:e}))}function Ui(t){return t.sections?.length?t.sections:[{text:t.content,line:1}]}function jt(t){if(t.tasks?.length)return t.tasks;let e=[];return t.content.split(/\r?\n/).forEach((n,s)=>{let r=/^\s*[-*]\s+\[([^\]])\]\s+(.*)$/.exec(n);r&&e.push({text:n,line:s+1,status:r[1]===" "?"todo":"done"})}),e}function Fi(t,e){t.sort((n,s)=>e==="mtime_desc"?s.mtime-n.mtime||n.path.localeCompare(s.path):e==="mtime_asc"?n.mtime-s.mtime||n.path.localeCompare(s.path):e==="path"?n.path.localeCompare(s.path):s.score-n.score||s.mtime-n.mtime||n.path.localeCompare(s.path))}function Hi(t,e){let n="",s=e+1;for(;s<t.length;){let r=t[s];if(r==="\\"&&s+1<t.length){n+=t[s+1],s+=2;continue}if(r==='"')return{value:n,next:s+1};n+=r,s+=1}return{value:n,next:s}}function Ki(t,e){let n="",s=e+1;for(;s<t.length;){let r=t[s];if(r==="\\"&&s+1<t.length){n+=r+t[s+1],s+=2;continue}if(r==="/"){s+=1;let i="";for(;s<t.length&&/[a-z]/i.test(t[s]);)i+=t[s],s+=1;return{value:n,flags:i,next:s}}n+=r,s+=1}return{value:n,flags:"",next:s}}function zi(t,e){let n="",s=e+1;for(;s<t.length&&t[s]!=="]";)n+=t[s],s+=1;return{value:n,next:Math.min(s+1,t.length)}}function ji(t,e){let n=e;for(;n<t.length&&!/\s/.test(t[n])&&!/[()]/.test(t[n]);)n+=1;return{value:t.slice(e,n),next:n}}function Vi(t,e){let n=/^[A-Za-z-]+:/.exec(t.slice(e));if(!n)return null;let s=n[0].slice(0,-1);return Li.has(s)?{value:s,next:e+n[0].length}:null}function qi(t){let e=t.indexOf(":");return e===-1?{key:t.trim(),value:null}:{key:t.slice(0,e).trim(),value:t.slice(e+1).trim()}}function Wi(t,e){if(Object.prototype.hasOwnProperty.call(t,e))return t[e];let n=e.toLowerCase(),s=Object.keys(t).find(r=>r.toLowerCase()===n);return s?t[s]:void 0}function Ss(t){return t==null?"":Array.isArray(t)?t.map(Ss).join(`
-`):typeof t=="object"?JSON.stringify(t):String(t)}function Yi(t,e){let n=/^(<=|>=|<|>)(.+)$/.exec(e.trim());if(!n)return null;let s=ys(t),r=ys(n[2].trim());if(s===null||r===null)return!1;switch(n[1]){case"<":return s<r;case">":return s>r;case"<=":return s<=r;case">=":return s>=r;default:return!1}}function ys(t){if(typeof t=="number")return t;if(t instanceof Date)return t.getTime();if(typeof t=="string"){let e=Number(t);if(!Number.isNaN(e)&&t.trim()!=="")return e;let n=Date.parse(t);return Number.isNaN(n)?t:n}return typeof t=="boolean"?t?1:0:null}function Wt(t){return Array.isArray(t)?t.map(e=>String(e).trim()).filter(Boolean):[]}function Es(t){return t.trim().replace(/^#/,"")}function Gi(t,e,n){let s=Es(t),r=n?s:s.toLowerCase(),i=n?e:e.toLowerCase();return r===i||r.startsWith(`${i}/`)}function Ji(t){return t.replace(/\.[^.]+$/,"")}function Ts(t,e){return t.slice(0,e).split(/\r?\n/).length}function Vt(t,e){let n=t.replace(/\s+/g," ").trim();return n.length<=e?n:`${n.slice(0,Math.max(0,e-1)).trim()}...`}function xs(t,e,n){return Number.isFinite(t)?Math.max(e,Math.min(n,Math.trunc(t))):e}var Xi=new Set([".obsidian",".crabby",".Crabby",".LifeAssistantAgent",".git","node_modules",".venv"]);async function _s(t,e){let n=await Zi(t);return Ps(n,e)}async function Zi(t){let e=t.vault.getMarkdownFiles(),n=t.vault.getFiles().filter(i=>ht(i)==="canvas"),s=[...e,...n].filter(i=>!la(i.path)),r=[];for(let i of s)try{let a=await t.vault.cachedRead(i);ht(i)==="canvas"?r.push(ea(i,a)):r.push(Qi(i,a,t.metadataCache.getFileCache(i)))}catch(a){console.warn("[Crabby] Failed to read searchable file",i.path,a)}return r}function Qi(t,e,n){let s={...n?.frontmatter??{}},r=aa(s.aliases),i=ia(n,s);return r.length>0&&(s.aliases=r),i.length>0&&(s.tags=i),{path:t.path,name:t.name,ext:ht(t),content:e,mtime:t.stat.mtime,ctime:t.stat.ctime,tags:i,aliases:r,properties:s,sections:na(e,n),blocks:sa(e,n),tasks:ra(e,n)}}function ea(t,e){let n=ta(e);return{path:t.path,name:t.name,ext:ht(t),content:n.content,mtime:t.stat.mtime,ctime:t.stat.ctime,tags:[],aliases:[],properties:{type:"canvas"},sections:n.blocks,blocks:n.blocks,tasks:[]}}function ta(t){try{let n=(JSON.parse(t).nodes??[]).map(s=>{let r=String(s.type??"");return r==="text"?String(s.text??"").trim():r==="file"?String(s.file??"").trim():r==="link"?String(s.url??"").trim():r==="group"?String(s.label??"").trim():""}).filter(Boolean).map(s=>({text:s}));return{content:n.map(s=>s.text).join(`
-
-`),blocks:n}}catch{return{content:t,blocks:t.split(/\n\s*\n/g).map(e=>e.trim()).filter(Boolean).map(e=>({text:e}))}}}function na(t,e){let n=e?.headings??[];if(!n.length)return[{text:t,line:1}];let s=t.split(/\r?\n/);return n.map((r,i)=>{let a=r.position.start.line,d=n[i+1],o=d?d.position.start.line:s.length;return{text:s.slice(a,o).join(`
-`),line:a+1}})}function sa(t,e){let n=e?.sections??[],s=t.split(/\r?\n/);return n.length?n.filter(r=>r.type!=="yaml").map(r=>{let i=r.position.start.line,a=r.position.end.line+1;return{text:s.slice(i,a).join(`
-`),line:i+1}}).filter(r=>r.text.trim().length>0):t.split(/\n\s*\n/g).map(r=>r.trim()).filter(Boolean).map(r=>({text:r}))}function ra(t,e){let n=e?.listItems??[],s=t.split(/\r?\n/);return n.filter(r=>r.task!==void 0).map(r=>{let i=r.position.start.line;return{text:s[i]??"",line:i+1,status:r.task===" "?"todo":"done"}})}function ia(t,e){let n=new Set;for(let s of t?.tags??[])s.tag&&n.add(s.tag);for(let s of oa(e.tags))n.add(s.startsWith("#")?s:`#${s}`);return Array.from(n).sort()}function aa(t){return Array.isArray(t)?t.map(e=>String(e).trim()).filter(Boolean):typeof t=="string"&&t.trim()?[t.trim()]:[]}function oa(t){return Array.isArray(t)?t.map(e=>String(e).trim()).filter(Boolean):typeof t=="string"&&t.trim()?t.split(/[,\s]+/).map(e=>e.trim()).filter(Boolean):[]}function ht(t){return t.extension||t.path.split(".").pop()?.toLowerCase()||""}function la(t){return t.split("/").some(e=>Xi.has(e))}var ft=class{constructor(e,n){this.plugin=e;this.getBackendUrl=n;this.ws=null;this.reconnectTimer=null;this.stopped=!0}start(){this.stopped=!1,this.connect()}stop(){this.stopped=!0,this.reconnectTimer!==null&&(window.clearTimeout(this.reconnectTimer),this.reconnectTimer=null),this.ws&&(this.ws.close(),this.ws=null)}connect(){if(this.stopped||this.ws)return;let e=this.getBackendUrl().trim();if(!e){this.scheduleReconnect();return}let n=e.replace(/^http/i,"ws").replace(/\/$/,""),s=new WebSocket(`${n}/client-tools/obsidian`);this.ws=s,s.onmessage=r=>{this.handleMessage(r.data)},s.onclose=()=>{this.ws===s&&(this.ws=null),this.scheduleReconnect()},s.onerror=()=>{s.close()}}scheduleReconnect(){this.stopped||this.reconnectTimer!==null||(this.reconnectTimer=window.setTimeout(()=>{this.reconnectTimer=null,this.connect()},3e3))}async handleMessage(e){let n;try{n=JSON.parse(e)}catch{return}if(!(n.type!=="client_tool_request"||!n.request_id))try{let s;if(n.tool==="obsidian_search")s=await _s(this.plugin.app,ca(n.input));else if(n.tool==="crabby_settings")s=await bs(this.plugin,ks(n.input));else throw new Error(`Unknown client tool: ${n.tool}`);this.send({type:"client_tool_result",request_id:n.request_id,result:s})}catch(s){let r=s instanceof Error?s.message:String(s);this.send({type:"client_tool_error",request_id:n.request_id,error:r})}}send(e){!this.ws||this.ws.readyState!==WebSocket.OPEN||this.ws.send(JSON.stringify(e))}};function ca(t){if(!t||typeof t!="object")return{query:""};let e=t;return{query:String(e.query??""),max_results:typeof e.max_results=="number"?e.max_results:void 0,context_chars:typeof e.context_chars=="number"?e.context_chars:void 0,sort:e.sort==="mtime_desc"||e.sort==="mtime_asc"||e.sort==="path"?e.sort:"score"}}var Yt=require("node:path");function Gt(t){return typeof t=="object"&&t!==null}function se(t,e=""){return typeof t=="string"?t.trim():e}function da(t){return Xe(t)}function Cs(t){if(typeof t=="boolean")return t;if(typeof t=="string"){let e=t.trim().toLowerCase();if(["1","true","yes","on"].includes(e))return!0;if(["0","false","no","off",""].includes(e))return!1}return typeof t=="number"?t!==0:!1}function ua(t){if(!Gt(t))return null;let e=se(t.id),n=se(t.name),s=se(t.model);return!e||!n||!s?null:{id:e,name:n,provider:da(t.provider),model:s,baseUrl:se(t.baseUrl),apiKey:se(t.apiKey),supportsVision:Cs(t.supportsVision),thinkingMode:se(t.thinkingMode),thinkingEffort:se(t.thinkingEffort),thinkingBudgetTokens:se(t.thinkingBudgetTokens,"1024"),reasoningSplit:Cs(t.reasoningSplit)}}function pa(t,e){let n=se(t.backendEnvPath,e.backendEnvPath);if(n)return(0,Yt.resolve)(n);let s=se(t.backendPath);return s?(0,Yt.resolve)(s,".env"):""}function Ls(t){return Gt(t)?!se(t.backendEnvPath)&&!!se(t.backendPath):!1}function Jt(t,e){let n=Gt(e)?e:{},s=pa(n,t);return{...t,backendUrl:se(n.backendUrl,t.backendUrl),backendEnvPath:s,backendMcpConfigPath:se(n.backendMcpConfigPath,t.backendMcpConfigPath),runtimeManifestUrl:se(n.runtimeManifestUrl,t.runtimeManifestUrl),backendPath:"",llmProfiles:Array.isArray(n.llmProfiles)?n.llmProfiles.map(r=>ua(r)).filter(r=>r!==null):t.llmProfiles.map(r=>({...r})),activeProfileId:se(n.activeProfileId,t.activeProfileId)}}var B=require("obsidian");var oe=require("node:fs"),ue=require("node:path");var Ms="CRABBY_ADMIN_ENABLED",As="CRABBY_ADMIN_TOKEN";function je(t){let e=Se(t),n=t.backendMcpConfigPath?.trim();if(n){let r=(0,ue.resolve)(n),i=e.ok&&e.envPath?(0,ue.join)((0,ue.dirname)(e.envPath),"server","data","mcp_servers.example.json"):(0,ue.join)((0,ue.dirname)(r),"mcp_servers.example.json");return{ok:!0,configPath:r,examplePath:i,derivedFromBackendEnvPath:!1,message:""}}if(!e.ok||!e.envPath)return{ok:!1,derivedFromBackendEnvPath:!1,message:"\u8BF7\u5148\u914D\u7F6E\u201C\u540E\u7AEF .env \u8DEF\u5F84\u201D\uFF0C\u518D\u7F16\u8F91 MCP \u914D\u7F6E\u6587\u4EF6\u3002"};let s=(0,ue.dirname)(e.envPath);return{ok:!0,configPath:(0,ue.join)(s,"server","data","mcp_servers.json"),examplePath:(0,ue.join)(s,"server","data","mcp_servers.example.json"),derivedFromBackendEnvPath:!0,message:"\u5F53\u524D\u8DEF\u5F84\u7531\u201C\u540E\u7AEF .env \u8DEF\u5F84\u201D\u81EA\u52A8\u63A8\u5BFC\u3002"}}function Xt(t){let e;try{e=JSON.parse(t)}catch(r){return{ok:!1,message:`JSON \u683C\u5F0F\u65E0\u6548\uFF1A${r instanceof Error?r.message:String(r)}`,serverNames:[]}}if(!vt(e))return{ok:!1,message:"MCP \u914D\u7F6E\u5FC5\u987B\u662F\u4E00\u4E2A JSON \u5BF9\u8C61\u3002",serverNames:[]};let n=e.mcpServers;if(!vt(n))return{ok:!1,message:"`mcpServers` \u5FC5\u987B\u662F\u4E00\u4E2A\u5BF9\u8C61\u3002",serverNames:[]};let s=Object.keys(n);for(let r of s){let i=n[r];if(!vt(i))return{ok:!1,message:`MCP \u670D\u52A1\u201C${r}\u201D\u5FC5\u987B\u662F\u4E00\u4E2A\u5BF9\u8C61\u3002`,serverNames:[]};let a=typeof i.transport=="string"&&i.transport.trim()?i.transport.trim():"stdio";if(a!=="stdio"&&a!=="sse")return{ok:!1,message:`MCP \u670D\u52A1\u201C${r}\u201D\u4F7F\u7528\u4E86\u4E0D\u652F\u6301\u7684 transport\uFF1A\u201C${a}\u201D\u3002`,serverNames:[]};if(a==="stdio"&&(typeof i.command!="string"||!i.command.trim()))return{ok:!1,message:`MCP \u670D\u52A1\u201C${r}\u201D\u9700\u8981\u586B\u5199\u975E\u7A7A\u7684 "command"\u3002`,serverNames:[]};if(a==="sse"&&(typeof i.url!="string"||!i.url.trim()))return{ok:!1,message:`MCP \u670D\u52A1\u201C${r}\u201D\u9700\u8981\u586B\u5199\u975E\u7A7A\u7684 "url"\u3002`,serverNames:[]};if(i.args!==void 0&&(!Array.isArray(i.args)||i.args.some(d=>typeof d!="string")))return{ok:!1,message:`MCP \u670D\u52A1\u201C${r}\u201D\u7684 "args" \u6570\u7EC4\u683C\u5F0F\u4E0D\u6B63\u786E\u3002`,serverNames:[]};if(i.env!==void 0&&!vt(i.env))return{ok:!1,message:`MCP \u670D\u52A1\u201C${r}\u201D\u7684 "env" \u5BF9\u8C61\u683C\u5F0F\u4E0D\u6B63\u786E\u3002`,serverNames:[]}}return{ok:!0,message:s.length>0?`\u914D\u7F6E\u6709\u6548\uFF0C\u5F53\u524D\u5171\u5B9A\u4E49 ${s.length} \u4E2A MCP \u670D\u52A1\uFF1A${s.join("\u3001")}\u3002`:"\u914D\u7F6E\u6709\u6548\uFF0C\u4F46\u5F53\u524D\u8FD8\u6CA1\u6709\u5B9A\u4E49\u4EFB\u4F55 MCP \u670D\u52A1\u3002",serverNames:s}}function Rs(t){let e=je(t);if(!e.ok||!e.configPath)return{ok:!1,message:e.message,exists:!1};if(!(0,oe.existsSync)(e.configPath))return{ok:!0,configPath:e.configPath,examplePath:e.examplePath,text:"",exists:!1,message:`MCP \u914D\u7F6E\u6587\u4EF6\u5C1A\u4E0D\u5B58\u5728\uFF1A${e.configPath}`};try{return{ok:!0,configPath:e.configPath,examplePath:e.examplePath,text:(0,oe.readFileSync)(e.configPath,"utf8"),exists:!0,message:`\u5DF2\u4ECE ${e.configPath} \u8F7D\u5165 MCP \u914D\u7F6E\u3002`}}catch(n){let s=n instanceof Error?n.message:String(n);return{ok:!1,configPath:e.configPath,examplePath:e.examplePath,exists:!0,message:`\u8BFB\u53D6 MCP \u914D\u7F6E\u5931\u8D25\uFF1A${s}`}}}function Ds(t){let e=je(t);if(!e.ok||!e.configPath||!e.examplePath)return{ok:!1,message:e.message};if(!(0,oe.existsSync)(e.examplePath))return{ok:!1,configPath:e.configPath,examplePath:e.examplePath,message:`\u7F3A\u5C11 MCP \u793A\u4F8B\u914D\u7F6E\u6587\u4EF6\uFF1A${e.examplePath}`};if((0,oe.existsSync)(e.configPath))return{ok:!1,configPath:e.configPath,examplePath:e.examplePath,message:`MCP \u914D\u7F6E\u6587\u4EF6\u5DF2\u5B58\u5728\uFF1A${e.configPath}`};try{return(0,oe.mkdirSync)((0,ue.dirname)(e.configPath),{recursive:!0}),(0,oe.copyFileSync)(e.examplePath,e.configPath),{ok:!0,configPath:e.configPath,examplePath:e.examplePath,text:(0,oe.readFileSync)(e.configPath,"utf8"),exists:!0,message:`\u5DF2\u6839\u636E\u793A\u4F8B\u6587\u4EF6\u521B\u5EFA MCP \u914D\u7F6E\uFF1A${e.configPath}`}}catch(n){let s=n instanceof Error?n.message:String(n);return{ok:!1,configPath:e.configPath,examplePath:e.examplePath,message:`\u521B\u5EFA MCP \u914D\u7F6E\u5931\u8D25\uFF1A${s}`}}}function Zt(t,e){let n=je(t);if(!n.ok||!n.configPath)return{ok:!1,message:n.message};let s=Xt(e);if(!s.ok)return{ok:!1,configPath:n.configPath,examplePath:n.examplePath,text:e,message:s.message};try{return(0,oe.mkdirSync)((0,ue.dirname)(n.configPath),{recursive:!0}),(0,oe.writeFileSync)(n.configPath,e,"utf8"),{ok:!0,configPath:n.configPath,examplePath:n.examplePath,text:e,exists:!0,message:`\u5DF2\u5C06 MCP \u914D\u7F6E\u4FDD\u5B58\u5230 ${n.configPath}\u3002`}}catch(r){let i=r instanceof Error?r.message:String(r);return{ok:!1,configPath:n.configPath,examplePath:n.examplePath,text:e,message:`\u4FDD\u5B58 MCP \u914D\u7F6E\u5931\u8D25\uFF1A${i}`}}}async function Is(t,e){let n=Ns(t);if(!n.ok||!n.token)return{ok:!1,message:n.message};let s=await e.reloadConfig(n.token);return ga(s)}async function Bs(t,e){let n=Ns(t);if(!n.ok||!n.token)return{ok:!1,httpStatus:null,message:n.message};let s=await e.getMcpStatus(n.token);return!s.ok||!s.data?{ok:!1,httpStatus:s.status,message:Os(s,"\u83B7\u53D6 MCP \u8FD0\u884C\u72B6\u6001")}:{ok:!0,status:s.data,httpStatus:s.status,message:s.data.connected_servers.length>0?`\u5F53\u524D\u5DF2\u8FDE\u63A5\u7684 MCP \u670D\u52A1\uFF1A${s.data.connected_servers.join("\u3001")}`:"\u5F53\u524D\u6CA1\u6709\u5DF2\u8FDE\u63A5\u7684 MCP \u670D\u52A1\u3002"}}function $s(t){let e=[`\u914D\u7F6E\u6587\u4EF6\uFF1A${t.config_path}`,`\u793A\u4F8B\u6587\u4EF6\uFF1A${t.example_config_path}`,`\u914D\u7F6E\u662F\u5426\u5B58\u5728\uFF1A${t.config_exists?"\u662F":"\u5426"}`,`\u5DF2\u8FDE\u63A5\u670D\u52A1\uFF1A${t.connected_servers.length>0?t.connected_servers.join("\u3001"):"\u65E0"}`],n=Object.entries(t.tools_by_server);if(n.length===0)e.push("\u670D\u52A1\u5DE5\u5177\u8BE6\u60C5\uFF1A\u65E0");else{e.push("\u670D\u52A1\u5DE5\u5177\u8BE6\u60C5\uFF1A");for(let[s,r]of n)e.push(`- ${s}\uFF1A${r.join("\u3001")}`)}return e.push(`\u6700\u8FD1\u4E00\u6B21\u91CD\u8F7D\uFF1A${t.last_reload_ok===void 0||t.last_reload_ok===null?"\u5C1A\u672A\u6267\u884C":t.last_reload_ok?"\u6210\u529F":"\u5931\u8D25"}`),t.last_reload_at&&e.push(`\u91CD\u8F7D\u65F6\u95F4\uFF1A${t.last_reload_at}`),t.last_reload_error&&e.push(`\u9519\u8BEF\u4FE1\u606F\uFF1A${t.last_reload_error}`),e.join(`
-`)}function Ns(t){let e=Se(t);if(!e.ok||!e.envPath)return{ok:!1,message:"\u8BF7\u5148\u914D\u7F6E\u201C\u540E\u7AEF .env \u8DEF\u5F84\u201D\uFF0C\u518D\u67E5\u770B MCP \u8FD0\u884C\u72B6\u6001\u6216\u6267\u884C\u91CD\u8F7D\u3002"};let n=ge(e.envPath,Ms);if(!He(n))return{ok:!1,envPath:e.envPath,message:`${e.envPath} \u4E2D\u672A\u5F00\u542F\u540E\u7AEF\u70ED\u91CD\u8F7D\u3002\u8BF7\u8BBE\u7F6E ${Ms}=true \u540E\u518D\u67E5\u770B MCP \u72B6\u6001\u6216\u6267\u884C\u91CD\u8F7D\u3002`};let s=ge(e.envPath,As)?.trim();return s?{ok:!0,token:s,envPath:e.envPath,message:""}:{ok:!1,envPath:e.envPath,message:`${e.envPath} \u4E2D\u7F3A\u5C11 ${As}\u3002\u56E0\u6B64\u65E0\u6CD5\u67E5\u8BE2 MCP \u72B6\u6001\u6216\u6267\u884C\u540E\u7AEF\u91CD\u8F7D\u3002`}}function ga(t){return t.ok?{ok:!0,reloadStatus:t.status,message:"\u5DF2\u4FDD\u5B58 MCP \u914D\u7F6E\uFF0C\u5E76\u5B8C\u6210\u540E\u7AEF\u70ED\u91CD\u8F7D\u3002"}:{ok:!1,reloadStatus:t.status,message:Os(t,"\u540E\u7AEF\u91CD\u8F7D")}}function Os(t,e){return t.status===null?`${e}\u5931\u8D25\uFF1A\u5F53\u524D\u540E\u7AEF\u4E0D\u53EF\u8BBF\u95EE\u3002`:t.detail?`${e}\u5931\u8D25\uFF08HTTP ${t.status}\uFF09\uFF1A${t.detail}`:`${e}\u5931\u8D25\uFF08HTTP ${t.status}\uFF09\u3002`}function vt(t){return!!t&&typeof t=="object"&&!Array.isArray(t)}function Qt(t){let e=Et(t.provider,t.model);e&&(typeof e.supportsVision=="boolean"&&(t.supportsVision=e.supportsVision),e.supportsThinking===!1&&(t.thinkingMode=""))}function ma(t){let e=de(t.provider),n=Et(t.provider,t.model),s={...e.capabilities};return n&&typeof n.supportsVision=="boolean"&&(s.vision=s.vision&&n.supportsVision),n&&typeof n.supportsThinking=="boolean"&&(s.thinking=s.thinking&&n.supportsThinking),{activePreset:e,capabilities:s,modelPreset:n}}var Ve={backendUrl:"http://127.0.0.1:8000",backendEnvPath:"",backendMcpConfigPath:"",runtimeManifestUrl:"",backendPath:"",llmProfiles:[],activeProfileId:""};function en(t,e,n=!1){let s=t.createEl("details");s.open=n,s.style.marginBottom="10px";let r=s.createEl("summary",{text:e});r.style.cursor="pointer",r.style.fontWeight="600",r.style.marginBottom="8px";let i=s.createDiv();return i.style.marginTop="10px",i}function ha(t){return t.last_reload_ok===void 0||t.last_reload_ok===null?"\u5C1A\u672A\u6267\u884C":t.last_reload_ok?"\u6210\u529F":"\u5931\u8D25"}function fa(t){let e=Object.values(t.tools_by_server).reduce((r,i)=>r+i.length,0),n=t.connected_servers.length>0?t.connected_servers.join("\u3001"):"\u65E0",s=[`\u8FDE\u63A5\u72B6\u6001\uFF1A${t.connected_servers.length>0?`\u5DF2\u8FDE\u63A5 ${t.connected_servers.length} \u4E2A\u670D\u52A1`:"\u5F53\u524D\u6CA1\u6709\u5DF2\u8FDE\u63A5\u670D\u52A1"}`,`\u670D\u52A1\u5217\u8868\uFF1A${n}`,`\u5DE5\u5177\u603B\u6570\uFF1A${e}`,`\u6700\u8FD1\u91CD\u8F7D\uFF1A${ha(t)}${t.last_reload_at?` \xB7 ${t.last_reload_at}`:""}`];return t.last_reload_error&&s.push(`\u9519\u8BEF\u4FE1\u606F\uFF1A${t.last_reload_error}`),s.join(`
-`)}var bt=class extends B.PluginSettingTab{constructor(n,s){super(n,s);this.plugin=s}display(){let{containerEl:n}=this;n.empty(),n.createEl("h2",{text:"Crabby \u8BBE\u7F6E"}),this.renderRuntimeSection(n),this.renderMcpSection(n),this.renderLlmSection(n)}renderRuntimeSection(n){n.createEl("h3",{text:"\u540E\u7AEF\u8FD0\u884C\u65F6"});let s=this.plugin.runtimeManager;if(!s){n.createDiv().setText("\u540E\u7AEF\u8FD0\u884C\u65F6\u7BA1\u7406\u5668\u4E0D\u53EF\u7528\u3002");return}let r=this.plugin.settings.runtimeManifestUrl,i=n.createEl("pre");Object.assign(i.style,{backgroundColor:"var(--background-secondary)",border:"1px solid var(--background-modifier-border)",borderRadius:"6px",padding:"10px 12px",whiteSpace:"pre-wrap",fontSize:"12px",lineHeight:"1.5"});let a=0,d=async()=>{let o=++a,c=s.getStatus(),w=x=>{i.setText([`\u6A21\u5F0F\uFF1A${c.mode==="dev"?"\u5F00\u53D1\u6A21\u5F0F":"\u751F\u4EA7\u6A21\u5F0F"}`,`\u8FD0\u884C\u65F6\u5DF2\u5B89\u88C5\uFF1A${c.installed?"\u662F":"\u5426"}`,`\u540E\u7AEF\u8FDB\u7A0B\uFF1A${c.running?"\u8FD0\u884C\u4E2D":"\u672A\u8FD0\u884C"}`,`\u8FDE\u63A5\u72B6\u6001\uFF1A${x}`,`\u540E\u7AEF\u5730\u5740\uFF1A${c.backendUrl}`,`PID: ${c.pid??"-"}`,`Prompt config: ${c.promptsDir}`,`Persona config: ${c.personasDir}`,`.env \u6587\u4EF6\uFF1A${c.envPath}`,`MCP \u914D\u7F6E\uFF1A${c.mcpConfigPath}`,`\u6570\u636E\u76EE\u5F55\uFF1A${c.dataDir}`,`\u65E5\u5FD7\u76EE\u5F55\uFF1A${c.logsDir}`,`\u72B6\u6001\uFF1A${c.detail}`].join(`
-`))};w("\u6B63\u5728\u68C0\u67E5...");let S=new W(c.backendUrl);try{let x=await S.health();o===a&&w(x?"\u53EF\u8BBF\u95EE\uFF08/health \u6B63\u5E38\uFF09":"\u4E0D\u53EF\u8BBF\u95EE")}catch(x){if(o===a){let M=x instanceof Error?x.message:String(x);w(`\u4E0D\u53EF\u8BBF\u95EE\uFF1A${M}`)}}};new B.Setting(n).setName("\u8FD0\u884C\u65F6\u6E05\u5355 URL").setDesc("\u751F\u4EA7\u6A21\u5F0F\u7528\u4E8E\u4E0B\u8F7D\u540E\u7AEF\u8FD0\u884C\u65F6\u3002\u5F00\u53D1\u6A21\u5F0F\u4F1A\u4F18\u5148\u4F7F\u7528 .dev-runtime.json\u3002").addText(o=>{o.setPlaceholder("https://example.com/life-assistant/runtime-manifest.json").setValue(r).onChange(c=>{r=c.trim()}),o.inputEl.style.width="420px"}).addButton(o=>{o.setButtonText("\u4FDD\u5B58"),o.onClick(async()=>{this.plugin.settings.runtimeManifestUrl=r,await this.plugin.saveSettings(),new B.Notice("\u8FD0\u884C\u65F6\u6E05\u5355 URL \u5DF2\u4FDD\u5B58\u3002")})}),new B.Setting(n).setName("\u5B89\u88C5\u540E\u7AEF\u8FD0\u884C\u65F6").setDesc("\u4E0B\u8F7D\u5E76\u6821\u9A8C\u5F53\u524D\u5E73\u53F0\u5BF9\u5E94\u7684\u540E\u7AEF\u8FD0\u884C\u65F6\u3002").addButton(o=>{o.setButtonText("\u5B89\u88C5"),o.onClick(async()=>{o.setDisabled(!0);try{this.plugin.settings.runtimeManifestUrl=r,await this.plugin.saveSettings(),await s.installRuntime(r),new B.Notice("\u540E\u7AEF\u8FD0\u884C\u65F6\u5DF2\u5B89\u88C5\u3002")}catch(c){let w=c instanceof Error?c.message:String(c);new B.Notice(`\u8FD0\u884C\u65F6\u5B89\u88C5\u5931\u8D25\uFF1A${w}`)}finally{o.setDisabled(!1),await d()}})}),new B.Setting(n).setName("\u540E\u7AEF\u8FDB\u7A0B").setDesc("\u63A7\u5236\u7531\u5F53\u524D\u63D2\u4EF6\u7BA1\u7406\u7684\u672C\u5730\u540E\u7AEF\u8FDB\u7A0B\u3002").addButton(o=>{o.setButtonText("\u542F\u52A8"),o.onClick(async()=>{o.setDisabled(!0);try{await s.start(),await this.plugin.saveSettings()}catch(c){let w=c instanceof Error?c.message:String(c);new B.Notice(`\u540E\u7AEF\u542F\u52A8\u5931\u8D25\uFF1A${w}`)}finally{o.setDisabled(!1),await d()}})}).addButton(o=>{o.setButtonText("\u91CD\u542F"),o.onClick(async()=>{o.setDisabled(!0);try{await s.restart(),await this.plugin.saveSettings()}catch(c){let w=c instanceof Error?c.message:String(c);new B.Notice(`\u540E\u7AEF\u91CD\u542F\u5931\u8D25\uFF1A${w}`)}finally{o.setDisabled(!1),await d()}})}).addButton(o=>{o.setButtonText("\u505C\u6B62"),o.onClick(async()=>{o.setDisabled(!0);try{await s.stop()}catch(c){let w=c instanceof Error?c.message:String(c);new B.Notice(`\u540E\u7AEF\u505C\u6B62\u5931\u8D25\uFF1A${w}`)}finally{o.setDisabled(!1),await d()}})}).addButton(o=>{o.setButtonText("\u5237\u65B0"),o.onClick(()=>{d()})}),d()}renderMcpSection(n){n.createEl("h3",{text:"MCP \u670D\u52A1"});let s=this.plugin.settings.backendMcpConfigPath,r=()=>this.plugin.settings.backendUrl||Ve.backendUrl,i=()=>({...this.plugin.settings,backendMcpConfigPath:s}),a=n.createDiv({cls:"mcp-config-hint"});Object.assign(a.style,{fontSize:"12px",color:"var(--text-muted)",marginBottom:"10px",lineHeight:"1.5",whiteSpace:"pre-wrap",wordBreak:"break-word"});let d=n.createDiv({cls:"mcp-runtime-summary"});Object.assign(d.style,{backgroundColor:"var(--background-secondary)",border:"1px solid var(--background-modifier-border)",borderRadius:"8px",padding:"12px 14px",marginBottom:"10px",fontSize:"12px",lineHeight:"1.6",whiteSpace:"pre-wrap",color:"var(--text-normal)"}),d.setText("\u6B63\u5728\u8BFB\u53D6 MCP \u8FD0\u884C\u72B6\u6001...");let o=n.createDiv({cls:"mcp-status-bar"});o.style.fontSize="12px",o.style.color="var(--text-muted)",o.style.marginBottom="10px",o.style.minHeight="18px";let w=en(n,"\u67E5\u770B\u670D\u52A1\u4E0E\u5DE5\u5177\u8BE6\u60C5").createEl("pre",{cls:"mcp-runtime-status"});Object.assign(w.style,{backgroundColor:"var(--background-secondary)",border:"1px solid var(--background-modifier-border)",borderRadius:"6px",padding:"10px 12px",marginBottom:"0",fontSize:"12px",fontFamily:"var(--font-monospace)",whiteSpace:"pre-wrap",wordBreak:"break-word",lineHeight:"1.5",color:"var(--text-normal)"}),w.setText("\u6B63\u5728\u8BFB\u53D6 MCP \u8FD0\u884C\u72B6\u6001...");let S=()=>{let y=je(i());if(!y.ok||!y.configPath){a.setText(y.message);return}let b=y.derivedFromBackendEnvPath?"\u81EA\u52A8\u4ECE\u63D2\u4EF6\u914D\u7F6E\u76EE\u5F55\u63A8\u5BFC":"\u624B\u52A8\u8986\u76D6\u8DEF\u5F84",A=y.examplePath?`
-\u6A21\u677F\u6587\u4EF6\uFF1A${y.examplePath}`:"";a.setText(`\u5F53\u524D MCP \u914D\u7F6E\u6587\u4EF6\uFF1A${y.configPath}
-\u8DEF\u5F84\u6765\u6E90\uFF1A${b}${A}`)},x=async()=>{this.plugin.settings.backendMcpConfigPath=s,await this.plugin.saveSettings()},M=async()=>{let y="\u6B63\u5728\u8BFB\u53D6 MCP \u8FD0\u884C\u72B6\u6001...";d.setText(y),w.setText(y);try{let b=new W(r()),A=await Bs(i(),b);A.ok&&A.status?(d.setText(fa(A.status)),w.setText($s(A.status))):(d.setText(A.message),w.setText(A.message))}catch(b){let H=`\u8BFB\u53D6 MCP \u8FD0\u884C\u72B6\u6001\u5931\u8D25\uFF1A${b instanceof Error?b.message:String(b)}`;d.setText(H),w.setText(H)}};new B.Setting(n).setName("\u5237\u65B0\u8FD0\u884C\u72B6\u6001").setDesc("\u91CD\u65B0\u8BFB\u53D6\u540E\u7AEF\u5F53\u524D\u5DF2\u8FDE\u63A5\u7684 MCP \u670D\u52A1\u548C\u5DE5\u5177\u3002").addButton(y=>{y.setButtonText("\u5237\u65B0"),y.onClick(()=>{M()})});let p=en(n,"\u9AD8\u7EA7\u8DEF\u5F84\u8986\u76D6",!!s);new B.Setting(p).setName("MCP \u914D\u7F6E\u6587\u4EF6\u8DEF\u5F84").setDesc("\u4E00\u822C\u4E0D\u9700\u8981\u8BBE\u7F6E\u3002\u4EC5\u5728 mcp_servers.json \u4E0D\u5728\u9ED8\u8BA4\u7684 server/data/ \u4F4D\u7F6E\u65F6\u624B\u52A8\u586B\u5199\u3002").addText(y=>{y.setPlaceholder("D:\\path\\to\\Crabby\\server\\data\\mcp_servers.json").setValue(s).onChange(b=>{s=b.trim(),S()}),y.inputEl.style.width="320px"});let R=en(n,"\u7F16\u8F91\u539F\u59CB MCP JSON"),C=R.createEl("textarea",{cls:"mcp-config-editor"});Object.assign(C.style,{width:"100%",minHeight:"280px",boxSizing:"border-box",padding:"10px 12px",marginBottom:"10px",borderRadius:"6px",border:"1px solid var(--background-modifier-border)",backgroundColor:"var(--background-primary)",color:"var(--text-normal)",fontFamily:"var(--font-monospace)",fontSize:"12px",lineHeight:"1.5",resize:"vertical"}),C.placeholder=`{
-  "mcpServers": {}
+`
+};
+function seedDirectoryIfEmpty(directory, templates) {
+  (0, import_node_fs2.mkdirSync)(directory, { recursive: true });
+  if ((0, import_node_fs2.readdirSync)(directory).length > 0) {
+    return false;
+  }
+  for (const [relativePath, content] of Object.entries(templates)) {
+    writeTemplateFile(directory, relativePath, content);
+  }
+  return true;
 }
-`;let f=()=>{let y=Rs(i());y.ok&&(C.value=y.text??""),o.setText(y.message),S()};new B.Setting(R).setName("\u4ECE\u6587\u4EF6\u8F7D\u5165").setDesc("\u628A\u5F53\u524D\u914D\u7F6E\u6587\u4EF6\u91CD\u65B0\u8F7D\u5165\u5230\u7F16\u8F91\u5668\u3002").addButton(y=>{y.setButtonText("\u8F7D\u5165"),y.onClick(()=>{f()})}),new B.Setting(R).setName("\u4ECE\u6A21\u677F\u521B\u5EFA").setDesc("\u5F53\u771F\u5B9E\u914D\u7F6E\u6587\u4EF6\u4E0D\u5B58\u5728\u65F6\uFF0C\u6839\u636E mcp_servers.example.json \u521B\u5EFA\u3002").addButton(y=>{y.setButtonText("\u521B\u5EFA"),y.onClick(async()=>{await x();let b=Ds(this.plugin.settings);b.ok?(C.value=b.text??"",o.setText(b.message),new B.Notice("\u5DF2\u6839\u636E\u6A21\u677F\u521B\u5EFA MCP \u914D\u7F6E\u6587\u4EF6\u3002"),await M()):(o.setText(b.message),new B.Notice(`\u521B\u5EFA\u5931\u8D25\uFF1A${b.message}`)),S()})}),new B.Setting(R).setName("\u672C\u5730\u6821\u9A8C").setDesc("\u53EA\u6821\u9A8C JSON \u8BED\u6CD5\u548C MCP \u914D\u7F6E\u7ED3\u6784\uFF0C\u4E0D\u4F1A\u5199\u5165\u540E\u7AEF\u3002").addButton(y=>{y.setButtonText("\u6821\u9A8C"),y.onClick(()=>{let b=Xt(C.value);o.setText(b.message),b.ok?new B.Notice("MCP \u914D\u7F6E\u6821\u9A8C\u901A\u8FC7\u3002"):new B.Notice(`\u6821\u9A8C\u5931\u8D25\uFF1A${b.message}`)})}),new B.Setting(R).setName("\u4FDD\u5B58\u914D\u7F6E").setDesc("\u628A\u7F16\u8F91\u5668\u5185\u5BB9\u5199\u5165 mcp_servers.json\u3002").addButton(y=>{y.setButtonText("\u4FDD\u5B58"),y.onClick(async()=>{await x();let b=Zt(this.plugin.settings,C.value);o.setText(b.message),b.ok?new B.Notice("MCP \u914D\u7F6E\u5DF2\u4FDD\u5B58\u3002"):new B.Notice(`\u4FDD\u5B58\u5931\u8D25\uFF1A${b.message}`),S()})}).addButton(y=>{y.setButtonText("\u4FDD\u5B58\u5E76\u91CD\u8F7D"),y.setCta(),y.onClick(async()=>{await x();let b=Zt(this.plugin.settings,C.value);if(!b.ok){o.setText(b.message),new B.Notice(`\u4FDD\u5B58\u5931\u8D25\uFF1A${b.message}`),S();return}o.setText(`${b.message} \u6B63\u5728\u91CD\u8F7D\u540E\u7AEF...`);let A=new W(r()),H=await Is(this.plugin.settings,A);o.setText(H.message),H.ok?new B.Notice("MCP \u914D\u7F6E\u5DF2\u4FDD\u5B58\uFF0C\u5E76\u5B8C\u6210\u540E\u7AEF\u91CD\u8F7D\u3002"):new B.Notice(`\u91CD\u8F7D\u5931\u8D25\uFF1A${H.message}`),await M(),S()})}),S(),f(),M()}renderLlmSection(n){n.createEl("h3",{text:"LLM \u914D\u7F6E"});let s=Se(this.plugin.settings),r=n.createDiv({cls:"llm-config-hint"});r.style.fontSize="12px",r.style.color="var(--text-muted)",r.style.marginBottom="10px",r.setText(s.ok&&s.envPath?`\u5F53\u524D\u751F\u6548\u914D\u7F6E\u6587\u4EF6\uFF1A${s.envPath}`:s.message);let i=n.createDiv({cls:"llm-status-bar"});i.style.fontSize="12px",i.style.color="var(--text-muted)",i.style.marginBottom="10px",i.style.minHeight="18px";let a=n.createDiv({cls:"llm-profile-list"});a.style.marginBottom="4px";let d=()=>this.plugin.settings.backendUrl||Ve.backendUrl,o=async()=>{i.setText("\u6B63\u5728\u4ECE\u540E\u7AEF\u8BFB\u53D6 LLM \u914D\u7F6E...");try{let p=await this.plugin.syncLlmProfilesFromBackend({migrateLocalProfiles:!0});i.setText(p.message),p.ok&&(M(),c())}catch(p){let R=p instanceof Error?p.message:String(p);i.setText(`\u8BFB\u53D6\u540E\u7AEF LLM \u914D\u7F6E\u5931\u8D25\uFF1A${R}`)}},c=()=>{let p=this.plugin.settings.llmProfiles.find(R=>R.id===this.plugin.settings.activeProfileId);p?i.setText(`\u5F53\u524D\u542F\u7528\uFF1A${p.name}\uFF08${p.provider} / ${p.model}\uFF09`):this.plugin.settings.llmProfiles.length>0?i.setText("\u5F53\u524D\u8FD8\u6CA1\u6709\u9009\u4E2D\u7684\u914D\u7F6E\u3002"):i.setText("\u5F53\u524D\u8FD8\u6CA1\u6709\u521B\u5EFA\u4EFB\u4F55 LLM \u914D\u7F6E\u3002")},w=async p=>{i.setText(`\u6B63\u5728\u5E94\u7528 ${p.name} ...`);let R=new W(d());try{let C=await Ee(this.plugin.settings,p,R,!0);return i.setText(C.message),C.ok?(await this.plugin.saveSettings(),M(),new B.Notice(`\u5DF2\u5207\u6362\u5230 ${p.name}\u3002`),!0):(M(),new B.Notice(`\u5207\u6362\u5931\u8D25\uFF1A${C.message}`),!1)}catch(C){let f=C instanceof Error?C.message:String(C);return i.setText(`\u5207\u6362\u5931\u8D25\uFF1A${f}`),M(),new B.Notice(`\u5207\u6362\u5931\u8D25\uFF1A${f}`),!1}},S=async p=>{let R=p.id===this.plugin.settings.activeProfileId;i.setText(`\u6B63\u5728\u4FDD\u5B58 ${p.name} \u5230\u540E\u7AEF...`);let C=new W(d());try{let f=await Ee(this.plugin.settings,p,C,R);i.setText(f.message),f.ok?(await this.plugin.saveSettings(),M(),c(),new B.Notice(`\u5DF2\u4FDD\u5B58 ${p.name}\u3002`)):new B.Notice(`\u4FDD\u5B58\u5931\u8D25\uFF1A${f.message}`)}catch(f){let y=f instanceof Error?f.message:String(f);i.setText(`\u4FDD\u5B58\u5931\u8D25\uFF1A${y}`),new B.Notice(`\u4FDD\u5B58\u5931\u8D25\uFF1A${y}`)}},x=async()=>{let p=this.plugin.settings.llmProfiles.find(A=>A.id===this.plugin.settings.activeProfileId),R=Se(this.plugin.settings);if(!R.ok||!R.envPath){i.setText(R.message);return}let C=ge(R.envPath,"CRABBY_ADMIN_TOKEN")?.trim();if(!C){i.setText(`\u65E0\u6CD5\u6D4B\u8BD5\u5F53\u524D Profile\uFF1A${R.envPath} \u7F3A\u5C11 CRABBY_ADMIN_TOKEN\u3002`);return}let f=p?`${p.name}\uFF08${p.provider} / ${p.model}\uFF09`:"\u540E\u7AEF\u5F53\u524D\u5DF2\u751F\u6548\u914D\u7F6E";i.setText(`\u6B63\u5728\u6D4B\u8BD5\u5F53\u524D Profile\uFF1A${f}...`);let b=await new W(d()).testCurrentProfile(C);if(!b.ok||!b.data){let A=b.status===null?"\u540E\u7AEF\u5F53\u524D\u4E0D\u53EF\u8BBF\u95EE\u3002":b.detail||`HTTP ${b.status}`;i.setText(`\u6D4B\u8BD5\u5931\u8D25\uFF1A${A}`),new B.Notice(`\u6D4B\u8BD5\u5931\u8D25\uFF1A${A}`);return}i.setText(b.data.message),new B.Notice(b.data.ok?b.data.message:`\u6D4B\u8BD5\u672A\u901A\u8FC7\uFF1A${b.data.message}`)},M=()=>{if(a.empty(),this.plugin.settings.llmProfiles.length===0){let p=a.createDiv();p.setText("\u8FD8\u6CA1\u6709\u914D\u7F6E\u3002\u70B9\u51FB\u201C\u6DFB\u52A0\u914D\u7F6E\u201D\u521B\u5EFA\u4E00\u4E2A\u65B0\u7684 LLM \u914D\u7F6E\u3002"),p.style.color="var(--text-muted)",p.style.fontStyle="italic",p.style.padding="8px 0";return}this.plugin.settings.llmProfiles.forEach((p,R)=>{Qt(p);let C=p.id===this.plugin.settings.activeProfileId,f=a.createDiv({cls:"llm-profile-card"});Object.assign(f.style,{border:`1px solid ${C?"var(--interactive-accent)":"var(--background-modifier-border)"}`,borderRadius:"8px",padding:"12px 16px",marginBottom:"10px",backgroundColor:C?"var(--background-secondary-alt)":"var(--background-secondary)",transition:"border-color 0.15s, background-color 0.15s"});let y=f.createDiv();Object.assign(y.style,{display:"flex",alignItems:"center",gap:"8px",marginBottom:"10px",flexWrap:"wrap"});let b=y.createSpan();b.style.fontSize="16px",b.style.cursor="pointer",b.title=C?"\u8FD9\u4E2A\u914D\u7F6E\u5F53\u524D\u5DF2\u542F\u7528\u3002":"\u70B9\u51FB\u542F\u7528\u8FD9\u4E2A\u914D\u7F6E\uFF0C\u5E76\u70ED\u91CD\u8F7D\u540E\u7AEF\u3002",b.setText(C?"\u25CF":"\u25CB"),b.addEventListener("click",async()=>{await w(p)});let A=y.createEl("strong"),H=()=>p.name||`\u914D\u7F6E ${R+1}`;A.setText(H()),A.style.flex="1",A.style.fontSize="14px";let J=Object.fromEntries(Je.map(l=>[l,de(l).badge])),j=y.createSpan();Object.assign(j.style,{fontSize:"11px",padding:"2px 8px",borderRadius:"12px",backgroundColor:J[p.provider],color:"#fff",fontWeight:"600",letterSpacing:"0.03em"}),(()=>{let l=String(p.provider||"");j.setText(l.toUpperCase()||"UNKNOWN"),j.style.backgroundColor=J[l]??"var(--text-muted)"})();let O=y.createEl("button");O.setText("\u4FDD\u5B58"),O.title=C?"\u4FDD\u5B58\u8FD9\u4E2A\u914D\u7F6E\uFF0C\u5E76\u7ACB\u5373\u5E94\u7528\u5230\u540E\u7AEF\u3002":"\u628A\u8FD9\u4E2A\u914D\u7F6E\u4FDD\u5B58\u5230\u540E\u7AEF\u3002",O.addEventListener("click",()=>{S(p)});let P=y.createEl("button");P.setText("\u5220\u9664"),P.title="\u5220\u9664\u8FD9\u4E2A\u914D\u7F6E\u3002",P.addEventListener("click",async()=>{i.setText(`\u6B63\u5728\u4ECE\u540E\u7AEF\u5220\u9664 ${p.name}...`);let l=new W(d()),u=await st(this.plugin.settings,p.id,l);if(i.setText(u.message),!u.ok){new B.Notice(`\u5220\u9664\u5931\u8D25\uFF1A${u.message}`);return}await this.plugin.saveSettings(),M(),c(),new B.Notice(`\u5DF2\u5220\u9664 ${p.name}\u3002`)});{let{activePreset:l,capabilities:u}=ma(p),m=D=>{Object.assign(D.style,{display:"grid",gridTemplateColumns:"80px 1fr",alignItems:"center",gap:"8px",marginBottom:"6px"})},g=D=>{Object.assign(D.style,{fontSize:"12px",color:"var(--text-muted)",textAlign:"right"})},k=D=>{Object.assign(D.style,{width:"100%",boxSizing:"border-box",fontSize:"13px",padding:"4px 8px",borderRadius:"4px",border:"1px solid var(--background-modifier-border)",backgroundColor:"var(--background-primary)",color:"var(--text-normal)"})},v=(D,G,le,ee,Ce,Re="text")=>{let De=D.createDiv();m(De);let ke=De.createEl("label");ke.setText(G),g(ke);let ye=De.createEl("input");return ye.type=Re,ye.placeholder=ee,ye.value=le,k(ye),ye.addEventListener("input",async()=>{await Ce(ye.value),c()}),ye},T=(D,G,le,ee)=>{let Ce=D.createDiv();m(Ce);let Re=Ce.createEl("label");Re.setText(G),g(Re);let ke=Ce.createDiv().createEl("input");ke.type="checkbox",ke.checked=le,ke.addEventListener("change",async()=>{await ee(ke.checked),c()})};v(f,"Name",p.name,"Daily driver",async D=>{p.name=D,await this.plugin.saveSettings(),A.setText(H())});let I=f.createDiv();m(I);let q=I.createEl("label");q.setText("Provider"),g(q);let V=I.createEl("select");k(V),Je.forEach(D=>{let G=V.createEl("option");G.value=D,G.setText(de(D).label)}),V.value=p.provider,V.addEventListener("change",async()=>{p.provider=V.value;let D=de(p.provider),G=yn(p.provider);p.model=G||p.model,p.baseUrl=D.defaultBaseUrl,Qt(p),D.capabilities.thinking||(p.thinkingMode=""),D.capabilities.thinkingBudget||(p.thinkingBudgetTokens="1024"),D.capabilities.reasoningEffort||(p.thinkingEffort=""),D.capabilities.reasoningSplit||(p.reasoningSplit=!1),await this.plugin.saveSettings(),M(),c()});let X=f.createEl("datalist");X.id=`llm-models-${p.id}`,l.models.forEach(D=>{let G=X.createEl("option");G.value=D.id,G.label=D.label});let ie=v(f,"Model",p.model,"Select or type a model id",async D=>{p.model=D.trim(),Qt(p),await this.plugin.saveSettings()});if(ie.setAttribute("list",X.id),ie.addEventListener("change",()=>{M(),c()}),u.baseUrl&&v(f,"Base URL",p.baseUrl,l.defaultBaseUrl,async D=>{p.baseUrl=D.trim(),await this.plugin.saveSettings()}),u.apiKey&&v(f,"API Key",p.apiKey,l.apiKeyEnv||"LLM_API_KEY",async D=>{p.apiKey=D.trim(),await this.plugin.saveSettings()},"password"),u.vision||u.thinking||u.thinkingBudget||u.reasoningEffort||u.reasoningSplit){let D=f.createEl("details");D.style.marginTop="8px";let G=D.createEl("summary");G.setText("Advanced"),G.style.cursor="pointer",G.style.fontSize="12px",G.style.color="var(--text-muted)";let le=D.createDiv();le.style.marginTop="8px",u.vision&&T(le,"Vision",!!p.supportsVision,async ee=>{p.supportsVision=ee,await this.plugin.saveSettings()}),u.thinking&&T(le,"Thinking",p.thinkingMode.trim().toLowerCase()==="enabled",async ee=>{p.thinkingMode=ee?"enabled":"",await this.plugin.saveSettings()}),u.thinkingBudget&&v(le,"Budget",p.thinkingBudgetTokens,"1024",async ee=>{p.thinkingBudgetTokens=ee.trim(),await this.plugin.saveSettings()}),u.reasoningEffort&&v(le,"Effort",p.thinkingEffort,kn(p.provider),async ee=>{p.thinkingEffort=ee.trim(),await this.plugin.saveSettings()}),u.reasoningSplit&&T(le,"Split",!!p.reasoningSplit,async ee=>{p.reasoningSplit=ee,await this.plugin.saveSettings()})}}})};M(),c(),o(),new B.Setting(n).setName("\u5237\u65B0\u540E\u7AEF Profile").setDesc("\u91CD\u65B0\u4ECE\u540E\u7AEF\u8BFB\u53D6\u5F53\u524D LLM Profile \u5217\u8868\u3002").addButton(p=>{p.setButtonText("\u5237\u65B0"),p.onClick(()=>{o()})}),new B.Setting(n).setName("\u6D4B\u8BD5\u5F53\u524D Profile").setDesc("\u6821\u9A8C\u540E\u7AEF\u5F53\u524D\u5DF2\u751F\u6548\u7684 provider\u3001model\u3001key\uFF0C\u5E76\u5728 DeepSeek / MiniMax \u4E0A\u505A\u4E00\u6B21\u4F4E token \u771F\u5B9E\u63A2\u6D4B\u3002").addButton(p=>{p.setButtonText("\u6D4B\u8BD5"),p.onClick(()=>{x()})}),new B.Setting(n).setName("\u6DFB\u52A0\u914D\u7F6E").setDesc("\u65B0\u589E\u4E00\u4E2A LLM \u914D\u7F6E\u9884\u8BBE\u3002").addButton(p=>{p.setButtonText("\u6DFB\u52A0"),p.onClick(async()=>{let R={id:Math.random().toString(36).substring(2,10),name:"\u65B0\u914D\u7F6E",provider:"anthropic",model:"claude-sonnet-4-20250514",baseUrl:"",apiKey:"",supportsVision:!1,thinkingMode:"",thinkingEffort:"",thinkingBudgetTokens:"1024",reasoningSplit:!1},C=this.plugin.settings.llmProfiles.length===0;i.setText(`\u6B63\u5728\u521B\u5EFA ${R.name}...`);let f=new W(d()),y=await Ee(this.plugin.settings,R,f,C);if(i.setText(y.message),!y.ok){new B.Notice(`\u6DFB\u52A0\u5931\u8D25\uFF1A${y.message}`);return}await this.plugin.saveSettings(),M(),c()})})}};var kt=class extends qe.Plugin{constructor(){super(...arguments);this.settings=Jt(Ve,null);this.runtimeManager=null;this.clientToolBridge=null;this.unloaded=!1}async onload(){this.unloaded=!1,await this.loadSettings(),this.runtimeManager=new ut(this.app,this.settings),this.clientToolBridge=new ft(this,()=>this.settings.backendUrl),this.clientToolBridge.start(),this.registerView(Ne,n=>new ct(n,this)),this.addSettingTab(new bt(this.app,this)),this.addRibbonIcon("bot","Crabby",()=>{this.activateView()}),this.addCommand({id:"open-chat",name:"Open Crabby Chat",callback:()=>this.activateView()}),this.startRuntimeInBackground()}async onunload(){this.unloaded=!0,this.app.workspace.detachLeavesOfType(Ne),this.clientToolBridge&&(this.clientToolBridge.stop(),this.clientToolBridge=null),this.runtimeManager&&(await this.runtimeManager.stop(),this.runtimeManager=null)}startRuntimeInBackground(){let n=this.runtimeManager;n&&(async()=>{try{if(await n.ensureRuntimeLayout(),this.unloaded||this.runtimeManager!==n)return;let s=await n.start();if(this.unloaded||this.runtimeManager!==n)return;await this.syncLlmProfilesFromBackend({migrateLocalProfiles:!0}),await this.saveSettings(),!s.running&&s.mode==="production"&&new qe.Notice("Crabby backend runtime is not installed. Open settings to install it.")}catch(s){if(!this.unloaded){console.error("[Crabby] Failed to start backend runtime:",s);let r=s instanceof Error?s.message:String(s);new qe.Notice(`Crabby backend startup failed: ${r}`)}}})()}async loadSettings(){let n=await this.loadData();this.settings=Jt(Ve,n),Ls(n)&&await this.saveSettings()}async saveSettings(){await this.saveData(this.settings),rn()}restartClientToolBridge(){this.clientToolBridge&&(this.clientToolBridge.stop(),this.clientToolBridge.start())}getCurrentVaultPath(){return(this.app.vault.adapter.basePath??"").trim()}async ensureBackendVaultPathSynced(n){try{let s=await En(this.settings,this.getCurrentVaultPath(),n??new W(this.settings.backendUrl));return{ok:s.ok,changed:!!s.changed,message:s.message}}catch(s){let r=s instanceof Error?s.message:String(s);return console.error("[Crabby] Failed to sync backend vault path:",s),{ok:!1,changed:!1,message:"Failed to sync the current vault path with the backend .env. Check the plugin's backend .env path setting. "+r}}}async applyLlmProfile(){let n=this.settings.llmProfiles.find(s=>s.id===this.settings.activeProfileId)??this.settings.llmProfiles[0];if(!n)return{ok:!1,message:"No LLM profile is configured."};await this.saveSettings();try{let s=new W(this.settings.backendUrl),r=await $e(this.settings,n.id,s);return r.ok&&await this.saveSettings(),{ok:r.ok,message:r.message}}catch(s){let r=s instanceof Error?s.message:String(s);return console.error(s),{ok:!1,message:`Failed to apply the active LLM profile: ${r}`}}}async syncLlmProfilesFromBackend(n={}){let s=new W(this.settings.backendUrl),r=this.settings.llmProfiles.map(d=>({...d})),i=this.settings.activeProfileId,a=await nt(this.settings,s);if(!a.ok)return{ok:!1,message:a.message};if(n.migrateLocalProfiles&&a.profiles?.length===0&&r.length>0){for(let d of r){let o=d.id===i||!i&&d.id===r[0].id,c=await Ee(this.settings,d,s,o);if(!c.ok)return{ok:!1,message:c.message}}return await this.saveSettings(),{ok:!0,message:"Migrated local LLM profiles to backend."}}return await this.saveSettings(),{ok:!0,message:a.message}}async activateView(){let{workspace:n}=this.app,s=n.getLeavesOfType(Ne)[0];if(!s){let r=n.getRightLeaf(!1);r&&(s=r,await s.setViewState({type:Ne,active:!0}))}s&&n.revealLeaf(s)}};
+function seedOrMigrateDefaultPersonas(directory) {
+  (0, import_node_fs2.mkdirSync)(directory, { recursive: true });
+  const personaFiles = listPersonaDefinitionFiles(directory);
+  if (personaFiles.length === 0) {
+    writeMissingTemplates(directory, DEFAULT_PERSONA_TEMPLATES);
+    return { seeded: true, migrated: false };
+  }
+  if (hasOnlyCurrentDefaultPersonas(personaFiles)) {
+    const seeded = writeMissingTemplates(directory, DEFAULT_PERSONA_TEMPLATES);
+    return { seeded, migrated: false };
+  }
+  return { seeded: false, migrated: false };
+}
+function writeMissingTemplates(directory, templates) {
+  let wrote = false;
+  for (const [relativePath, content] of Object.entries(templates)) {
+    const targetPath = (0, import_node_path2.join)(directory, ...relativePath.split("/"));
+    if ((0, import_node_fs2.existsSync)(targetPath)) {
+      continue;
+    }
+    writeTemplateFile(directory, relativePath, content);
+    wrote = true;
+  }
+  return wrote;
+}
+function listPersonaDefinitionFiles(directory) {
+  return listFiles(directory).filter((relativePath) => relativePath.split("/").pop() === "PERSONA.md").sort();
+}
+function hasOnlyCurrentDefaultPersonas(personaFiles) {
+  const defaultPersonaFiles = Object.keys(DEFAULT_PERSONA_TEMPLATES).filter((relativePath) => relativePath.endsWith("/PERSONA.md")).sort();
+  return personaFiles.length > 0 && personaFiles.every((relativePath) => defaultPersonaFiles.includes(relativePath));
+}
+function listFiles(directory, prefix = "") {
+  const currentDir = prefix ? (0, import_node_path2.join)(directory, ...prefix.split("/")) : directory;
+  const entries = (0, import_node_fs2.readdirSync)(currentDir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...listFiles(directory, relativePath));
+    } else if (entry.isFile()) {
+      files.push(relativePath);
+    }
+  }
+  return files;
+}
+function writeTemplateFile(directory, relativePath, content) {
+  const targetPath = (0, import_node_path2.join)(directory, ...relativePath.split("/"));
+  (0, import_node_fs2.mkdirSync)((0, import_node_path2.dirname)(targetPath), { recursive: true });
+  (0, import_node_fs2.writeFileSync)(
+    targetPath,
+    content.endsWith("\n") ? content : `${content}
+`,
+    "utf8"
+  );
+}
+
+// src/runtime/runtimeDataMigration.ts
+var import_node_fs3 = require("node:fs");
+var import_node_path3 = require("node:path");
+function migrateRuntimeDataDirectory(migration) {
+  const { legacyPath, targetPath } = migration;
+  if (!(0, import_node_fs3.existsSync)(legacyPath)) {
+    return result(migration, "missing", 0, 0, "legacy directory is absent");
+  }
+  try {
+    if (!(0, import_node_fs3.statSync)(legacyPath).isDirectory()) {
+      return result(migration, "blocked", 0, 1, "legacy path is not a directory");
+    }
+    if (!(0, import_node_fs3.existsSync)(targetPath)) {
+      (0, import_node_fs3.mkdirSync)((0, import_node_path3.dirname)(targetPath), { recursive: true });
+      moveOrCopyPath(legacyPath, targetPath);
+      return result(migration, "moved", 1, 0, "moved legacy directory");
+    }
+    if (!(0, import_node_fs3.statSync)(targetPath).isDirectory()) {
+      return result(migration, "blocked", 0, 1, "target path is not a directory");
+    }
+    const counts = mergeDirectoryContents(legacyPath, targetPath);
+    removeEmptyDirectory(legacyPath);
+    if (counts.movedEntries > 0) {
+      return result(
+        migration,
+        "merged",
+        counts.movedEntries,
+        counts.skippedEntries,
+        "merged missing legacy entries into existing directory"
+      );
+    }
+    return result(
+      migration,
+      counts.skippedEntries > 0 ? "skipped" : "merged",
+      counts.movedEntries,
+      counts.skippedEntries,
+      counts.skippedEntries > 0 ? "existing target entries were kept" : "legacy directory was empty"
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return result(migration, "failed", 0, 1, message);
+  }
+}
+function migrateRuntimeDataDirectories(migrations) {
+  return migrations.map((migration) => migrateRuntimeDataDirectory(migration));
+}
+function mergeDirectoryContents(sourceDir, targetDir) {
+  const counts = {
+    movedEntries: 0,
+    skippedEntries: 0
+  };
+  (0, import_node_fs3.mkdirSync)(targetDir, { recursive: true });
+  for (const entry of (0, import_node_fs3.readdirSync)(sourceDir)) {
+    const sourcePath = (0, import_node_path3.join)(sourceDir, entry);
+    const targetPath = (0, import_node_path3.join)(targetDir, entry);
+    if (!(0, import_node_fs3.existsSync)(targetPath)) {
+      moveOrCopyPath(sourcePath, targetPath);
+      counts.movedEntries += 1;
+      continue;
+    }
+    const sourceStats = (0, import_node_fs3.statSync)(sourcePath);
+    const targetStats = (0, import_node_fs3.statSync)(targetPath);
+    if (sourceStats.isDirectory() && targetStats.isDirectory()) {
+      const childCounts = mergeDirectoryContents(sourcePath, targetPath);
+      counts.movedEntries += childCounts.movedEntries;
+      counts.skippedEntries += childCounts.skippedEntries;
+      removeEmptyDirectory(sourcePath);
+      continue;
+    }
+    counts.skippedEntries += 1;
+  }
+  return counts;
+}
+function moveOrCopyPath(sourcePath, targetPath) {
+  try {
+    (0, import_node_fs3.renameSync)(sourcePath, targetPath);
+  } catch {
+    (0, import_node_fs3.cpSync)(sourcePath, targetPath, {
+      recursive: true,
+      errorOnExist: true,
+      force: false
+    });
+  }
+}
+function removeEmptyDirectory(path) {
+  try {
+    (0, import_node_fs3.rmdirSync)(path);
+  } catch {
+  }
+}
+function result(migration, status, movedEntries, skippedEntries, message) {
+  return {
+    ...migration,
+    status,
+    movedEntries,
+    skippedEntries,
+    message
+  };
+}
+
+// src/runtime/runtimeState.ts
+var import_node_path4 = require("node:path");
+function escapesRuntimeDir(relativePath) {
+  return relativePath === ".." || relativePath.startsWith(`..${import_node_path4.sep}`);
+}
+function serializeRuntimeExecutablePath(runtimeDir, executablePath) {
+  const resolvedRuntimeDir = (0, import_node_path4.resolve)(runtimeDir);
+  const resolvedExecutablePath = (0, import_node_path4.resolve)(resolvedRuntimeDir, executablePath);
+  const relativePath = (0, import_node_path4.relative)(resolvedRuntimeDir, resolvedExecutablePath);
+  if (!relativePath || (0, import_node_path4.isAbsolute)(relativePath) || escapesRuntimeDir(relativePath)) {
+    return resolvedExecutablePath;
+  }
+  return relativePath;
+}
+function resolveRuntimeExecutablePath(runtimeDir, executablePath) {
+  const trimmed = executablePath?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const resolvedRuntimeDir = (0, import_node_path4.resolve)(runtimeDir);
+  const resolvedExecutablePath = (0, import_node_path4.resolve)(resolvedRuntimeDir, trimmed);
+  if ((0, import_node_path4.isAbsolute)(trimmed)) {
+    return resolvedExecutablePath;
+  }
+  const relativePath = (0, import_node_path4.relative)(resolvedRuntimeDir, resolvedExecutablePath);
+  if (!relativePath || (0, import_node_path4.isAbsolute)(relativePath) || escapesRuntimeDir(relativePath)) {
+    return null;
+  }
+  return resolvedExecutablePath;
+}
+
+// src/runtime/backendRuntime.ts
+var PLUGIN_ID = "crabby";
+var DEFAULT_HOST = "127.0.0.1";
+var DEFAULT_PORT = 8e3;
+var HEALTH_TIMEOUT_MS = 15e3;
+var SHUTDOWN_TIMEOUT_MS = 2500;
+var EXISTING_BACKEND_TIMEOUT_MS = 1200;
+var HOST_HEARTBEAT_INTERVAL_MS = 5e3;
+var HOST_HEARTBEAT_TIMEOUT_SECONDS = 180;
+function resolvePluginRuntimeLayout(app) {
+  if (!import_obsidian9.Platform.isDesktopApp) {
+    throw new Error("Crabby \u540E\u7AEF\u8FD0\u884C\u65F6\u9700\u8981 Obsidian \u684C\u9762\u7248\u3002");
+  }
+  const adapter = app.vault.adapter;
+  if (!(adapter instanceof import_obsidian9.FileSystemAdapter)) {
+    throw new Error("\u65E0\u6CD5\u89E3\u6790\u684C\u9762\u7AEF vault \u6587\u4EF6\u7CFB\u7EDF\u8DEF\u5F84\u3002");
+  }
+  const vaultBasePath = adapter.getBasePath();
+  const pluginDir = (0, import_node_path5.join)(vaultBasePath, app.vault.configDir, "plugins", PLUGIN_ID);
+  const userDataDir = (0, import_node_path5.join)(vaultBasePath, ".crabby");
+  const configDir = (0, import_node_path5.join)(userDataDir, "config");
+  const dataDir = (0, import_node_path5.join)(userDataDir, "data");
+  const logsDir = (0, import_node_path5.join)(userDataDir, "logs");
+  const runtimeDir = (0, import_node_path5.join)(pluginDir, "runtime");
+  return {
+    pluginDir,
+    userDataDir,
+    configDir,
+    envPath: (0, import_node_path5.join)(configDir, ".env"),
+    mcpConfigPath: (0, import_node_path5.join)(configDir, "mcp_servers.json"),
+    promptsDir: (0, import_node_path5.join)(configDir, "prompts"),
+    personasDir: (0, import_node_path5.join)(configDir, "personas"),
+    dataDir,
+    sessionsDir: (0, import_node_path5.join)(dataDir, "sessions"),
+    attachmentsDir: (0, import_node_path5.join)(dataDir, "attachments"),
+    logsDir,
+    runtimeDir,
+    statePath: (0, import_node_path5.join)(runtimeDir, "state.json"),
+    heartbeatPath: (0, import_node_path5.join)(runtimeDir, "host-heartbeat.json"),
+    devRuntimePath: (0, import_node_path5.join)(pluginDir, ".dev-runtime.json")
+  };
+}
+var BackendRuntimeManager = class {
+  constructor(app, settings) {
+    this.app = app;
+    this.settings = settings;
+    this.child = null;
+    this.externalBackend = null;
+    this.heartbeatTimer = null;
+    this.statusDetail = "\u540E\u7AEF\u8FD0\u884C\u65F6\u5C1A\u672A\u542F\u52A8\u3002";
+    this.layout = resolvePluginRuntimeLayout(app);
+  }
+  getLayout() {
+    return this.layout;
+  }
+  async ensureRuntimeLayout() {
+    this.migrateLegacyRuntimeData();
+    for (const path of [
+      this.layout.userDataDir,
+      this.layout.configDir,
+      this.layout.promptsDir,
+      this.layout.personasDir,
+      this.layout.sessionsDir,
+      this.layout.attachmentsDir,
+      this.layout.logsDir,
+      this.layout.runtimeDir,
+      (0, import_node_path5.dirname)(this.layout.statePath)
+    ]) {
+      (0, import_node_fs4.mkdirSync)(path, { recursive: true });
+    }
+    const token = this.ensureAdminToken();
+    upsertEnvFile(this.layout.envPath, {
+      CRABBY_ADMIN_ENABLED: "true",
+      CRABBY_ADMIN_TOKEN: token,
+      ...this.getHostWatchdogEnv(),
+      CRABBY_BACKEND_RELOADER_PARENT: "false",
+      VAULT_PATH: this.getVaultBasePath(),
+      HOST: DEFAULT_HOST,
+      PROMPTS_DIR: this.layout.promptsDir,
+      PERSONAS_DIR: this.layout.personasDir
+    });
+    this.startHostHeartbeat();
+    const seededPrompts = seedDirectoryIfEmpty(
+      this.layout.promptsDir,
+      DEFAULT_PROMPT_TEMPLATES
+    );
+    const personaSeed = seedOrMigrateDefaultPersonas(this.layout.personasDir);
+    if (seededPrompts) {
+      this.appendRuntimeLog("seeded default prompt templates");
+    }
+    if (personaSeed.seeded) {
+      this.appendRuntimeLog("seeded default persona templates");
+    }
+    if (personaSeed.migrated) {
+      this.appendRuntimeLog("migrated legacy default persona templates");
+    }
+    if (!(0, import_node_fs4.existsSync)(this.layout.mcpConfigPath)) {
+      (0, import_node_fs4.writeFileSync)(
+        this.layout.mcpConfigPath,
+        `${JSON.stringify({ mcpServers: {} }, null, 2)}
+`,
+        "utf8"
+      );
+    }
+    this.settings.backendEnvPath = this.layout.envPath;
+    this.settings.backendMcpConfigPath = this.layout.mcpConfigPath;
+    this.settings.backendPath = "";
+    this.appendRuntimeLog("runtime layout ensured");
+    return this.layout;
+  }
+  async start() {
+    await this.ensureRuntimeLayout();
+    this.appendRuntimeLog("start requested");
+    if (this.child && !this.child.killed) {
+      this.appendRuntimeLog(`start skipped because child is already running: pid=${this.child.pid ?? "unknown"}`);
+      return this.getStatus();
+    }
+    if (this.externalBackend) {
+      const token = this.ensureAdminToken();
+      if (await isManagedBackendReachable(this.externalBackend.backendUrl, token)) {
+        this.appendRuntimeLog(
+          `start skipped because existing backend is reachable: ${this.externalBackend.backendUrl}`
+        );
+        return this.getStatus();
+      }
+      this.appendRuntimeLog(
+        `discarding unreachable existing backend: ${this.externalBackend.backendUrl}`
+      );
+      this.externalBackend = null;
+    }
+    const launch = this.resolveLaunchConfig();
+    if (!launch) {
+      this.statusDetail = "\u751F\u4EA7\u6A21\u5F0F\u540E\u7AEF\u8FD0\u884C\u65F6\u5C1A\u672A\u5B89\u88C5\u3002";
+      this.appendRuntimeLog("start aborted: no launch config");
+      return this.getStatus();
+    }
+    const reusedStatus = await this.reuseExistingBackendIfAvailable(launch);
+    if (reusedStatus) {
+      return reusedStatus;
+    }
+    const port = await findAvailablePort(DEFAULT_PORT);
+    const backendUrl = `http://${DEFAULT_HOST}:${port}`;
+    const launchArgs = launch.mode === "dev" ? withDevHostPortArgs(launch.args, DEFAULT_HOST, port) : launch.args;
+    const reloaderParentValue = getReloaderParentValue(launchArgs);
+    this.appendRuntimeLog(
+      `launch config resolved: mode=${launch.mode} command=${launch.command} args=${JSON.stringify(launch.args)} cwd=${launch.cwd} port=${port}`
+    );
+    const adminToken = this.ensureAdminToken();
+    upsertEnvFile(this.layout.envPath, {
+      CRABBY_ADMIN_ENABLED: "true",
+      CRABBY_ADMIN_TOKEN: adminToken,
+      ...this.getHostWatchdogEnv(),
+      CRABBY_BACKEND_RELOADER_PARENT: reloaderParentValue,
+      VAULT_PATH: this.getVaultBasePath(),
+      HOST: DEFAULT_HOST,
+      PORT: String(port),
+      PROMPTS_DIR: this.layout.promptsDir,
+      PERSONAS_DIR: this.layout.personasDir
+    });
+    const out = (0, import_node_fs4.createWriteStream)((0, import_node_path5.join)(this.layout.logsDir, "backend-out.log"), {
+      flags: "a"
+    });
+    const err = (0, import_node_fs4.createWriteStream)((0, import_node_path5.join)(this.layout.logsDir, "backend-error.log"), {
+      flags: "a"
+    });
+    const env = {
+      ...process.env,
+      VAULT_PATH: this.getVaultBasePath(),
+      MCP_CONFIG_FILE: this.layout.mcpConfigPath,
+      DATA_DIR: this.layout.dataDir,
+      LOG_DIR: this.layout.logsDir,
+      ...this.getHostWatchdogEnv(),
+      CRABBY_BACKEND_RELOADER_PARENT: reloaderParentValue,
+      HOST: DEFAULT_HOST,
+      PORT: String(port),
+      PROMPTS_DIR: this.layout.promptsDir,
+      PERSONAS_DIR: this.layout.personasDir,
+      PYTHONUNBUFFERED: "1",
+      PYTHONIOENCODING: "utf-8"
+    };
+    const pathKey = getPathEnvKey(env);
+    env[pathKey] = buildRuntimePath(env[pathKey]);
+    this.appendRuntimeLog(`spawning backend: ${launch.command} ${launchArgs.join(" ")}`);
+    try {
+      this.child = (0, import_node_child_process.spawn)(launch.command, launchArgs, {
+        cwd: launch.cwd,
+        env,
+        windowsHide: true
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.statusDetail = `\u540E\u7AEF\u8FDB\u7A0B\u542F\u52A8\u5931\u8D25\uFF1A${message}`;
+      this.appendRuntimeLog(`spawn threw synchronously: ${message}`);
+      out.end();
+      err.end();
+      return this.getStatus();
+    }
+    this.child.stdout.pipe(out);
+    this.child.stderr.pipe(err);
+    this.child.once("error", (error) => {
+      this.statusDetail = `\u540E\u7AEF\u8FDB\u7A0B\u542F\u52A8\u5931\u8D25\uFF1A${error.message}`;
+      this.appendRuntimeLog(`child error: ${error.message}`);
+      this.child = null;
+      out.end();
+      err.end();
+    });
+    this.child.once("exit", (code, signal) => {
+      this.statusDetail = `\u540E\u7AEF\u8FDB\u7A0B\u5DF2\u9000\u51FA\uFF0C\u9000\u51FA\u7801 ${code ?? "null"}\uFF0C\u4FE1\u53F7 ${signal ?? "null"}\u3002`;
+      this.appendRuntimeLog(`child exited: code=${code ?? "null"} signal=${signal ?? "null"}`);
+      this.child = null;
+      out.end();
+      err.end();
+    });
+    this.settings.backendUrl = backendUrl;
+    this.writeState({
+      mode: launch.mode,
+      version: launch.version,
+      platform: process.platform,
+      executablePath: launch.command,
+      port,
+      pid: this.child.pid,
+      startedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    try {
+      await waitForHealth(backendUrl, HEALTH_TIMEOUT_MS);
+      this.statusDetail = `\u540E\u7AEF\u6B63\u5728\u4EE5${launch.mode === "dev" ? "\u5F00\u53D1" : "\u751F\u4EA7"}\u6A21\u5F0F\u8FD0\u884C\u3002`;
+      this.appendRuntimeLog(`health check passed: ${backendUrl}`);
+    } catch (error) {
+      this.statusDetail = error instanceof Error ? error.message : "\u540E\u7AEF\u5065\u5EB7\u68C0\u67E5\u5931\u8D25\u3002";
+      this.appendRuntimeLog(`health check failed: ${this.statusDetail}`);
+    }
+    return this.getStatus();
+  }
+  async stop() {
+    this.stopHostHeartbeat();
+    const child = this.child;
+    if (!child || child.killed) {
+      return this.stopExistingBackendWithoutChild();
+    }
+    const token = this.ensureAdminToken();
+    const backendUrl = this.settings.backendUrl;
+    try {
+      await requestBackendShutdown(backendUrl, token);
+      await waitForExit(child, SHUTDOWN_TIMEOUT_MS);
+    } catch {
+      await killProcessTree(child);
+    }
+    this.child = null;
+    this.statusDetail = "\u540E\u7AEF\u8FD0\u884C\u65F6\u5DF2\u505C\u6B62\u3002";
+    return this.getStatus();
+  }
+  async restart() {
+    await this.stop();
+    return this.start();
+  }
+  async installRuntime(manifestUrl) {
+    await this.ensureRuntimeLayout();
+    const normalizedUrl = manifestUrl.trim();
+    if (!normalizedUrl) {
+      throw new Error("\u5C1A\u672A\u914D\u7F6E\u8FD0\u884C\u65F6\u6E05\u5355 URL\u3002");
+    }
+    const manifestResp = await fetch(normalizedUrl);
+    if (!manifestResp.ok) {
+      throw new Error(`\u8FD0\u884C\u65F6\u6E05\u5355\u4E0B\u8F7D\u5931\u8D25\uFF1AHTTP ${manifestResp.status}`);
+    }
+    const manifest = await manifestResp.json();
+    const asset = manifest.platforms?.[process.platform];
+    if (!asset) {
+      throw new Error(`\u5F53\u524D\u5E73\u53F0\u6CA1\u6709\u53EF\u7528\u7684\u540E\u7AEF\u8FD0\u884C\u65F6\uFF1A${process.platform}\u3002`);
+    }
+    const assetResp = await fetch(asset.url);
+    if (!assetResp.ok) {
+      throw new Error(`\u540E\u7AEF\u8FD0\u884C\u65F6\u4E0B\u8F7D\u5931\u8D25\uFF1AHTTP ${assetResp.status}`);
+    }
+    const bytes = Buffer.from(await assetResp.arrayBuffer());
+    const actualHash = (0, import_node_crypto.createHash)("sha256").update(bytes).digest("hex");
+    if (actualHash.toLowerCase() !== asset.sha256.toLowerCase()) {
+      throw new Error("\u540E\u7AEF\u8FD0\u884C\u65F6 SHA256 \u6821\u9A8C\u5931\u8D25\u3002");
+    }
+    const executableName = asset.executableName ?? (process.platform === "win32" ? "crabby-backend.exe" : "crabby-backend");
+    const installDir = (0, import_node_path5.join)(
+      this.layout.runtimeDir,
+      "backend",
+      manifest.version,
+      process.platform
+    );
+    (0, import_node_fs4.mkdirSync)(installDir, { recursive: true });
+    const executablePath = (0, import_node_path5.join)(installDir, executableName);
+    (0, import_node_fs4.writeFileSync)(executablePath, bytes);
+    if (process.platform !== "win32") {
+      (0, import_node_fs4.chmodSync)(executablePath, 493);
+    }
+    this.writeState({
+      mode: "production",
+      version: manifest.version,
+      platform: process.platform,
+      executablePath
+    });
+    this.statusDetail = `\u5DF2\u5B89\u88C5\u540E\u7AEF\u8FD0\u884C\u65F6 ${manifest.version}\u3002`;
+    return this.getStatus();
+  }
+  getStatus() {
+    const state = this.readState();
+    const devConfig = this.readDevRuntimeConfig();
+    const mode = devConfig ? "dev" : "production";
+    const port = this.externalBackend?.port ?? parseBackendPort(this.settings.backendUrl) ?? state?.port ?? null;
+    const running = Boolean(this.child && !this.child.killed) || Boolean(this.externalBackend);
+    return {
+      mode,
+      installed: Boolean(devConfig || state?.executablePath),
+      running,
+      backendUrl: port !== null ? `http://${DEFAULT_HOST}:${port}` : this.settings.backendUrl,
+      port,
+      pid: running ? this.child?.pid ?? this.externalBackend?.pid ?? null : null,
+      envPath: this.layout.envPath,
+      mcpConfigPath: this.layout.mcpConfigPath,
+      promptsDir: this.layout.promptsDir,
+      personasDir: this.layout.personasDir,
+      dataDir: this.layout.dataDir,
+      logsDir: this.layout.logsDir,
+      detail: this.statusDetail
+    };
+  }
+  resolveLaunchConfig() {
+    const devConfig = this.readDevRuntimeConfig();
+    if (devConfig) {
+      return {
+        mode: "dev",
+        command: devConfig.backendCommand,
+        args: devConfig.backendArgs,
+        cwd: devConfig.backendCwd
+      };
+    }
+    const state = this.readState();
+    const executablePath = state?.mode === "production" ? resolveRuntimeExecutablePath(this.layout.runtimeDir, state.executablePath) : null;
+    if (state?.mode === "production" && executablePath && (0, import_node_fs4.existsSync)(executablePath)) {
+      return {
+        mode: "production",
+        command: executablePath,
+        args: [],
+        cwd: (0, import_node_path5.dirname)(executablePath),
+        version: state.version
+      };
+    }
+    return null;
+  }
+  async reuseExistingBackendIfAvailable(launch) {
+    const token = this.ensureAdminToken();
+    const existingBackend = await this.findExistingManagedBackend(token);
+    if (!existingBackend) {
+      return null;
+    }
+    this.externalBackend = existingBackend;
+    this.settings.backendUrl = existingBackend.backendUrl;
+    this.startHostHeartbeat();
+    const launchArgs = launch.mode === "dev" ? withDevHostPortArgs(launch.args, DEFAULT_HOST, existingBackend.port) : launch.args;
+    upsertEnvFile(this.layout.envPath, {
+      CRABBY_ADMIN_ENABLED: "true",
+      CRABBY_ADMIN_TOKEN: token,
+      ...this.getHostWatchdogEnv(),
+      CRABBY_BACKEND_RELOADER_PARENT: getReloaderParentValue(launchArgs),
+      VAULT_PATH: this.getVaultBasePath(),
+      HOST: DEFAULT_HOST,
+      PORT: String(existingBackend.port),
+      PROMPTS_DIR: this.layout.promptsDir,
+      PERSONAS_DIR: this.layout.personasDir
+    });
+    this.writeState({
+      mode: launch.mode,
+      version: launch.version,
+      platform: process.platform,
+      executablePath: launch.command,
+      port: existingBackend.port,
+      pid: existingBackend.pid ?? void 0,
+      startedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    this.statusDetail = "Backend already running; reusing existing managed process.";
+    this.appendRuntimeLog(
+      `reusing existing backend: ${existingBackend.backendUrl} pid=${existingBackend.pid ?? "unknown"}`
+    );
+    return this.getStatus();
+  }
+  async stopExistingBackendWithoutChild() {
+    this.child = null;
+    const token = this.ensureAdminToken();
+    const existingBackend = this.externalBackend ?? await this.findExistingManagedBackend(token);
+    if (!existingBackend) {
+      this.externalBackend = null;
+      this.statusDetail = "\u540E\u7AEF\u8FD0\u884C\u65F6\u5F53\u524D\u672A\u8FD0\u884C\u3002";
+      return this.getStatus();
+    }
+    try {
+      await requestBackendShutdown(existingBackend.backendUrl, token);
+      await waitForBackendUnavailable(
+        existingBackend.backendUrl,
+        SHUTDOWN_TIMEOUT_MS
+      );
+      this.appendRuntimeLog(
+        `shutdown requested for existing backend: ${existingBackend.backendUrl}`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.appendRuntimeLog(
+        `failed to stop existing backend ${existingBackend.backendUrl}: ${message}`
+      );
+      if (await isManagedBackendReachable(existingBackend.backendUrl, token)) {
+        this.externalBackend = existingBackend;
+        this.statusDetail = `Backend shutdown failed: ${message}`;
+        return this.getStatus();
+      }
+    }
+    this.externalBackend = null;
+    this.statusDetail = "\u540E\u7AEF\u8FD0\u884C\u65F6\u5DF2\u505C\u6B62\u3002";
+    return this.getStatus();
+  }
+  async findExistingManagedBackend(token) {
+    const state = this.readState();
+    for (const port of uniquePorts([
+      parseBackendPort(this.settings.backendUrl),
+      state?.port ?? null,
+      DEFAULT_PORT
+    ])) {
+      const backendUrl = `http://${DEFAULT_HOST}:${port}`;
+      if (await isManagedBackendReachable(backendUrl, token)) {
+        return {
+          backendUrl,
+          port,
+          pid: state?.port === port ? state.pid ?? null : null
+        };
+      }
+    }
+    return null;
+  }
+  readDevRuntimeConfig() {
+    if (!(0, import_node_fs4.existsSync)(this.layout.devRuntimePath)) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(stripJsonBom((0, import_node_fs4.readFileSync)(this.layout.devRuntimePath, "utf8")));
+      if (parsed?.mode === "dev" && typeof parsed.backendCommand === "string" && Array.isArray(parsed.backendArgs) && typeof parsed.backendCwd === "string") {
+        return {
+          mode: "dev",
+          repoRoot: (0, import_node_path5.resolve)(String(parsed.repoRoot ?? "")),
+          backendCommand: (0, import_node_path5.resolve)(parsed.backendCommand),
+          backendArgs: parsed.backendArgs.map(String),
+          backendCwd: (0, import_node_path5.resolve)(parsed.backendCwd)
+        };
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  readState() {
+    if (!(0, import_node_fs4.existsSync)(this.layout.statePath)) {
+      return null;
+    }
+    try {
+      return JSON.parse(stripJsonBom((0, import_node_fs4.readFileSync)(this.layout.statePath, "utf8")));
+    } catch {
+      return null;
+    }
+  }
+  writeState(state) {
+    (0, import_node_fs4.mkdirSync)((0, import_node_path5.dirname)(this.layout.statePath), { recursive: true });
+    const nextState = this.normalizeRuntimeStateForWrite(state);
+    (0, import_node_fs4.writeFileSync)(
+      this.layout.statePath,
+      `${JSON.stringify(nextState, null, 2)}
+`,
+      "utf8"
+    );
+  }
+  normalizeRuntimeStateForWrite(state) {
+    if (state.mode !== "production" || !state.executablePath) {
+      return state;
+    }
+    return {
+      ...state,
+      executablePath: serializeRuntimeExecutablePath(
+        this.layout.runtimeDir,
+        state.executablePath
+      )
+    };
+  }
+  migrateLegacyRuntimeData() {
+    const legacyPluginDir = this.layout.pluginDir;
+    const migrations = [
+      {
+        label: "config",
+        legacyPath: (0, import_node_path5.join)(legacyPluginDir, "config"),
+        targetPath: this.layout.configDir
+      },
+      {
+        label: "data",
+        legacyPath: (0, import_node_path5.join)(legacyPluginDir, "data"),
+        targetPath: this.layout.dataDir
+      },
+      {
+        label: "logs",
+        legacyPath: (0, import_node_path5.join)(legacyPluginDir, "logs"),
+        targetPath: this.layout.logsDir
+      }
+    ];
+    for (const migration of migrateRuntimeDataDirectories(migrations)) {
+      if (migration.status === "missing") {
+        continue;
+      }
+      this.appendRuntimeLog(
+        [
+          `legacy ${migration.label} migration: ${migration.status}`,
+          `from=${migration.legacyPath}`,
+          `to=${migration.targetPath}`,
+          `moved=${migration.movedEntries}`,
+          `skipped=${migration.skippedEntries}`,
+          `message=${migration.message}`
+        ].join(" ")
+      );
+    }
+  }
+  appendRuntimeLog(message) {
+    try {
+      (0, import_node_fs4.mkdirSync)(this.layout.logsDir, { recursive: true });
+      (0, import_node_fs4.appendFileSync)(
+        (0, import_node_path5.join)(this.layout.logsDir, "runtime-manager.log"),
+        `${(/* @__PURE__ */ new Date()).toISOString()} ${message}
+`,
+        "utf8"
+      );
+    } catch {
+    }
+  }
+  getHostWatchdogEnv() {
+    return {
+      CRABBY_HOST_HEARTBEAT_FILE: this.layout.heartbeatPath,
+      CRABBY_HOST_HEARTBEAT_TIMEOUT_SECONDS: String(
+        HOST_HEARTBEAT_TIMEOUT_SECONDS
+      ),
+      CRABBY_HOST_PID: String(process.pid)
+    };
+  }
+  startHostHeartbeat() {
+    if (this.heartbeatTimer) {
+      return;
+    }
+    this.writeHostHeartbeat();
+    this.heartbeatTimer = setInterval(
+      () => this.writeHostHeartbeat(),
+      HOST_HEARTBEAT_INTERVAL_MS
+    );
+    this.heartbeatTimer.unref?.();
+  }
+  stopHostHeartbeat() {
+    if (!this.heartbeatTimer) {
+      return;
+    }
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+  }
+  writeHostHeartbeat() {
+    try {
+      (0, import_node_fs4.mkdirSync)((0, import_node_path5.dirname)(this.layout.heartbeatPath), { recursive: true });
+      (0, import_node_fs4.writeFileSync)(
+        this.layout.heartbeatPath,
+        `${JSON.stringify(
+          {
+            pid: process.pid,
+            updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+            pluginDir: this.layout.pluginDir
+          },
+          null,
+          2
+        )}
+`,
+        "utf8"
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.appendRuntimeLog(`failed to write host heartbeat: ${message}`);
+    }
+  }
+  ensureAdminToken() {
+    const existingEnabled = readEnvValue(this.layout.envPath, "CRABBY_ADMIN_ENABLED");
+    const existingToken = readEnvValue(this.layout.envPath, "CRABBY_ADMIN_TOKEN");
+    const token = existingToken?.trim() || (0, import_node_crypto.randomBytes)(24).toString("hex");
+    if (!isTruthyEnvValue(existingEnabled) || !existingToken) {
+      upsertEnvFile(this.layout.envPath, {
+        CRABBY_ADMIN_ENABLED: "true",
+        CRABBY_ADMIN_TOKEN: token
+      });
+    }
+    return token;
+  }
+  getVaultBasePath() {
+    const adapter = this.app.vault.adapter;
+    if (adapter instanceof import_obsidian9.FileSystemAdapter) {
+      return adapter.getBasePath();
+    }
+    return "";
+  }
+};
+function uniquePorts(values) {
+  const ports = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const value of values) {
+    if (typeof value !== "number" || !Number.isInteger(value) || value <= 0 || value > 65535 || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    ports.push(value);
+  }
+  return ports;
+}
+async function isManagedBackendReachable(backendUrl, adminToken) {
+  if (!await fetchOkWithTimeout(`${backendUrl}/health`, {}, EXISTING_BACKEND_TIMEOUT_MS)) {
+    return false;
+  }
+  const hasManagedAdminPlane = await fetchOkWithTimeout(
+    `${backendUrl}/admin/mcp/status`,
+    {
+      headers: { [ADMIN_RELOAD_HEADER]: adminToken }
+    },
+    EXISTING_BACKEND_TIMEOUT_MS
+  );
+  if (!hasManagedAdminPlane) {
+    return false;
+  }
+  return fetchOkWithTimeout(
+    `${backendUrl}/admin/profiles`,
+    {
+      headers: { [ADMIN_RELOAD_HEADER]: adminToken }
+    },
+    EXISTING_BACKEND_TIMEOUT_MS
+  );
+}
+async function fetchOkWithTimeout(url, init, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, {
+      ...init,
+      signal: controller.signal
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function requestBackendShutdown(backendUrl, adminToken) {
+  const resp = await fetch(`${backendUrl}/admin/shutdown`, {
+    method: "POST",
+    headers: { [ADMIN_RELOAD_HEADER]: adminToken }
+  });
+  if (!resp.ok) {
+    throw new Error(`Backend shutdown failed: HTTP ${resp.status}`);
+  }
+}
+async function findAvailablePort(startPort) {
+  for (let port = startPort; port < startPort + 100; port += 1) {
+    if (await canListen(port)) {
+      return port;
+    }
+  }
+  throw new Error(`\u4ECE\u7AEF\u53E3 ${startPort} \u5F00\u59CB\u6CA1\u6709\u627E\u5230\u53EF\u7528\u7684\u540E\u7AEF\u7AEF\u53E3\u3002`);
+}
+function canListen(port) {
+  return new Promise((resolvePromise) => {
+    const server = (0, import_node_net.createServer)();
+    server.once("error", () => resolvePromise(false));
+    server.once("listening", () => {
+      server.close(() => resolvePromise(true));
+    });
+    server.listen(port, DEFAULT_HOST);
+  });
+}
+function withDevHostPortArgs(args, host, port) {
+  const nextArgs = [...args];
+  if (!hasCliOption(nextArgs, "--host")) {
+    nextArgs.push("--host", host);
+  }
+  if (!hasCliOption(nextArgs, "--port")) {
+    nextArgs.push("--port", String(port));
+  }
+  return nextArgs;
+}
+function hasCliOption(args, option) {
+  return args.some((arg) => arg === option || arg.startsWith(`${option}=`));
+}
+function getReloaderParentValue(args) {
+  return hasCliOption(args, "--reload") ? "true" : "false";
+}
+function getPathEnvKey(env) {
+  return Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+}
+function buildRuntimePath(currentPath) {
+  const delimiter = process.platform === "win32" ? ";" : ":";
+  const entries = new Set(
+    (currentPath ?? "").split(delimiter).map((entry) => entry.trim()).filter(Boolean)
+  );
+  for (const candidate of getRuntimePathCandidates()) {
+    if ((0, import_node_fs4.existsSync)(candidate)) {
+      entries.add(candidate);
+    }
+  }
+  return Array.from(entries).join(delimiter);
+}
+function getRuntimePathCandidates() {
+  if (process.platform !== "win32") {
+    return [];
+  }
+  const userProfile = process.env.USERPROFILE?.trim();
+  const localAppData = process.env.LOCALAPPDATA?.trim();
+  const appData = process.env.APPDATA?.trim();
+  return [
+    userProfile ? (0, import_node_path5.join)(userProfile, ".local", "bin") : "",
+    localAppData ? (0, import_node_path5.join)(localAppData, "Microsoft", "WindowsApps") : "",
+    appData ? (0, import_node_path5.join)(appData, "Python", "Python312", "Scripts") : "",
+    localAppData ? (0, import_node_path5.join)(localAppData, "Programs", "Python", "Python312", "Scripts") : ""
+  ].filter(Boolean);
+}
+function stripJsonBom(content) {
+  return content.charCodeAt(0) === 65279 ? content.slice(1) : content;
+}
+async function waitForHealth(baseUrl, timeoutMs) {
+  const startedAt = Date.now();
+  const client = new AgentClient(baseUrl);
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await client.health()) {
+      return;
+    }
+    await sleep(250);
+  }
+  throw new Error(`\u540E\u7AEF\u5728 ${timeoutMs}ms \u5185\u6CA1\u6709\u901A\u8FC7\u5065\u5EB7\u68C0\u67E5\u3002`);
+}
+async function waitForBackendUnavailable(baseUrl, timeoutMs) {
+  const startedAt = Date.now();
+  const client = new AgentClient(baseUrl);
+  while (Date.now() - startedAt < timeoutMs) {
+    if (!await client.health()) {
+      return;
+    }
+    await sleep(250);
+  }
+  throw new Error(`Backend did not stop within ${timeoutMs}ms.`);
+}
+function waitForExit(child, timeoutMs) {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve();
+  }
+  return new Promise((resolvePromise, rejectPromise) => {
+    const timer = setTimeout(() => rejectPromise(new Error("\u540E\u7AEF\u5173\u95ED\u8D85\u65F6\u3002")), timeoutMs);
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolvePromise();
+    });
+  });
+}
+async function killProcessTree(child) {
+  if (child.exitCode !== null || child.signalCode !== null || child.killed) {
+    return;
+  }
+  if (process.platform === "win32" && child.pid) {
+    await new Promise((resolvePromise) => {
+      (0, import_node_child_process.execFile)(
+        "taskkill.exe",
+        ["/PID", String(child.pid), "/T", "/F"],
+        { windowsHide: true },
+        () => resolvePromise()
+      );
+    });
+    return;
+  }
+  child.kill("SIGTERM");
+  try {
+    await waitForExit(child, 1e3);
+  } catch {
+    if (!child.killed) {
+      child.kill("SIGKILL");
+    }
+  }
+}
+function sleep(ms) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+}
+function parseBackendPort(url) {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.port) {
+      return parsed.protocol === "https:" ? 443 : 80;
+    }
+    return Number.parseInt(parsed.port, 10);
+  } catch {
+    return null;
+  }
+}
+
+// src/clientTools/crabbySettingsTool.ts
+var RUNTIME_KEYS = /* @__PURE__ */ new Set([
+  "backendUrl",
+  "backendEnvPath",
+  "backendMcpConfigPath",
+  "runtimeManifestUrl"
+]);
+async function performCrabbySettingsAction(plugin, input) {
+  switch (input.action) {
+    case "inspect":
+      return {
+        ok: true,
+        message: "Loaded current Crabby plugin settings.",
+        settings: buildSettingsSnapshot(plugin)
+      };
+    case "set_runtime_value":
+      return await setRuntimeValue(plugin, input);
+    case "save_profile":
+      return await saveProfile(plugin, input);
+    case "delete_profile":
+      return await deleteProfile(plugin, input);
+    case "activate_profile":
+      return await activateProfile(plugin, input);
+    case "sync_profiles_from_backend":
+      return await syncProfilesFromBackend(plugin);
+    case "sync_backend_vault_path":
+      return await syncBackendVaultPath(plugin);
+    default:
+      return {
+        ok: false,
+        message: `Unknown crabby_settings action: ${String(input.action ?? "")}`,
+        settings: buildSettingsSnapshot(plugin)
+      };
+  }
+}
+function normalizeCrabbySettingsInput(input) {
+  if (!input || typeof input !== "object") {
+    return { action: "inspect" };
+  }
+  const record = input;
+  return {
+    action: normalizeAction(record.action),
+    key: normalizeString(record.key),
+    value: normalizeString(record.value),
+    profile_id: normalizeString(record.profile_id),
+    profile: record.profile,
+    activate: Boolean(record.activate)
+  };
+}
+function normalizeAction(value) {
+  const action = normalizeString(value);
+  switch (action) {
+    case "inspect":
+    case "set_runtime_value":
+    case "save_profile":
+    case "delete_profile":
+    case "activate_profile":
+    case "sync_profiles_from_backend":
+    case "sync_backend_vault_path":
+      return action;
+    default:
+      return "inspect";
+  }
+}
+async function setRuntimeValue(plugin, input) {
+  const key = normalizeString(input.key);
+  if (!RUNTIME_KEYS.has(key)) {
+    return {
+      ok: false,
+      message: "set_runtime_value only supports backendUrl, backendEnvPath, backendMcpConfigPath, or runtimeManifestUrl.",
+      settings: buildSettingsSnapshot(plugin)
+    };
+  }
+  const value = normalizeRuntimeValue(key, input.value);
+  plugin.settings[key] = value;
+  await plugin.saveSettings();
+  if (key === "backendUrl") {
+    window.setTimeout(() => plugin.restartClientToolBridge(), 0);
+  }
+  return {
+    ok: true,
+    message: `Updated plugin setting ${key}.`,
+    changed: [key],
+    settings: buildSettingsSnapshot(plugin)
+  };
+}
+async function saveProfile(plugin, input) {
+  const profile = normalizeProfile(input.profile);
+  if (!profile) {
+    return {
+      ok: false,
+      message: "save_profile requires a complete profile payload.",
+      settings: buildSettingsSnapshot(plugin)
+    };
+  }
+  const client = new AgentClient(plugin.settings.backendUrl);
+  const result2 = await saveLlmProfileToBackend(
+    plugin.settings,
+    profile,
+    client,
+    Boolean(input.activate)
+  );
+  if (!result2.ok) {
+    return {
+      ok: false,
+      message: result2.message,
+      settings: buildSettingsSnapshot(plugin)
+    };
+  }
+  await plugin.saveSettings();
+  return {
+    ok: true,
+    message: result2.message,
+    changed: input.activate ? ["llmProfiles", "activeProfileId"] : ["llmProfiles"],
+    settings: buildSettingsSnapshot(plugin)
+  };
+}
+async function deleteProfile(plugin, input) {
+  const profileId = normalizeString(input.profile_id);
+  if (!profileId) {
+    return {
+      ok: false,
+      message: "delete_profile requires profile_id.",
+      settings: buildSettingsSnapshot(plugin)
+    };
+  }
+  const client = new AgentClient(plugin.settings.backendUrl);
+  const result2 = await deleteLlmProfileFromBackend(
+    plugin.settings,
+    profileId,
+    client
+  );
+  if (!result2.ok) {
+    return {
+      ok: false,
+      message: result2.message,
+      settings: buildSettingsSnapshot(plugin)
+    };
+  }
+  await plugin.saveSettings();
+  return {
+    ok: true,
+    message: result2.message,
+    changed: ["llmProfiles", "activeProfileId"],
+    settings: buildSettingsSnapshot(plugin)
+  };
+}
+async function activateProfile(plugin, input) {
+  const profileId = normalizeString(input.profile_id);
+  if (!profileId) {
+    return {
+      ok: false,
+      message: "activate_profile requires profile_id.",
+      settings: buildSettingsSnapshot(plugin)
+    };
+  }
+  const client = new AgentClient(plugin.settings.backendUrl);
+  const result2 = await activateLlmProfileOnBackend(
+    plugin.settings,
+    profileId,
+    client
+  );
+  if (!result2.ok) {
+    return {
+      ok: false,
+      message: result2.message,
+      settings: buildSettingsSnapshot(plugin)
+    };
+  }
+  await plugin.saveSettings();
+  return {
+    ok: true,
+    message: result2.message,
+    changed: ["activeProfileId", "llmProfiles"],
+    settings: buildSettingsSnapshot(plugin)
+  };
+}
+async function syncProfilesFromBackend(plugin) {
+  const client = new AgentClient(plugin.settings.backendUrl);
+  const result2 = await fetchLlmProfilesFromBackend(plugin.settings, client);
+  if (!result2.ok) {
+    return {
+      ok: false,
+      message: result2.message,
+      settings: buildSettingsSnapshot(plugin)
+    };
+  }
+  await plugin.saveSettings();
+  return {
+    ok: true,
+    message: result2.message,
+    changed: ["llmProfiles", "activeProfileId"],
+    settings: buildSettingsSnapshot(plugin)
+  };
+}
+async function syncBackendVaultPath(plugin) {
+  const result2 = await plugin.ensureBackendVaultPathSynced();
+  return {
+    ok: result2.ok,
+    message: result2.message,
+    changed: result2.changed ? ["backend_vault_path"] : [],
+    settings: buildSettingsSnapshot(plugin)
+  };
+}
+function buildSettingsSnapshot(plugin) {
+  let pluginDataPath = "";
+  let runtimeStatus = null;
+  try {
+    const layout = resolvePluginRuntimeLayout(plugin.app);
+    pluginDataPath = (0, import_node_path6.join)(layout.pluginDir, "data.json");
+  } catch {
+    pluginDataPath = "";
+  }
+  try {
+    runtimeStatus = plugin.runtimeManager?.getStatus() ?? null;
+  } catch {
+    runtimeStatus = null;
+  }
+  return {
+    pluginDataPath,
+    currentVaultPath: plugin.getCurrentVaultPath(),
+    backendUrl: plugin.settings.backendUrl,
+    backendEnvPath: plugin.settings.backendEnvPath,
+    backendMcpConfigPath: plugin.settings.backendMcpConfigPath,
+    runtimeManifestUrl: plugin.settings.runtimeManifestUrl,
+    activeProfileId: plugin.settings.activeProfileId,
+    llmProfiles: plugin.settings.llmProfiles.map(sanitizeProfile),
+    runtimeStatus,
+    backendEnvPathExists: pathExists(plugin.settings.backendEnvPath),
+    backendMcpConfigPathExists: pathExists(plugin.settings.backendMcpConfigPath)
+  };
+}
+function sanitizeProfile(profile) {
+  return {
+    id: profile.id,
+    name: profile.name,
+    provider: profile.provider,
+    model: profile.model,
+    baseUrl: profile.baseUrl,
+    supportsVision: profile.supportsVision,
+    thinkingMode: profile.thinkingMode,
+    thinkingEffort: profile.thinkingEffort,
+    thinkingBudgetTokens: profile.thinkingBudgetTokens,
+    reasoningSplit: profile.reasoningSplit,
+    hasApiKey: profile.apiKey.trim().length > 0,
+    apiKeyMasked: maskSecret(profile.apiKey)
+  };
+}
+function normalizeProfile(profile) {
+  if (!profile || typeof profile !== "object") {
+    return null;
+  }
+  const record = profile;
+  const id = normalizeString(record.id);
+  const name = normalizeString(record.name);
+  const model = normalizeString(record.model);
+  if (!id || !name || !model) {
+    return null;
+  }
+  return {
+    id,
+    name,
+    provider: normalizeLlmProviderId(record.provider),
+    model,
+    baseUrl: normalizeString(record.baseUrl),
+    apiKey: normalizeString(record.apiKey),
+    supportsVision: normalizeBoolean(record.supportsVision),
+    thinkingMode: normalizeString(record.thinkingMode),
+    thinkingEffort: normalizeString(record.thinkingEffort),
+    thinkingBudgetTokens: normalizeString(record.thinkingBudgetTokens, "1024"),
+    reasoningSplit: normalizeBoolean(record.reasoningSplit)
+  };
+}
+function normalizeString(value, fallback = "") {
+  return typeof value === "string" ? value.trim() : fallback;
+}
+function normalizeRuntimeValue(key, value) {
+  const normalized = normalizeString(value);
+  if (!normalized) {
+    return "";
+  }
+  if (key === "backendEnvPath" || key === "backendMcpConfigPath") {
+    return (0, import_node_path6.resolve)(normalized);
+  }
+  return normalized;
+}
+function normalizeBoolean(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["0", "false", "no", "off", ""].includes(normalized)) {
+      return false;
+    }
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  return false;
+}
+function maskSecret(secret) {
+  const trimmed = secret.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed.length <= 6) {
+    return "*".repeat(trimmed.length);
+  }
+  return `${trimmed.slice(0, 4)}...${trimmed.slice(-2)}`;
+}
+function pathExists(targetPath) {
+  if (!targetPath) {
+    return false;
+  }
+  try {
+    return (0, import_node_fs5.existsSync)(targetPath);
+  } catch {
+    return false;
+  }
+}
+
+// src/search/searchEngine.ts
+var FIELD_OPERATORS = /* @__PURE__ */ new Set([
+  "file",
+  "path",
+  "content",
+  "tag",
+  "line",
+  "block",
+  "section",
+  "task",
+  "task-todo",
+  "task-done",
+  "match-case",
+  "ignore-case"
+]);
+function searchDocuments(documents, input) {
+  const query = input.query.trim();
+  const maxResults = clampInt(input.max_results ?? 20, 1, 100);
+  const contextChars = clampInt(input.context_chars ?? 160, 0, 1e3);
+  const sort = input.sort ?? "score";
+  if (!query) {
+    return { query, results: [], total_matches: 0, truncated: false };
+  }
+  const ast = parseSearchQuery(query);
+  const matches = [];
+  for (const doc of documents) {
+    const result2 = evaluateNode(ast, doc, { matchCase: false });
+    if (!result2.ok) {
+      continue;
+    }
+    const firstMatch = result2.matches[0] ?? {
+      field: "content",
+      text: doc.content
+    };
+    matches.push({
+      path: doc.path,
+      ext: doc.ext,
+      score: Math.round(result2.score * 100) / 100,
+      matches: result2.matches.slice(0, 8),
+      snippet: makeSnippet(doc, firstMatch, contextChars),
+      field: firstMatch.field,
+      line: firstMatch.line,
+      tags: normalizeStringList(doc.tags),
+      aliases: normalizeStringList(doc.aliases),
+      mtime: doc.mtime,
+      truncated: result2.matches.length > 8
+    });
+  }
+  sortResults(matches, sort);
+  const totalMatches = matches.length;
+  const results = matches.slice(0, maxResults);
+  return {
+    query,
+    results,
+    total_matches: totalMatches,
+    truncated: totalMatches > results.length
+  };
+}
+function parseSearchQuery(query) {
+  const tokens = tokenize(query);
+  const parser = new Parser(tokens);
+  return parser.parseExpression();
+}
+function tokenize(query) {
+  const tokens = [];
+  let index = 0;
+  while (index < query.length) {
+    const char = query[index];
+    if (/\s/.test(char)) {
+      index += 1;
+      continue;
+    }
+    if (char === "(") {
+      tokens.push({ type: "lparen", value: char });
+      index += 1;
+      continue;
+    }
+    if (char === ")") {
+      tokens.push({ type: "rparen", value: char });
+      index += 1;
+      continue;
+    }
+    if (char === "-") {
+      tokens.push({ type: "not", value: char });
+      index += 1;
+      continue;
+    }
+    if (char === '"') {
+      const parsed2 = readQuoted(query, index);
+      tokens.push({ type: "phrase", value: parsed2.value });
+      index = parsed2.next;
+      continue;
+    }
+    if (char === "/") {
+      const parsed2 = readRegex(query, index);
+      tokens.push({
+        type: "regex",
+        value: parsed2.value,
+        flags: parsed2.flags
+      });
+      index = parsed2.next;
+      continue;
+    }
+    if (char === "[") {
+      const parsed2 = readBracket(query, index);
+      tokens.push({ type: "property", value: parsed2.value });
+      index = parsed2.next;
+      continue;
+    }
+    const field = readFieldOperator(query, index);
+    if (field) {
+      tokens.push({ type: "field", value: field.value });
+      index = field.next;
+      continue;
+    }
+    const parsed = readWord(query, index);
+    const value = parsed.value;
+    tokens.push({
+      type: value === "OR" ? "or" : "term",
+      value
+    });
+    index = parsed.next;
+  }
+  return tokens;
+}
+var Parser = class {
+  constructor(tokens) {
+    this.tokens = tokens;
+    this.index = 0;
+  }
+  parseExpression() {
+    return this.parseOr();
+  }
+  parseOr() {
+    const children = [this.parseAnd()];
+    while (this.match("or")) {
+      children.push(this.parseAnd());
+    }
+    return children.length === 1 ? children[0] : { type: "or", children };
+  }
+  parseAnd() {
+    const children = [];
+    while (!this.isAtEnd() && !this.check("rparen") && !this.check("or")) {
+      children.push(this.parseUnary());
+    }
+    if (children.length === 0) {
+      return { type: "empty" };
+    }
+    return children.length === 1 ? children[0] : { type: "and", children };
+  }
+  parseUnary() {
+    if (this.match("not")) {
+      return { type: "not", child: this.parseUnary() };
+    }
+    return this.parsePrimary();
+  }
+  parsePrimary() {
+    const token = this.advance();
+    if (!token) {
+      return { type: "empty" };
+    }
+    if (token.type === "lparen") {
+      const expression = this.parseExpression();
+      this.match("rparen");
+      return expression;
+    }
+    if (token.type === "field") {
+      return {
+        type: "field",
+        field: token.value,
+        child: this.parseUnary()
+      };
+    }
+    if (token.type === "property") {
+      return { type: "property", raw: token.value };
+    }
+    if (token.type === "phrase") {
+      return { type: "term", value: token.value, exact: true };
+    }
+    if (token.type === "regex") {
+      return { type: "regex", pattern: token.value, flags: token.flags ?? "" };
+    }
+    if (token.type === "term") {
+      return { type: "term", value: token.value, exact: false };
+    }
+    return { type: "empty" };
+  }
+  match(type) {
+    if (!this.check(type)) {
+      return false;
+    }
+    this.index += 1;
+    return true;
+  }
+  check(type) {
+    return this.tokens[this.index]?.type === type;
+  }
+  advance() {
+    return this.tokens[this.index++];
+  }
+  isAtEnd() {
+    return this.index >= this.tokens.length;
+  }
+};
+function evaluateNode(node, doc, options) {
+  switch (node.type) {
+    case "empty":
+      return { ok: true, matches: [], score: 0 };
+    case "term":
+      return evaluateDefaultTerm(node.value, doc, options, node.exact);
+    case "regex":
+      return evaluateDefaultRegex(node.pattern, node.flags, doc, options);
+    case "not": {
+      const child = evaluateNode(node.child, doc, options);
+      return { ok: !child.ok, matches: [], score: 0 };
+    }
+    case "and": {
+      const allMatches = [];
+      let score = 0;
+      for (const child of node.children) {
+        const result2 = evaluateNode(child, doc, options);
+        if (!result2.ok) {
+          return { ok: false, matches: [], score: 0 };
+        }
+        allMatches.push(...result2.matches);
+        score += result2.score;
+      }
+      return { ok: true, matches: allMatches, score };
+    }
+    case "or": {
+      const allMatches = [];
+      let score = 0;
+      for (const child of node.children) {
+        const result2 = evaluateNode(child, doc, options);
+        if (result2.ok) {
+          allMatches.push(...result2.matches);
+          score += result2.score;
+        }
+      }
+      return { ok: allMatches.length > 0 || score > 0, matches: allMatches, score };
+    }
+    case "field":
+      return evaluateField(node.field, node.child, doc, options);
+    case "property":
+      return evaluateProperty(node.raw, doc, options);
+  }
+}
+function evaluateField(field, child, doc, options) {
+  if (field === "match-case") {
+    return evaluateNode(child, doc, { ...options, matchCase: true });
+  }
+  if (field === "ignore-case") {
+    return evaluateNode(child, doc, { ...options, matchCase: false });
+  }
+  if (field === "file") {
+    return evaluateTextNode(child, `${doc.name}
+${basename(doc.name)}`, "file", doc, options, 1.4);
+  }
+  if (field === "path") {
+    return evaluateTextNode(child, doc.path, "path", doc, options, 1.2);
+  }
+  if (field === "content") {
+    return evaluateTextNode(child, doc.content, "content", doc, options, 1);
+  }
+  if (field === "tag") {
+    return evaluateTag(child, doc, options);
+  }
+  if (field === "line") {
+    return evaluateParts(child, getLines(doc), "line", doc, options, 1.1);
+  }
+  if (field === "block") {
+    return evaluateParts(child, getBlocks(doc), "block", doc, options, 1.1);
+  }
+  if (field === "section") {
+    return evaluateParts(child, getSections(doc), "section", doc, options, 1.2);
+  }
+  if (field === "task") {
+    return evaluateParts(child, getTasks(doc), "task", doc, options, 1.3);
+  }
+  if (field === "task-todo") {
+    return evaluateParts(
+      child,
+      getTasks(doc).filter((task) => task.status === "todo"),
+      "task-todo",
+      doc,
+      options,
+      1.4
+    );
+  }
+  if (field === "task-done") {
+    return evaluateParts(
+      child,
+      getTasks(doc).filter((task) => task.status === "done"),
+      "task-done",
+      doc,
+      options,
+      1.4
+    );
+  }
+  return evaluateNode(child, doc, options);
+}
+function evaluateDefaultTerm(value, doc, options, exact) {
+  const contentMatches = findTermMatches(doc.content, value, "content", options, exact);
+  contentMatches.forEach((match) => {
+    if (match.start !== void 0) {
+      match.line = lineForOffset(doc.content, match.start);
+    }
+  });
+  const fileMatches = findTermMatches(doc.name, value, "file", options, exact);
+  const pathMatches = findTermMatches(doc.path, value, "path", options, exact);
+  const matches = [...fileMatches, ...pathMatches, ...contentMatches];
+  return {
+    ok: matches.length > 0,
+    matches,
+    score: fileMatches.length * 2 + pathMatches.length * 1.2 + contentMatches.length
+  };
+}
+function evaluateDefaultRegex(pattern, flags, doc, options) {
+  const contentMatches = findRegexMatches(doc.content, pattern, flags, "content", options);
+  contentMatches.forEach((match) => {
+    if (match.start !== void 0) {
+      match.line = lineForOffset(doc.content, match.start);
+    }
+  });
+  const pathMatches = findRegexMatches(doc.path, pattern, flags, "path", options);
+  const fileMatches = findRegexMatches(doc.name, pattern, flags, "file", options);
+  const matches = [...fileMatches, ...pathMatches, ...contentMatches];
+  return {
+    ok: matches.length > 0,
+    matches,
+    score: fileMatches.length * 2 + pathMatches.length * 1.2 + contentMatches.length
+  };
+}
+function evaluateTextNode(child, text, field, source, options, weight, line) {
+  const doc = {
+    ...source,
+    content: text,
+    path: "",
+    name: "",
+    tags: [],
+    aliases: [],
+    properties: {},
+    sections: [],
+    blocks: [],
+    tasks: []
+  };
+  const result2 = evaluateNode(child, doc, options);
+  if (!result2.ok) {
+    return result2;
+  }
+  return {
+    ok: true,
+    matches: result2.matches.map((match) => ({
+      ...match,
+      field,
+      line: line ?? match.line
+    })),
+    score: result2.score * weight
+  };
+}
+function evaluateParts(child, parts, field, doc, options, weight) {
+  const matches = [];
+  let score = 0;
+  for (const part of parts) {
+    const result2 = evaluateTextNode(
+      child,
+      part.text,
+      field,
+      doc,
+      options,
+      weight,
+      part.line
+    );
+    if (result2.ok) {
+      matches.push(...result2.matches);
+      score += result2.score;
+    }
+  }
+  return { ok: matches.length > 0, matches, score };
+}
+function evaluateTag(child, doc, options) {
+  const tags = normalizeStringList(doc.tags);
+  if (child.type === "term") {
+    const query = normalizeTag(child.value);
+    const matches = tags.filter((tag) => tagMatches(tag, query, options.matchCase)).map((tag) => ({ field: "tag", text: tag }));
+    return { ok: matches.length > 0, matches, score: matches.length * 2 };
+  }
+  return evaluateTextNode(child, tags.join("\n"), "tag", doc, options, 2);
+}
+function evaluateProperty(raw, doc, options) {
+  const parsed = parsePropertyQuery(raw);
+  const properties = doc.properties ?? {};
+  const key = parsed.key;
+  const value = getPropertyValue(properties, key);
+  const exists = value !== void 0;
+  if (!exists) {
+    return { ok: false, matches: [], score: 0 };
+  }
+  if (parsed.value === null) {
+    return {
+      ok: true,
+      matches: [{ field: "property", text: key }],
+      score: 2
+    };
+  }
+  const serialized = serializePropertyValue(value);
+  if (parsed.value.trim().toLowerCase() === "null") {
+    const empty = serialized.trim() === "";
+    return {
+      ok: empty,
+      matches: empty ? [{ field: "property", text: `${key}: null` }] : [],
+      score: empty ? 2 : 0
+    };
+  }
+  const comparison = comparePropertyValue(value, parsed.value);
+  if (comparison !== null) {
+    return {
+      ok: comparison,
+      matches: comparison ? [{ field: "property", text: `${key}: ${serialized}` }] : [],
+      score: comparison ? 2 : 0
+    };
+  }
+  const node = parseSearchQuery(parsed.value);
+  const result2 = evaluateTextNode(node, serialized, "property", doc, options, 2);
+  return result2.ok ? {
+    ok: true,
+    matches: result2.matches.map((match) => ({
+      ...match,
+      text: `${key}: ${match.text}`
+    })),
+    score: result2.score
+  } : result2;
+}
+function findTermMatches(text, term, field, options, exact) {
+  const query = exact ? term : term.trim();
+  if (!query) {
+    return [];
+  }
+  const haystack = options.matchCase ? text : text.toLowerCase();
+  const needle = options.matchCase ? query : query.toLowerCase();
+  const matches = [];
+  let start = haystack.indexOf(needle);
+  while (start !== -1 && matches.length < 20) {
+    const end = start + needle.length;
+    matches.push({
+      field,
+      text: text.slice(start, end),
+      start,
+      end
+    });
+    start = haystack.indexOf(needle, Math.max(end, start + 1));
+  }
+  return matches;
+}
+function findRegexMatches(text, pattern, flags, field, options) {
+  try {
+    const nextFlags = new Set(flags.split(""));
+    nextFlags.add("g");
+    if (!options.matchCase) {
+      nextFlags.add("i");
+    }
+    const regex = new RegExp(pattern, Array.from(nextFlags).join(""));
+    const matches = [];
+    let match;
+    while ((match = regex.exec(text)) && matches.length < 20) {
+      const value = match[0];
+      matches.push({
+        field,
+        text: value,
+        start: match.index,
+        end: match.index + value.length
+      });
+      if (value.length === 0) {
+        regex.lastIndex += 1;
+      }
+    }
+    return matches;
+  } catch {
+    return [];
+  }
+}
+function makeSnippet(doc, match, contextChars) {
+  if (contextChars === 0) {
+    return "";
+  }
+  if (match.line !== void 0) {
+    const line = doc.content.split(/\r?\n/)[match.line - 1];
+    if (line) {
+      return trimSnippet(line, contextChars);
+    }
+  }
+  if (match.start !== void 0 && match.end !== void 0 && match.field === "content") {
+    const start = Math.max(0, match.start - contextChars);
+    const end = Math.min(doc.content.length, match.end + contextChars);
+    return trimSnippet(doc.content.slice(start, end).replace(/\s+/g, " "), contextChars * 2);
+  }
+  return trimSnippet(match.text || doc.path, contextChars * 2);
+}
+function getLines(doc) {
+  return doc.content.split(/\r?\n/).map((text, index) => ({
+    text,
+    line: index + 1
+  }));
+}
+function getBlocks(doc) {
+  if (doc.blocks?.length) {
+    return doc.blocks;
+  }
+  return doc.content.split(/\n\s*\n/g).map((text) => text.trim()).filter(Boolean).map((text) => ({ text }));
+}
+function getSections(doc) {
+  if (doc.sections?.length) {
+    return doc.sections;
+  }
+  return [{ text: doc.content, line: 1 }];
+}
+function getTasks(doc) {
+  if (doc.tasks?.length) {
+    return doc.tasks;
+  }
+  const tasks = [];
+  doc.content.split(/\r?\n/).forEach((line, index) => {
+    const match = /^\s*[-*]\s+\[([^\]])\]\s+(.*)$/.exec(line);
+    if (match) {
+      tasks.push({
+        text: line,
+        line: index + 1,
+        status: match[1] === " " ? "todo" : "done"
+      });
+    }
+  });
+  return tasks;
+}
+function sortResults(results, sort) {
+  results.sort((a, b) => {
+    if (sort === "mtime_desc") {
+      return b.mtime - a.mtime || a.path.localeCompare(b.path);
+    }
+    if (sort === "mtime_asc") {
+      return a.mtime - b.mtime || a.path.localeCompare(b.path);
+    }
+    if (sort === "path") {
+      return a.path.localeCompare(b.path);
+    }
+    return b.score - a.score || b.mtime - a.mtime || a.path.localeCompare(b.path);
+  });
+}
+function readQuoted(text, start) {
+  let value = "";
+  let index = start + 1;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === "\\" && index + 1 < text.length) {
+      value += text[index + 1];
+      index += 2;
+      continue;
+    }
+    if (char === '"') {
+      return { value, next: index + 1 };
+    }
+    value += char;
+    index += 1;
+  }
+  return { value, next: index };
+}
+function readRegex(text, start) {
+  let value = "";
+  let index = start + 1;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === "\\" && index + 1 < text.length) {
+      value += char + text[index + 1];
+      index += 2;
+      continue;
+    }
+    if (char === "/") {
+      index += 1;
+      let flags = "";
+      while (index < text.length && /[a-z]/i.test(text[index])) {
+        flags += text[index];
+        index += 1;
+      }
+      return { value, flags, next: index };
+    }
+    value += char;
+    index += 1;
+  }
+  return { value, flags: "", next: index };
+}
+function readBracket(text, start) {
+  let value = "";
+  let index = start + 1;
+  while (index < text.length && text[index] !== "]") {
+    value += text[index];
+    index += 1;
+  }
+  return { value, next: Math.min(index + 1, text.length) };
+}
+function readWord(text, start) {
+  let index = start;
+  while (index < text.length && !/\s/.test(text[index]) && !/[()]/.test(text[index])) {
+    index += 1;
+  }
+  return { value: text.slice(start, index), next: index };
+}
+function readFieldOperator(text, start) {
+  const match = /^[A-Za-z-]+:/.exec(text.slice(start));
+  if (!match) {
+    return null;
+  }
+  const value = match[0].slice(0, -1);
+  if (!FIELD_OPERATORS.has(value)) {
+    return null;
+  }
+  return { value, next: start + match[0].length };
+}
+function parsePropertyQuery(raw) {
+  const index = raw.indexOf(":");
+  if (index === -1) {
+    return { key: raw.trim(), value: null };
+  }
+  return {
+    key: raw.slice(0, index).trim(),
+    value: raw.slice(index + 1).trim()
+  };
+}
+function getPropertyValue(properties, key) {
+  if (Object.prototype.hasOwnProperty.call(properties, key)) {
+    return properties[key];
+  }
+  const lower = key.toLowerCase();
+  const actual = Object.keys(properties).find((candidate) => candidate.toLowerCase() === lower);
+  return actual ? properties[actual] : void 0;
+}
+function serializePropertyValue(value) {
+  if (value === null || value === void 0) {
+    return "";
+  }
+  if (Array.isArray(value)) {
+    return value.map(serializePropertyValue).join("\n");
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+function comparePropertyValue(value, query) {
+  const match = /^(<=|>=|<|>)(.+)$/.exec(query.trim());
+  if (!match) {
+    return null;
+  }
+  const left = comparableValue(value);
+  const right = comparableValue(match[2].trim());
+  if (left === null || right === null) {
+    return false;
+  }
+  switch (match[1]) {
+    case "<":
+      return left < right;
+    case ">":
+      return left > right;
+    case "<=":
+      return left <= right;
+    case ">=":
+      return left >= right;
+    default:
+      return false;
+  }
+}
+function comparableValue(value) {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    if (!Number.isNaN(numeric) && value.trim() !== "") {
+      return numeric;
+    }
+    const timestamp = Date.parse(value);
+    if (!Number.isNaN(timestamp)) {
+      return timestamp;
+    }
+    return value;
+  }
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
+  return null;
+}
+function normalizeStringList(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => String(item).trim()).filter(Boolean);
+}
+function normalizeTag(tag) {
+  return tag.trim().replace(/^#/, "");
+}
+function tagMatches(tag, query, matchCase) {
+  const normalizedTag = normalizeTag(tag);
+  const left = matchCase ? normalizedTag : normalizedTag.toLowerCase();
+  const right = matchCase ? query : query.toLowerCase();
+  return left === right || left.startsWith(`${right}/`);
+}
+function basename(name) {
+  return name.replace(/\.[^.]+$/, "");
+}
+function lineForOffset(text, offset) {
+  return text.slice(0, offset).split(/\r?\n/).length;
+}
+function trimSnippet(text, maxLength) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
+}
+function clampInt(value, min, max) {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.max(min, Math.min(max, Math.trunc(value)));
+}
+
+// src/search/obsidianSearch.ts
+var BLOCKED_DIRS = /* @__PURE__ */ new Set([
+  ".obsidian",
+  ".crabby",
+  ".Crabby",
+  ".LifeAssistantAgent",
+  ".git",
+  "node_modules",
+  ".venv"
+]);
+async function performObsidianSearch(app, input) {
+  const documents = await buildSearchDocuments(app);
+  return searchDocuments(documents, input);
+}
+async function buildSearchDocuments(app) {
+  const markdownFiles = app.vault.getMarkdownFiles();
+  const canvasFiles = app.vault.getFiles().filter((file) => getExt(file) === "canvas");
+  const files = [...markdownFiles, ...canvasFiles].filter(
+    (file) => !isBlockedPath(file.path)
+  );
+  const documents = [];
+  for (const file of files) {
+    try {
+      const content = await app.vault.cachedRead(file);
+      if (getExt(file) === "canvas") {
+        documents.push(buildCanvasDocument(file, content));
+      } else {
+        documents.push(
+          buildMarkdownDocument(
+            file,
+            content,
+            app.metadataCache.getFileCache(file)
+          )
+        );
+      }
+    } catch (error) {
+      console.warn("[Crabby] Failed to read searchable file", file.path, error);
+    }
+  }
+  return documents;
+}
+function buildMarkdownDocument(file, content, cache) {
+  const properties = { ...cache?.frontmatter ?? {} };
+  const aliases = parseAliases(properties.aliases);
+  const tags = collectTags(cache, properties);
+  if (aliases.length > 0) {
+    properties.aliases = aliases;
+  }
+  if (tags.length > 0) {
+    properties.tags = tags;
+  }
+  return {
+    path: file.path,
+    name: file.name,
+    ext: getExt(file),
+    content,
+    mtime: file.stat.mtime,
+    ctime: file.stat.ctime,
+    tags,
+    aliases,
+    properties,
+    sections: buildSections(content, cache),
+    blocks: buildBlocks(content, cache),
+    tasks: buildTasks(content, cache)
+  };
+}
+function buildCanvasDocument(file, content) {
+  const extracted = extractCanvasText(content);
+  return {
+    path: file.path,
+    name: file.name,
+    ext: getExt(file),
+    content: extracted.content,
+    mtime: file.stat.mtime,
+    ctime: file.stat.ctime,
+    tags: [],
+    aliases: [],
+    properties: {
+      type: "canvas"
+    },
+    sections: extracted.blocks,
+    blocks: extracted.blocks,
+    tasks: []
+  };
+}
+function extractCanvasText(content) {
+  try {
+    const parsed = JSON.parse(content);
+    const blocks = (parsed.nodes ?? []).map((node) => {
+      const type = String(node.type ?? "");
+      if (type === "text") {
+        return String(node.text ?? "").trim();
+      }
+      if (type === "file") {
+        return String(node.file ?? "").trim();
+      }
+      if (type === "link") {
+        return String(node.url ?? "").trim();
+      }
+      if (type === "group") {
+        return String(node.label ?? "").trim();
+      }
+      return "";
+    }).filter(Boolean).map((text) => ({ text }));
+    return {
+      content: blocks.map((block) => block.text).join("\n\n"),
+      blocks
+    };
+  } catch {
+    return {
+      content,
+      blocks: content.split(/\n\s*\n/g).map((text) => text.trim()).filter(Boolean).map((text) => ({ text }))
+    };
+  }
+}
+function buildSections(content, cache) {
+  const headings = cache?.headings ?? [];
+  if (!headings.length) {
+    return [{ text: content, line: 1 }];
+  }
+  const lines = content.split(/\r?\n/);
+  return headings.map((heading, index) => {
+    const startLine = heading.position.start.line;
+    const next = headings[index + 1];
+    const endLine = next ? next.position.start.line : lines.length;
+    return {
+      text: lines.slice(startLine, endLine).join("\n"),
+      line: startLine + 1
+    };
+  });
+}
+function buildBlocks(content, cache) {
+  const sections = cache?.sections ?? [];
+  const lines = content.split(/\r?\n/);
+  if (!sections.length) {
+    return content.split(/\n\s*\n/g).map((text) => text.trim()).filter(Boolean).map((text) => ({ text }));
+  }
+  return sections.filter((section) => section.type !== "yaml").map((section) => {
+    const startLine = section.position.start.line;
+    const endLine = section.position.end.line + 1;
+    return {
+      text: lines.slice(startLine, endLine).join("\n"),
+      line: startLine + 1
+    };
+  }).filter((part) => part.text.trim().length > 0);
+}
+function buildTasks(content, cache) {
+  const listItems = cache?.listItems ?? [];
+  const lines = content.split(/\r?\n/);
+  return listItems.filter((item) => item.task !== void 0).map((item) => {
+    const line = item.position.start.line;
+    return {
+      text: lines[line] ?? "",
+      line: line + 1,
+      status: item.task === " " ? "todo" : "done"
+    };
+  });
+}
+function collectTags(cache, properties) {
+  const tags = /* @__PURE__ */ new Set();
+  for (const tag of cache?.tags ?? []) {
+    if (tag.tag) {
+      tags.add(tag.tag);
+    }
+  }
+  for (const tag of parseTags(properties.tags)) {
+    tags.add(tag.startsWith("#") ? tag : `#${tag}`);
+  }
+  return Array.from(tags).sort();
+}
+function parseAliases(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
+  }
+  return [];
+}
+function parseTags(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value === "string" && value.trim()) {
+    return value.split(/[,\s]+/).map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
+}
+function getExt(file) {
+  return file.extension || file.path.split(".").pop()?.toLowerCase() || "";
+}
+function isBlockedPath(path) {
+  return path.split("/").some((part) => BLOCKED_DIRS.has(part));
+}
+
+// src/clientTools/obsidianClientTools.ts
+var ObsidianClientToolBridge = class {
+  constructor(plugin, getBackendUrl) {
+    this.plugin = plugin;
+    this.getBackendUrl = getBackendUrl;
+    this.ws = null;
+    this.reconnectTimer = null;
+    this.stopped = true;
+  }
+  start() {
+    this.stopped = false;
+    this.connect();
+  }
+  stop() {
+    this.stopped = true;
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+  connect() {
+    if (this.stopped || this.ws) {
+      return;
+    }
+    const backendUrl = this.getBackendUrl().trim();
+    if (!backendUrl) {
+      this.scheduleReconnect();
+      return;
+    }
+    const wsUrl = backendUrl.replace(/^http/i, "ws").replace(/\/$/, "");
+    const ws = new WebSocket(`${wsUrl}/client-tools/obsidian`);
+    this.ws = ws;
+    ws.onmessage = (event) => {
+      void this.handleMessage(event.data);
+    };
+    ws.onclose = () => {
+      if (this.ws === ws) {
+        this.ws = null;
+      }
+      this.scheduleReconnect();
+    };
+    ws.onerror = () => {
+      ws.close();
+    };
+  }
+  scheduleReconnect() {
+    if (this.stopped || this.reconnectTimer !== null) {
+      return;
+    }
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, 3e3);
+  }
+  async handleMessage(raw) {
+    let request;
+    try {
+      request = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (request.type !== "client_tool_request" || !request.request_id) {
+      return;
+    }
+    try {
+      let result2;
+      if (request.tool === "obsidian_search") {
+        result2 = await performObsidianSearch(
+          this.plugin.app,
+          normalizeSearchInput(request.input)
+        );
+      } else if (request.tool === "crabby_settings") {
+        result2 = await performCrabbySettingsAction(
+          this.plugin,
+          normalizeCrabbySettingsInput(request.input)
+        );
+      } else {
+        throw new Error(`Unknown client tool: ${request.tool}`);
+      }
+      this.send({
+        type: "client_tool_result",
+        request_id: request.request_id,
+        result: result2
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.send({
+        type: "client_tool_error",
+        request_id: request.request_id,
+        error: message
+      });
+    }
+  }
+  send(payload) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    this.ws.send(JSON.stringify(payload));
+  }
+};
+function normalizeSearchInput(input) {
+  if (!input || typeof input !== "object") {
+    return { query: "" };
+  }
+  const record = input;
+  return {
+    query: String(record.query ?? ""),
+    max_results: typeof record.max_results === "number" ? record.max_results : void 0,
+    context_chars: typeof record.context_chars === "number" ? record.context_chars : void 0,
+    sort: record.sort === "mtime_desc" || record.sort === "mtime_asc" || record.sort === "path" ? record.sort : "score"
+  };
+}
+
+// src/config/settingsData.ts
+var import_node_path7 = require("node:path");
+function isRecord(value) {
+  return typeof value === "object" && value !== null;
+}
+function normalizeString2(value, fallback = "") {
+  return typeof value === "string" ? value.trim() : fallback;
+}
+function normalizeProvider(value) {
+  return normalizeLlmProviderId(value);
+}
+function normalizeBoolean2(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["0", "false", "no", "off", ""].includes(normalized)) {
+      return false;
+    }
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  return false;
+}
+function normalizeProfile2(profile) {
+  if (!isRecord(profile)) {
+    return null;
+  }
+  const id = normalizeString2(profile.id);
+  const name = normalizeString2(profile.name);
+  const model = normalizeString2(profile.model);
+  if (!id || !name || !model) {
+    return null;
+  }
+  return {
+    id,
+    name,
+    provider: normalizeProvider(profile.provider),
+    model,
+    baseUrl: normalizeString2(profile.baseUrl),
+    apiKey: normalizeString2(profile.apiKey),
+    supportsVision: normalizeBoolean2(profile.supportsVision),
+    thinkingMode: normalizeString2(profile.thinkingMode),
+    thinkingEffort: normalizeString2(profile.thinkingEffort),
+    thinkingBudgetTokens: normalizeString2(profile.thinkingBudgetTokens, "1024"),
+    reasoningSplit: normalizeBoolean2(profile.reasoningSplit)
+  };
+}
+function normalizeBackendEnvPath(source, defaults) {
+  const backendEnvPath = normalizeString2(
+    source.backendEnvPath,
+    defaults.backendEnvPath
+  );
+  if (backendEnvPath) {
+    return (0, import_node_path7.resolve)(backendEnvPath);
+  }
+  const legacyBackendPath = normalizeString2(source.backendPath);
+  if (legacyBackendPath) {
+    return (0, import_node_path7.resolve)(legacyBackendPath, ".env");
+  }
+  return "";
+}
+function needsBackendEnvPathMigration(loaded) {
+  if (!isRecord(loaded)) {
+    return false;
+  }
+  return !normalizeString2(loaded.backendEnvPath) && !!normalizeString2(loaded.backendPath);
+}
+function hydrateSettings(defaults, loaded) {
+  const source = isRecord(loaded) ? loaded : {};
+  const backendEnvPath = normalizeBackendEnvPath(source, defaults);
+  return {
+    ...defaults,
+    backendUrl: normalizeString2(source.backendUrl, defaults.backendUrl),
+    backendEnvPath,
+    backendMcpConfigPath: normalizeString2(
+      source.backendMcpConfigPath,
+      defaults.backendMcpConfigPath
+    ),
+    runtimeManifestUrl: normalizeString2(
+      source.runtimeManifestUrl,
+      defaults.runtimeManifestUrl
+    ),
+    backendPath: "",
+    llmProfiles: Array.isArray(source.llmProfiles) ? source.llmProfiles.map((profile) => normalizeProfile2(profile)).filter((profile) => profile !== null) : defaults.llmProfiles.map((profile) => ({ ...profile })),
+    activeProfileId: normalizeString2(
+      source.activeProfileId,
+      defaults.activeProfileId
+    )
+  };
+}
+
+// src/settings.ts
+var import_obsidian10 = require("obsidian");
+
+// src/config/mcpConfig.ts
+var import_node_fs6 = require("node:fs");
+var import_node_path8 = require("node:path");
+var ADMIN_ENABLED_KEY2 = "CRABBY_ADMIN_ENABLED";
+var ADMIN_TOKEN_KEY2 = "CRABBY_ADMIN_TOKEN";
+function resolveBackendMcpConfigPath(settings) {
+  const envResolution = resolveBackendEnvPath(settings);
+  const overridePath = settings.backendMcpConfigPath?.trim();
+  if (overridePath) {
+    const configPath = (0, import_node_path8.resolve)(overridePath);
+    const examplePath = envResolution.ok && envResolution.envPath ? (0, import_node_path8.join)(
+      (0, import_node_path8.dirname)(envResolution.envPath),
+      "server",
+      "data",
+      "mcp_servers.example.json"
+    ) : (0, import_node_path8.join)((0, import_node_path8.dirname)(configPath), "mcp_servers.example.json");
+    return {
+      ok: true,
+      configPath,
+      examplePath,
+      derivedFromBackendEnvPath: false,
+      message: ""
+    };
+  }
+  if (!envResolution.ok || !envResolution.envPath) {
+    return {
+      ok: false,
+      derivedFromBackendEnvPath: false,
+      message: "\u8BF7\u5148\u914D\u7F6E\u201C\u540E\u7AEF .env \u8DEF\u5F84\u201D\uFF0C\u518D\u7F16\u8F91 MCP \u914D\u7F6E\u6587\u4EF6\u3002"
+    };
+  }
+  const projectRoot = (0, import_node_path8.dirname)(envResolution.envPath);
+  return {
+    ok: true,
+    configPath: (0, import_node_path8.join)(projectRoot, "server", "data", "mcp_servers.json"),
+    examplePath: (0, import_node_path8.join)(projectRoot, "server", "data", "mcp_servers.example.json"),
+    derivedFromBackendEnvPath: true,
+    message: "\u5F53\u524D\u8DEF\u5F84\u7531\u201C\u540E\u7AEF .env \u8DEF\u5F84\u201D\u81EA\u52A8\u63A8\u5BFC\u3002"
+  };
+}
+function validateMcpConfigText(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      message: `JSON \u683C\u5F0F\u65E0\u6548\uFF1A${message}`,
+      serverNames: []
+    };
+  }
+  if (!isPlainObject(parsed)) {
+    return {
+      ok: false,
+      message: "MCP \u914D\u7F6E\u5FC5\u987B\u662F\u4E00\u4E2A JSON \u5BF9\u8C61\u3002",
+      serverNames: []
+    };
+  }
+  const rawServers = parsed.mcpServers;
+  if (!isPlainObject(rawServers)) {
+    return {
+      ok: false,
+      message: "`mcpServers` \u5FC5\u987B\u662F\u4E00\u4E2A\u5BF9\u8C61\u3002",
+      serverNames: []
+    };
+  }
+  const serverNames = Object.keys(rawServers);
+  for (const serverName of serverNames) {
+    const rawDefinition = rawServers[serverName];
+    if (!isPlainObject(rawDefinition)) {
+      return {
+        ok: false,
+        message: `MCP \u670D\u52A1\u201C${serverName}\u201D\u5FC5\u987B\u662F\u4E00\u4E2A\u5BF9\u8C61\u3002`,
+        serverNames: []
+      };
+    }
+    const transport = typeof rawDefinition.transport === "string" && rawDefinition.transport.trim() ? rawDefinition.transport.trim() : "stdio";
+    if (transport !== "stdio" && transport !== "sse") {
+      return {
+        ok: false,
+        message: `MCP \u670D\u52A1\u201C${serverName}\u201D\u4F7F\u7528\u4E86\u4E0D\u652F\u6301\u7684 transport\uFF1A\u201C${transport}\u201D\u3002`,
+        serverNames: []
+      };
+    }
+    if (transport === "stdio" && (typeof rawDefinition.command !== "string" || !rawDefinition.command.trim())) {
+      return {
+        ok: false,
+        message: `MCP \u670D\u52A1\u201C${serverName}\u201D\u9700\u8981\u586B\u5199\u975E\u7A7A\u7684 "command"\u3002`,
+        serverNames: []
+      };
+    }
+    if (transport === "sse" && (typeof rawDefinition.url !== "string" || !rawDefinition.url.trim())) {
+      return {
+        ok: false,
+        message: `MCP \u670D\u52A1\u201C${serverName}\u201D\u9700\u8981\u586B\u5199\u975E\u7A7A\u7684 "url"\u3002`,
+        serverNames: []
+      };
+    }
+    if (rawDefinition.args !== void 0 && (!Array.isArray(rawDefinition.args) || rawDefinition.args.some((item) => typeof item !== "string"))) {
+      return {
+        ok: false,
+        message: `MCP \u670D\u52A1\u201C${serverName}\u201D\u7684 "args" \u6570\u7EC4\u683C\u5F0F\u4E0D\u6B63\u786E\u3002`,
+        serverNames: []
+      };
+    }
+    if (rawDefinition.env !== void 0 && !isPlainObject(rawDefinition.env)) {
+      return {
+        ok: false,
+        message: `MCP \u670D\u52A1\u201C${serverName}\u201D\u7684 "env" \u5BF9\u8C61\u683C\u5F0F\u4E0D\u6B63\u786E\u3002`,
+        serverNames: []
+      };
+    }
+  }
+  return {
+    ok: true,
+    message: serverNames.length > 0 ? `\u914D\u7F6E\u6709\u6548\uFF0C\u5F53\u524D\u5171\u5B9A\u4E49 ${serverNames.length} \u4E2A MCP \u670D\u52A1\uFF1A${serverNames.join("\u3001")}\u3002` : "\u914D\u7F6E\u6709\u6548\uFF0C\u4F46\u5F53\u524D\u8FD8\u6CA1\u6709\u5B9A\u4E49\u4EFB\u4F55 MCP \u670D\u52A1\u3002",
+    serverNames
+  };
+}
+function loadMcpConfigLocally(settings) {
+  const resolution = resolveBackendMcpConfigPath(settings);
+  if (!resolution.ok || !resolution.configPath) {
+    return {
+      ok: false,
+      message: resolution.message,
+      exists: false
+    };
+  }
+  if (!(0, import_node_fs6.existsSync)(resolution.configPath)) {
+    return {
+      ok: true,
+      configPath: resolution.configPath,
+      examplePath: resolution.examplePath,
+      text: "",
+      exists: false,
+      message: `MCP \u914D\u7F6E\u6587\u4EF6\u5C1A\u4E0D\u5B58\u5728\uFF1A${resolution.configPath}`
+    };
+  }
+  try {
+    return {
+      ok: true,
+      configPath: resolution.configPath,
+      examplePath: resolution.examplePath,
+      text: (0, import_node_fs6.readFileSync)(resolution.configPath, "utf8"),
+      exists: true,
+      message: `\u5DF2\u4ECE ${resolution.configPath} \u8F7D\u5165 MCP \u914D\u7F6E\u3002`
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      configPath: resolution.configPath,
+      examplePath: resolution.examplePath,
+      exists: true,
+      message: `\u8BFB\u53D6 MCP \u914D\u7F6E\u5931\u8D25\uFF1A${message}`
+    };
+  }
+}
+function createMcpConfigFromExample(settings) {
+  const resolution = resolveBackendMcpConfigPath(settings);
+  if (!resolution.ok || !resolution.configPath || !resolution.examplePath) {
+    return {
+      ok: false,
+      message: resolution.message
+    };
+  }
+  if (!(0, import_node_fs6.existsSync)(resolution.examplePath)) {
+    return {
+      ok: false,
+      configPath: resolution.configPath,
+      examplePath: resolution.examplePath,
+      message: `\u7F3A\u5C11 MCP \u793A\u4F8B\u914D\u7F6E\u6587\u4EF6\uFF1A${resolution.examplePath}`
+    };
+  }
+  if ((0, import_node_fs6.existsSync)(resolution.configPath)) {
+    return {
+      ok: false,
+      configPath: resolution.configPath,
+      examplePath: resolution.examplePath,
+      message: `MCP \u914D\u7F6E\u6587\u4EF6\u5DF2\u5B58\u5728\uFF1A${resolution.configPath}`
+    };
+  }
+  try {
+    (0, import_node_fs6.mkdirSync)((0, import_node_path8.dirname)(resolution.configPath), { recursive: true });
+    (0, import_node_fs6.copyFileSync)(resolution.examplePath, resolution.configPath);
+    return {
+      ok: true,
+      configPath: resolution.configPath,
+      examplePath: resolution.examplePath,
+      text: (0, import_node_fs6.readFileSync)(resolution.configPath, "utf8"),
+      exists: true,
+      message: `\u5DF2\u6839\u636E\u793A\u4F8B\u6587\u4EF6\u521B\u5EFA MCP \u914D\u7F6E\uFF1A${resolution.configPath}`
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      configPath: resolution.configPath,
+      examplePath: resolution.examplePath,
+      message: `\u521B\u5EFA MCP \u914D\u7F6E\u5931\u8D25\uFF1A${message}`
+    };
+  }
+}
+function saveMcpConfigLocally(settings, text) {
+  const resolution = resolveBackendMcpConfigPath(settings);
+  if (!resolution.ok || !resolution.configPath) {
+    return {
+      ok: false,
+      message: resolution.message
+    };
+  }
+  const validation = validateMcpConfigText(text);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      configPath: resolution.configPath,
+      examplePath: resolution.examplePath,
+      text,
+      message: validation.message
+    };
+  }
+  try {
+    (0, import_node_fs6.mkdirSync)((0, import_node_path8.dirname)(resolution.configPath), { recursive: true });
+    (0, import_node_fs6.writeFileSync)(resolution.configPath, text, "utf8");
+    return {
+      ok: true,
+      configPath: resolution.configPath,
+      examplePath: resolution.examplePath,
+      text,
+      exists: true,
+      message: `\u5DF2\u5C06 MCP \u914D\u7F6E\u4FDD\u5B58\u5230 ${resolution.configPath}\u3002`
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      configPath: resolution.configPath,
+      examplePath: resolution.examplePath,
+      text,
+      message: `\u4FDD\u5B58 MCP \u914D\u7F6E\u5931\u8D25\uFF1A${message}`
+    };
+  }
+}
+async function reloadMcpConfigLocally(settings, client) {
+  const tokenResult = resolveBackendAdminToken2(settings);
+  if (!tokenResult.ok || !tokenResult.token) {
+    return {
+      ok: false,
+      message: tokenResult.message
+    };
+  }
+  const reloadResult = await client.reloadConfig(tokenResult.token);
+  return mapReloadResult(reloadResult);
+}
+async function fetchMcpRuntimeStatus(settings, client) {
+  const tokenResult = resolveBackendAdminToken2(settings);
+  if (!tokenResult.ok || !tokenResult.token) {
+    return {
+      ok: false,
+      httpStatus: null,
+      message: tokenResult.message
+    };
+  }
+  const result2 = await client.getMcpStatus(tokenResult.token);
+  if (!result2.ok || !result2.data) {
+    return {
+      ok: false,
+      httpStatus: result2.status,
+      message: formatAdminRequestFailure(result2, "\u83B7\u53D6 MCP \u8FD0\u884C\u72B6\u6001")
+    };
+  }
+  return {
+    ok: true,
+    status: result2.data,
+    httpStatus: result2.status,
+    message: result2.data.connected_servers.length > 0 ? `\u5F53\u524D\u5DF2\u8FDE\u63A5\u7684 MCP \u670D\u52A1\uFF1A${result2.data.connected_servers.join("\u3001")}` : "\u5F53\u524D\u6CA1\u6709\u5DF2\u8FDE\u63A5\u7684 MCP \u670D\u52A1\u3002"
+  };
+}
+function formatMcpRuntimeStatus(status) {
+  const lines = [
+    `\u914D\u7F6E\u6587\u4EF6\uFF1A${status.config_path}`,
+    `\u793A\u4F8B\u6587\u4EF6\uFF1A${status.example_config_path}`,
+    `\u914D\u7F6E\u662F\u5426\u5B58\u5728\uFF1A${status.config_exists ? "\u662F" : "\u5426"}`,
+    `\u5DF2\u8FDE\u63A5\u670D\u52A1\uFF1A${status.connected_servers.length > 0 ? status.connected_servers.join("\u3001") : "\u65E0"}`
+  ];
+  const toolEntries = Object.entries(status.tools_by_server);
+  if (toolEntries.length === 0) {
+    lines.push("\u670D\u52A1\u5DE5\u5177\u8BE6\u60C5\uFF1A\u65E0");
+  } else {
+    lines.push("\u670D\u52A1\u5DE5\u5177\u8BE6\u60C5\uFF1A");
+    for (const [serverName, toolNames] of toolEntries) {
+      lines.push(`- ${serverName}\uFF1A${toolNames.join("\u3001")}`);
+    }
+  }
+  lines.push(`Vault \u5DE5\u5177\u96C6\uFF1A${status.vault_tools_enabled ? "\u5DF2\u542F\u7528" : "\u672A\u542F\u7528"}`);
+  if (status.vault_tools_enabled) {
+    const vt = status.vault_tools_tools ?? [];
+    if (vt.length === 0) {
+      lines.push("  \u5DF2\u52A0\u8F7D\u5DE5\u5177\uFF1A\u65E0\uFF08vault/.crabby/tools/ \u76EE\u5F55\u4E3A\u7A7A\u6216\u672A\u521B\u5EFA\uFF09");
+    } else {
+      lines.push(`  \u5DF2\u52A0\u8F7D\u5DE5\u5177\uFF1A${vt.join("\u3001")}`);
+    }
+  }
+  lines.push(
+    `\u6700\u8FD1\u4E00\u6B21\u91CD\u8F7D\uFF1A${status.last_reload_ok === void 0 || status.last_reload_ok === null ? "\u5C1A\u672A\u6267\u884C" : status.last_reload_ok ? "\u6210\u529F" : "\u5931\u8D25"}`
+  );
+  if (status.last_reload_at) {
+    lines.push(`\u91CD\u8F7D\u65F6\u95F4\uFF1A${status.last_reload_at}`);
+  }
+  if (status.last_reload_error) {
+    lines.push(`\u9519\u8BEF\u4FE1\u606F\uFF1A${status.last_reload_error}`);
+  }
+  return lines.join("\n");
+}
+function resolveBackendAdminToken2(settings) {
+  const envResolution = resolveBackendEnvPath(settings);
+  if (!envResolution.ok || !envResolution.envPath) {
+    return {
+      ok: false,
+      message: "\u8BF7\u5148\u914D\u7F6E\u201C\u540E\u7AEF .env \u8DEF\u5F84\u201D\uFF0C\u518D\u67E5\u770B MCP \u8FD0\u884C\u72B6\u6001\u6216\u6267\u884C\u91CD\u8F7D\u3002"
+    };
+  }
+  const adminEnabled = readEnvValue(envResolution.envPath, ADMIN_ENABLED_KEY2);
+  if (!isTruthyEnvValue(adminEnabled)) {
+    return {
+      ok: false,
+      envPath: envResolution.envPath,
+      message: `${envResolution.envPath} \u4E2D\u672A\u5F00\u542F\u540E\u7AEF\u70ED\u91CD\u8F7D\u3002\u8BF7\u8BBE\u7F6E ${ADMIN_ENABLED_KEY2}=true \u540E\u518D\u67E5\u770B MCP \u72B6\u6001\u6216\u6267\u884C\u91CD\u8F7D\u3002`
+    };
+  }
+  const token = readEnvValue(envResolution.envPath, ADMIN_TOKEN_KEY2)?.trim();
+  if (!token) {
+    return {
+      ok: false,
+      envPath: envResolution.envPath,
+      message: `${envResolution.envPath} \u4E2D\u7F3A\u5C11 ${ADMIN_TOKEN_KEY2}\u3002\u56E0\u6B64\u65E0\u6CD5\u67E5\u8BE2 MCP \u72B6\u6001\u6216\u6267\u884C\u540E\u7AEF\u91CD\u8F7D\u3002`
+    };
+  }
+  return {
+    ok: true,
+    token,
+    envPath: envResolution.envPath,
+    message: ""
+  };
+}
+function mapReloadResult(result2) {
+  if (result2.ok) {
+    return {
+      ok: true,
+      reloadStatus: result2.status,
+      message: "\u5DF2\u4FDD\u5B58 MCP \u914D\u7F6E\uFF0C\u5E76\u5B8C\u6210\u540E\u7AEF\u70ED\u91CD\u8F7D\u3002"
+    };
+  }
+  return {
+    ok: false,
+    reloadStatus: result2.status,
+    message: formatAdminRequestFailure(result2, "\u540E\u7AEF\u91CD\u8F7D")
+  };
+}
+function formatAdminRequestFailure(result2, action) {
+  if (result2.status === null) {
+    return `${action}\u5931\u8D25\uFF1A\u5F53\u524D\u540E\u7AEF\u4E0D\u53EF\u8BBF\u95EE\u3002`;
+  }
+  if (result2.detail) {
+    return `${action}\u5931\u8D25\uFF08HTTP ${result2.status}\uFF09\uFF1A${result2.detail}`;
+  }
+  return `${action}\u5931\u8D25\uFF08HTTP ${result2.status}\uFF09\u3002`;
+}
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+// src/settings.ts
+function applyKnownModelCapabilities(profile) {
+  const modelPreset = findModelPreset(profile.provider, profile.model);
+  if (!modelPreset) {
+    return;
+  }
+  if (typeof modelPreset.supportsVision === "boolean") {
+    profile.supportsVision = modelPreset.supportsVision;
+  }
+  if (modelPreset.supportsThinking === false) {
+    profile.thinkingMode = "";
+  }
+}
+function getEffectiveProfileCapabilities(profile) {
+  const activePreset = getLlmProviderPreset(profile.provider);
+  const modelPreset = findModelPreset(profile.provider, profile.model);
+  const capabilities = {
+    ...activePreset.capabilities
+  };
+  if (modelPreset && typeof modelPreset.supportsVision === "boolean") {
+    capabilities.vision = capabilities.vision && modelPreset.supportsVision;
+  }
+  if (modelPreset && typeof modelPreset.supportsThinking === "boolean") {
+    capabilities.thinking = capabilities.thinking && modelPreset.supportsThinking;
+  }
+  return { activePreset, capabilities, modelPreset };
+}
+var DEFAULT_SETTINGS = {
+  backendUrl: "http://127.0.0.1:8000",
+  backendEnvPath: "",
+  backendMcpConfigPath: "",
+  runtimeManifestUrl: "",
+  backendPath: "",
+  llmProfiles: [],
+  activeProfileId: ""
+};
+function createCollapsibleSection(containerEl, summaryText, open = false) {
+  const detailsEl = containerEl.createEl("details");
+  detailsEl.open = open;
+  detailsEl.style.marginBottom = "10px";
+  const summaryEl = detailsEl.createEl("summary", { text: summaryText });
+  summaryEl.style.cursor = "pointer";
+  summaryEl.style.fontWeight = "600";
+  summaryEl.style.marginBottom = "8px";
+  const contentEl = detailsEl.createDiv();
+  contentEl.style.marginTop = "10px";
+  return contentEl;
+}
+function formatReloadStatusLabel(status) {
+  if (status.last_reload_ok === void 0 || status.last_reload_ok === null) {
+    return "\u5C1A\u672A\u6267\u884C";
+  }
+  return status.last_reload_ok ? "\u6210\u529F" : "\u5931\u8D25";
+}
+function formatMcpRuntimeSummary(status) {
+  const totalTools = Object.values(status.tools_by_server).reduce(
+    (sum, toolNames) => sum + toolNames.length,
+    0
+  );
+  const connectedServers = status.connected_servers.length > 0 ? status.connected_servers.join("\u3001") : "\u65E0";
+  const lines = [
+    `\u8FDE\u63A5\u72B6\u6001\uFF1A${status.connected_servers.length > 0 ? `\u5DF2\u8FDE\u63A5 ${status.connected_servers.length} \u4E2A\u670D\u52A1` : "\u5F53\u524D\u6CA1\u6709\u5DF2\u8FDE\u63A5\u670D\u52A1"}`,
+    `\u670D\u52A1\u5217\u8868\uFF1A${connectedServers}`,
+    `\u5DE5\u5177\u603B\u6570\uFF1A${totalTools}`,
+    `\u6700\u8FD1\u91CD\u8F7D\uFF1A${formatReloadStatusLabel(status)}${status.last_reload_at ? ` \xB7 ${status.last_reload_at}` : ""}`
+  ];
+  if (status.vault_tools_enabled) {
+    const vt = status.vault_tools_tools ?? [];
+    lines.push(
+      `Vault \u5DE5\u5177\u96C6\uFF1A${vt.length > 0 ? `\u5DF2\u542F\u7528\uFF0C\u5DF2\u52A0\u8F7D ${vt.length} \u4E2A\u5DE5\u5177\uFF08${vt.join("\u3001")}\uFF09` : "\u5DF2\u542F\u7528\uFF0C\u5DE5\u5177\u76EE\u5F55\u4E3A\u7A7A"}`
+    );
+  } else {
+    lines.push("Vault \u5DE5\u5177\u96C6\uFF1A\u672A\u542F\u7528");
+  }
+  if (status.last_reload_error) {
+    lines.push(`\u9519\u8BEF\u4FE1\u606F\uFF1A${status.last_reload_error}`);
+  }
+  return lines.join("\n");
+}
+var CrabbySettingTab = class extends import_obsidian10.PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    containerEl.createEl("h2", { text: "Crabby \u8BBE\u7F6E" });
+    this.renderRuntimeSection(containerEl);
+    this.renderMcpSection(containerEl);
+    this.renderLlmSection(containerEl);
+  }
+  renderRuntimeSection(containerEl) {
+    containerEl.createEl("h3", { text: "\u540E\u7AEF\u8FD0\u884C\u65F6" });
+    const manager = this.plugin.runtimeManager;
+    if (!manager) {
+      containerEl.createDiv().setText("\u540E\u7AEF\u8FD0\u884C\u65F6\u7BA1\u7406\u5668\u4E0D\u53EF\u7528\u3002");
+      return;
+    }
+    let manifestUrlDraft = this.plugin.settings.runtimeManifestUrl;
+    const statusEl = containerEl.createEl("pre");
+    Object.assign(statusEl.style, {
+      backgroundColor: "var(--background-secondary)",
+      border: "1px solid var(--background-modifier-border)",
+      borderRadius: "6px",
+      padding: "10px 12px",
+      whiteSpace: "pre-wrap",
+      fontSize: "12px",
+      lineHeight: "1.5"
+    });
+    let renderStatusRequestId = 0;
+    const renderStatus = async () => {
+      const requestId = ++renderStatusRequestId;
+      const status = manager.getStatus();
+      const setStatusText = (healthText) => {
+        statusEl.setText(
+          [
+            `\u6A21\u5F0F\uFF1A${status.mode === "dev" ? "\u5F00\u53D1\u6A21\u5F0F" : "\u751F\u4EA7\u6A21\u5F0F"}`,
+            `\u8FD0\u884C\u65F6\u5DF2\u5B89\u88C5\uFF1A${status.installed ? "\u662F" : "\u5426"}`,
+            `\u540E\u7AEF\u8FDB\u7A0B\uFF1A${status.running ? "\u8FD0\u884C\u4E2D" : "\u672A\u8FD0\u884C"}`,
+            `\u8FDE\u63A5\u72B6\u6001\uFF1A${healthText}`,
+            `\u540E\u7AEF\u5730\u5740\uFF1A${status.backendUrl}`,
+            `PID: ${status.pid ?? "-"}`,
+            `Prompt config: ${status.promptsDir}`,
+            `Persona config: ${status.personasDir}`,
+            `.env \u6587\u4EF6\uFF1A${status.envPath}`,
+            `MCP \u914D\u7F6E\uFF1A${status.mcpConfigPath}`,
+            `\u6570\u636E\u76EE\u5F55\uFF1A${status.dataDir}`,
+            `\u65E5\u5FD7\u76EE\u5F55\uFF1A${status.logsDir}`,
+            `\u72B6\u6001\uFF1A${status.detail}`
+          ].join("\n")
+        );
+      };
+      setStatusText("\u6B63\u5728\u68C0\u67E5...");
+      const client = new AgentClient(status.backendUrl);
+      try {
+        const isHealthy = await client.health();
+        if (requestId === renderStatusRequestId) {
+          setStatusText(isHealthy ? "\u53EF\u8BBF\u95EE\uFF08/health \u6B63\u5E38\uFF09" : "\u4E0D\u53EF\u8BBF\u95EE");
+        }
+      } catch (error) {
+        if (requestId === renderStatusRequestId) {
+          const message = error instanceof Error ? error.message : String(error);
+          setStatusText(`\u4E0D\u53EF\u8BBF\u95EE\uFF1A${message}`);
+        }
+      }
+    };
+    new import_obsidian10.Setting(containerEl).setName("\u8FD0\u884C\u65F6\u6E05\u5355 URL").setDesc("\u751F\u4EA7\u6A21\u5F0F\u7528\u4E8E\u4E0B\u8F7D\u540E\u7AEF\u8FD0\u884C\u65F6\u3002\u5F00\u53D1\u6A21\u5F0F\u4F1A\u4F18\u5148\u4F7F\u7528 .dev-runtime.json\u3002").addText((text) => {
+      text.setPlaceholder("https://example.com/life-assistant/runtime-manifest.json").setValue(manifestUrlDraft).onChange((value) => {
+        manifestUrlDraft = value.trim();
+      });
+      text.inputEl.style.width = "420px";
+    }).addButton((button) => {
+      button.setButtonText("\u4FDD\u5B58");
+      button.onClick(async () => {
+        this.plugin.settings.runtimeManifestUrl = manifestUrlDraft;
+        await this.plugin.saveSettings();
+        new import_obsidian10.Notice("\u8FD0\u884C\u65F6\u6E05\u5355 URL \u5DF2\u4FDD\u5B58\u3002");
+      });
+    });
+    new import_obsidian10.Setting(containerEl).setName("\u5B89\u88C5\u540E\u7AEF\u8FD0\u884C\u65F6").setDesc("\u4E0B\u8F7D\u5E76\u6821\u9A8C\u5F53\u524D\u5E73\u53F0\u5BF9\u5E94\u7684\u540E\u7AEF\u8FD0\u884C\u65F6\u3002").addButton((button) => {
+      button.setButtonText("\u5B89\u88C5");
+      button.onClick(async () => {
+        button.setDisabled(true);
+        try {
+          this.plugin.settings.runtimeManifestUrl = manifestUrlDraft;
+          await this.plugin.saveSettings();
+          await manager.installRuntime(manifestUrlDraft);
+          new import_obsidian10.Notice("\u540E\u7AEF\u8FD0\u884C\u65F6\u5DF2\u5B89\u88C5\u3002");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          new import_obsidian10.Notice(`\u8FD0\u884C\u65F6\u5B89\u88C5\u5931\u8D25\uFF1A${message}`);
+        } finally {
+          button.setDisabled(false);
+          await renderStatus();
+        }
+      });
+    });
+    new import_obsidian10.Setting(containerEl).setName("\u540E\u7AEF\u8FDB\u7A0B").setDesc("\u63A7\u5236\u7531\u5F53\u524D\u63D2\u4EF6\u7BA1\u7406\u7684\u672C\u5730\u540E\u7AEF\u8FDB\u7A0B\u3002").addButton((button) => {
+      button.setButtonText("\u542F\u52A8");
+      button.onClick(async () => {
+        button.setDisabled(true);
+        try {
+          await manager.start();
+          await this.plugin.saveSettings();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          new import_obsidian10.Notice(`\u540E\u7AEF\u542F\u52A8\u5931\u8D25\uFF1A${message}`);
+        } finally {
+          button.setDisabled(false);
+          await renderStatus();
+        }
+      });
+    }).addButton((button) => {
+      button.setButtonText("\u91CD\u542F");
+      button.onClick(async () => {
+        button.setDisabled(true);
+        try {
+          await manager.restart();
+          await this.plugin.saveSettings();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          new import_obsidian10.Notice(`\u540E\u7AEF\u91CD\u542F\u5931\u8D25\uFF1A${message}`);
+        } finally {
+          button.setDisabled(false);
+          await renderStatus();
+        }
+      });
+    }).addButton((button) => {
+      button.setButtonText("\u505C\u6B62");
+      button.onClick(async () => {
+        button.setDisabled(true);
+        try {
+          await manager.stop();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          new import_obsidian10.Notice(`\u540E\u7AEF\u505C\u6B62\u5931\u8D25\uFF1A${message}`);
+        } finally {
+          button.setDisabled(false);
+          await renderStatus();
+        }
+      });
+    }).addButton((button) => {
+      button.setButtonText("\u5237\u65B0");
+      button.onClick(() => {
+        void renderStatus();
+      });
+    });
+    void renderStatus();
+  }
+  renderMcpSection(containerEl) {
+    containerEl.createEl("h3", { text: "MCP \u670D\u52A1\u4E0E\u5DE5\u5177" });
+    let draftMcpConfigPath = this.plugin.settings.backendMcpConfigPath;
+    const backendUrl = () => this.plugin.settings.backendUrl || DEFAULT_SETTINGS.backendUrl;
+    const settingsWithDraftPath = () => ({
+      ...this.plugin.settings,
+      backendMcpConfigPath: draftMcpConfigPath
+    });
+    const pathHint = containerEl.createDiv({ cls: "mcp-config-hint" });
+    Object.assign(pathHint.style, {
+      fontSize: "12px",
+      color: "var(--text-muted)",
+      marginBottom: "10px",
+      lineHeight: "1.5",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-word"
+    });
+    const runtimeSummaryEl = containerEl.createDiv({ cls: "mcp-runtime-summary" });
+    Object.assign(runtimeSummaryEl.style, {
+      backgroundColor: "var(--background-secondary)",
+      border: "1px solid var(--background-modifier-border)",
+      borderRadius: "8px",
+      padding: "12px 14px",
+      marginBottom: "10px",
+      fontSize: "12px",
+      lineHeight: "1.6",
+      whiteSpace: "pre-wrap",
+      color: "var(--text-normal)"
+    });
+    runtimeSummaryEl.setText("\u6B63\u5728\u8BFB\u53D6 MCP \u8FD0\u884C\u72B6\u6001...");
+    const statusEl = containerEl.createDiv({ cls: "mcp-status-bar" });
+    statusEl.style.fontSize = "12px";
+    statusEl.style.color = "var(--text-muted)";
+    statusEl.style.marginBottom = "10px";
+    statusEl.style.minHeight = "18px";
+    const runtimeDetailsEl = createCollapsibleSection(
+      containerEl,
+      "\u67E5\u770B\u670D\u52A1\u4E0E\u5DE5\u5177\u8BE6\u60C5"
+    );
+    const runtimeStatusEl = runtimeDetailsEl.createEl("pre", {
+      cls: "mcp-runtime-status"
+    });
+    Object.assign(runtimeStatusEl.style, {
+      backgroundColor: "var(--background-secondary)",
+      border: "1px solid var(--background-modifier-border)",
+      borderRadius: "6px",
+      padding: "10px 12px",
+      marginBottom: "0",
+      fontSize: "12px",
+      fontFamily: "var(--font-monospace)",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-word",
+      lineHeight: "1.5",
+      color: "var(--text-normal)"
+    });
+    runtimeStatusEl.setText("\u6B63\u5728\u8BFB\u53D6 MCP \u8FD0\u884C\u72B6\u6001...");
+    const updatePathHint = () => {
+      const resolution = resolveBackendMcpConfigPath(settingsWithDraftPath());
+      if (!resolution.ok || !resolution.configPath) {
+        pathHint.setText(resolution.message);
+        return;
+      }
+      const sourceLabel = resolution.derivedFromBackendEnvPath ? "\u81EA\u52A8\u4ECE\u63D2\u4EF6\u914D\u7F6E\u76EE\u5F55\u63A8\u5BFC" : "\u624B\u52A8\u8986\u76D6\u8DEF\u5F84";
+      const exampleText = resolution.examplePath ? `
+\u6A21\u677F\u6587\u4EF6\uFF1A${resolution.examplePath}` : "";
+      pathHint.setText(
+        `\u5F53\u524D MCP \u914D\u7F6E\u6587\u4EF6\uFF1A${resolution.configPath}
+\u8DEF\u5F84\u6765\u6E90\uFF1A${sourceLabel}${exampleText}`
+      );
+    };
+    const persistDraftMcpPath = async () => {
+      this.plugin.settings.backendMcpConfigPath = draftMcpConfigPath;
+      await this.plugin.saveSettings();
+    };
+    const setRuntimeStatus = async () => {
+      const loadingText = "\u6B63\u5728\u8BFB\u53D6 MCP \u8FD0\u884C\u72B6\u6001...";
+      runtimeSummaryEl.setText(loadingText);
+      runtimeStatusEl.setText(loadingText);
+      try {
+        const client = new AgentClient(backendUrl());
+        const result2 = await fetchMcpRuntimeStatus(settingsWithDraftPath(), client);
+        if (result2.ok && result2.status) {
+          runtimeSummaryEl.setText(formatMcpRuntimeSummary(result2.status));
+          runtimeStatusEl.setText(formatMcpRuntimeStatus(result2.status));
+        } else {
+          runtimeSummaryEl.setText(result2.message);
+          runtimeStatusEl.setText(result2.message);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const failureMessage = `\u8BFB\u53D6 MCP \u8FD0\u884C\u72B6\u6001\u5931\u8D25\uFF1A${message}`;
+        runtimeSummaryEl.setText(failureMessage);
+        runtimeStatusEl.setText(failureMessage);
+      }
+    };
+    new import_obsidian10.Setting(containerEl).setName("\u5237\u65B0\u8FD0\u884C\u72B6\u6001").setDesc("\u91CD\u65B0\u8BFB\u53D6\u540E\u7AEF\u5F53\u524D\u5DF2\u8FDE\u63A5\u7684 MCP \u670D\u52A1\u548C\u5DE5\u5177\u3002").addButton((button) => {
+      button.setButtonText("\u5237\u65B0");
+      button.onClick(() => {
+        void setRuntimeStatus();
+      });
+    });
+    const advancedPathSectionEl = createCollapsibleSection(
+      containerEl,
+      "\u9AD8\u7EA7\u8DEF\u5F84\u8986\u76D6",
+      Boolean(draftMcpConfigPath)
+    );
+    new import_obsidian10.Setting(advancedPathSectionEl).setName("MCP \u914D\u7F6E\u6587\u4EF6\u8DEF\u5F84").setDesc("\u4E00\u822C\u4E0D\u9700\u8981\u8BBE\u7F6E\u3002\u4EC5\u5728 mcp_servers.json \u4E0D\u5728\u9ED8\u8BA4\u4F4D\u7F6E\uFF08<vault>/.crabby/config/server/data/\uFF09\u65F6\u624B\u52A8\u586B\u5199\u3002").addText((text) => {
+      text.setPlaceholder("D:\\path\\to\\Crabby\\server\\data\\mcp_servers.json").setValue(draftMcpConfigPath).onChange((value) => {
+        draftMcpConfigPath = value.trim();
+        updatePathHint();
+      });
+      text.inputEl.style.width = "320px";
+    });
+    const editorSectionEl = createCollapsibleSection(
+      containerEl,
+      "\u7F16\u8F91 mcp_servers.json"
+    );
+    const editor = editorSectionEl.createEl("textarea", {
+      cls: "mcp-config-editor"
+    });
+    Object.assign(editor.style, {
+      width: "100%",
+      minHeight: "280px",
+      boxSizing: "border-box",
+      padding: "10px 12px",
+      marginBottom: "10px",
+      borderRadius: "6px",
+      border: "1px solid var(--background-modifier-border)",
+      backgroundColor: "var(--background-primary)",
+      color: "var(--text-normal)",
+      fontFamily: "var(--font-monospace)",
+      fontSize: "12px",
+      lineHeight: "1.5",
+      resize: "vertical"
+    });
+    editor.placeholder = '{\n  "mcpServers": {}\n}\n';
+    const loadEditorFromDisk = () => {
+      const result2 = loadMcpConfigLocally(settingsWithDraftPath());
+      if (result2.ok) {
+        editor.value = result2.text ?? "";
+      }
+      statusEl.setText(result2.message);
+      updatePathHint();
+    };
+    new import_obsidian10.Setting(editorSectionEl).setName("\u4ECE\u6587\u4EF6\u8F7D\u5165").setDesc("\u628A\u78C1\u76D8\u4E0A\u7684 mcp_servers.json \u91CD\u65B0\u8F7D\u5165\u5230\u7F16\u8F91\u5668\u3002").addButton((button) => {
+      button.setButtonText("\u8F7D\u5165");
+      button.onClick(() => {
+        loadEditorFromDisk();
+      });
+    });
+    new import_obsidian10.Setting(editorSectionEl).setName("\u4ECE\u6A21\u677F\u521B\u5EFA").setDesc("\u5F53\u771F\u5B9E\u914D\u7F6E\u6587\u4EF6\u4E0D\u5B58\u5728\u65F6\uFF0C\u6839\u636E mcp_servers.example.json \u521B\u5EFA\u3002").addButton((button) => {
+      button.setButtonText("\u521B\u5EFA");
+      button.onClick(async () => {
+        await persistDraftMcpPath();
+        const result2 = createMcpConfigFromExample(this.plugin.settings);
+        if (result2.ok) {
+          editor.value = result2.text ?? "";
+          statusEl.setText(result2.message);
+          new import_obsidian10.Notice("\u5DF2\u6839\u636E\u6A21\u677F\u521B\u5EFA MCP \u914D\u7F6E\u6587\u4EF6\u3002");
+          await setRuntimeStatus();
+        } else {
+          statusEl.setText(result2.message);
+          new import_obsidian10.Notice(`\u521B\u5EFA\u5931\u8D25\uFF1A${result2.message}`);
+        }
+        updatePathHint();
+      });
+    });
+    new import_obsidian10.Setting(editorSectionEl).setName("\u672C\u5730\u6821\u9A8C").setDesc("\u53EA\u6821\u9A8C JSON \u8BED\u6CD5\u548C MCP \u914D\u7F6E\u7ED3\u6784\uFF0C\u4E0D\u4F1A\u5199\u5165\u540E\u7AEF\u3002").addButton((button) => {
+      button.setButtonText("\u6821\u9A8C");
+      button.onClick(() => {
+        const result2 = validateMcpConfigText(editor.value);
+        statusEl.setText(result2.message);
+        if (result2.ok) {
+          new import_obsidian10.Notice("MCP \u914D\u7F6E\u6821\u9A8C\u901A\u8FC7\u3002");
+        } else {
+          new import_obsidian10.Notice(`\u6821\u9A8C\u5931\u8D25\uFF1A${result2.message}`);
+        }
+      });
+    });
+    new import_obsidian10.Setting(editorSectionEl).setName("\u4FDD\u5B58\u914D\u7F6E").setDesc("\u628A\u7F16\u8F91\u5668\u5185\u5BB9\u5199\u5165 mcp_servers.json\uFF08\u9700\u8981\u5148\u5728\u9AD8\u7EA7\u8DEF\u5F84\u8986\u76D6\u91CC\u914D\u7F6E\u8DEF\u5F84\uFF0C\u6216\u914D\u7F6E\u597D .env\uFF09\u3002").addButton((button) => {
+      button.setButtonText("\u4FDD\u5B58");
+      button.onClick(async () => {
+        await persistDraftMcpPath();
+        const result2 = saveMcpConfigLocally(this.plugin.settings, editor.value);
+        statusEl.setText(result2.message);
+        if (result2.ok) {
+          new import_obsidian10.Notice("MCP \u914D\u7F6E\u5DF2\u4FDD\u5B58\u3002");
+        } else {
+          new import_obsidian10.Notice(`\u4FDD\u5B58\u5931\u8D25\uFF1A${result2.message}`);
+        }
+        updatePathHint();
+      });
+    }).addButton((button) => {
+      button.setButtonText("\u4FDD\u5B58\u5E76\u91CD\u8F7D");
+      button.setCta();
+      button.onClick(async () => {
+        await persistDraftMcpPath();
+        const saveResult = saveMcpConfigLocally(this.plugin.settings, editor.value);
+        if (!saveResult.ok) {
+          statusEl.setText(saveResult.message);
+          new import_obsidian10.Notice(`\u4FDD\u5B58\u5931\u8D25\uFF1A${saveResult.message}`);
+          updatePathHint();
+          return;
+        }
+        statusEl.setText(`${saveResult.message} \u6B63\u5728\u91CD\u8F7D\u540E\u7AEF...`);
+        const client = new AgentClient(backendUrl());
+        const reloadResult = await reloadMcpConfigLocally(
+          this.plugin.settings,
+          client
+        );
+        statusEl.setText(reloadResult.message);
+        if (reloadResult.ok) {
+          new import_obsidian10.Notice("MCP \u914D\u7F6E\u5DF2\u4FDD\u5B58\uFF0C\u5E76\u5B8C\u6210\u540E\u7AEF\u91CD\u8F7D\u3002");
+        } else {
+          new import_obsidian10.Notice(`\u91CD\u8F7D\u5931\u8D25\uFF1A${reloadResult.message}`);
+        }
+        await setRuntimeStatus();
+        updatePathHint();
+      });
+    });
+    updatePathHint();
+    loadEditorFromDisk();
+    void setRuntimeStatus();
+  }
+  renderLlmSection(containerEl) {
+    containerEl.createEl("h3", { text: "LLM \u914D\u7F6E" });
+    const resolution = resolveBackendEnvPath(this.plugin.settings);
+    const configHint = containerEl.createDiv({ cls: "llm-config-hint" });
+    configHint.style.fontSize = "12px";
+    configHint.style.marginBottom = "10px";
+    if (resolution.ok && resolution.envPath) {
+      configHint.style.color = "var(--text-muted)";
+      configHint.setText(`\u5F53\u524D\u751F\u6548\u914D\u7F6E\u6587\u4EF6\uFF1A${resolution.envPath}`);
+    } else {
+      configHint.style.color = "var(--text-accent)";
+      configHint.style.fontWeight = "600";
+      configHint.setText(resolution.message);
+    }
+    const statusEl = containerEl.createDiv({ cls: "llm-status-bar" });
+    statusEl.style.fontSize = "12px";
+    statusEl.style.color = "var(--text-muted)";
+    statusEl.style.marginBottom = "10px";
+    statusEl.style.minHeight = "18px";
+    const profileListEl = containerEl.createDiv({ cls: "llm-profile-list" });
+    profileListEl.style.marginBottom = "4px";
+    const backendUrl = () => this.plugin.settings.backendUrl || DEFAULT_SETTINGS.backendUrl;
+    const refreshProfilesFromBackend = async () => {
+      statusEl.setText("\u6B63\u5728\u4ECE\u540E\u7AEF\u8BFB\u53D6 LLM \u914D\u7F6E...");
+      try {
+        const result2 = await this.plugin.syncLlmProfilesFromBackend({
+          migrateLocalProfiles: true
+        });
+        statusEl.setText(result2.message);
+        if (result2.ok) {
+          renderProfiles();
+          updateStatusFromActiveProfile();
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        statusEl.setText(`\u8BFB\u53D6\u540E\u7AEF LLM \u914D\u7F6E\u5931\u8D25\uFF1A${message}`);
+      }
+    };
+    const updateStatusFromActiveProfile = () => {
+      const activeProfile = this.plugin.settings.llmProfiles.find(
+        (profile) => profile.id === this.plugin.settings.activeProfileId
+      );
+      if (activeProfile) {
+        statusEl.setText(
+          `\u5F53\u524D\u542F\u7528\uFF1A${activeProfile.name}\uFF08${activeProfile.provider} / ${activeProfile.model}\uFF09`
+        );
+      } else if (this.plugin.settings.llmProfiles.length > 0) {
+        statusEl.setText("\u5F53\u524D\u8FD8\u6CA1\u6709\u9009\u4E2D\u7684\u914D\u7F6E\u3002");
+      } else {
+        statusEl.setText("\u5F53\u524D\u8FD8\u6CA1\u6709\u521B\u5EFA\u4EFB\u4F55 LLM \u914D\u7F6E\u3002");
+      }
+    };
+    const applyProfileToBackend = async (profile) => {
+      statusEl.setText(`\u6B63\u5728\u5E94\u7528 ${profile.name} ...`);
+      const client = new AgentClient(backendUrl());
+      try {
+        const result2 = await saveLlmProfileToBackend(
+          this.plugin.settings,
+          profile,
+          client,
+          true
+        );
+        statusEl.setText(result2.message);
+        if (result2.ok) {
+          await this.plugin.saveSettings();
+          renderProfiles();
+          new import_obsidian10.Notice(`\u5DF2\u5207\u6362\u5230 ${profile.name}\u3002`);
+          return true;
+        } else {
+          renderProfiles();
+          new import_obsidian10.Notice(`\u5207\u6362\u5931\u8D25\uFF1A${result2.message}`);
+          return false;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        statusEl.setText(`\u5207\u6362\u5931\u8D25\uFF1A${message}`);
+        renderProfiles();
+        new import_obsidian10.Notice(`\u5207\u6362\u5931\u8D25\uFF1A${message}`);
+        return false;
+      }
+    };
+    const saveProfile2 = async (profile) => {
+      const activate = profile.id === this.plugin.settings.activeProfileId;
+      statusEl.setText(`\u6B63\u5728\u4FDD\u5B58 ${profile.name} \u5230\u540E\u7AEF...`);
+      const client = new AgentClient(backendUrl());
+      try {
+        const result2 = await saveLlmProfileToBackend(
+          this.plugin.settings,
+          profile,
+          client,
+          activate
+        );
+        statusEl.setText(result2.message);
+        if (result2.ok) {
+          await this.plugin.saveSettings();
+          renderProfiles();
+          updateStatusFromActiveProfile();
+          new import_obsidian10.Notice(`\u5DF2\u4FDD\u5B58 ${profile.name}\u3002`);
+        } else {
+          new import_obsidian10.Notice(`\u4FDD\u5B58\u5931\u8D25\uFF1A${result2.message}`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        statusEl.setText(`\u4FDD\u5B58\u5931\u8D25\uFF1A${message}`);
+        new import_obsidian10.Notice(`\u4FDD\u5B58\u5931\u8D25\uFF1A${message}`);
+      }
+    };
+    const testCurrentProfile = async () => {
+      const activeProfile = this.plugin.settings.llmProfiles.find(
+        (profile) => profile.id === this.plugin.settings.activeProfileId
+      );
+      const envResolution = resolveBackendEnvPath(this.plugin.settings);
+      if (!envResolution.ok || !envResolution.envPath) {
+        statusEl.setText(envResolution.message);
+        return;
+      }
+      const adminToken = readEnvValue(
+        envResolution.envPath,
+        "CRABBY_ADMIN_TOKEN"
+      )?.trim();
+      if (!adminToken) {
+        statusEl.setText(
+          `\u65E0\u6CD5\u6D4B\u8BD5\u5F53\u524D Profile\uFF1A${envResolution.envPath} \u7F3A\u5C11 CRABBY_ADMIN_TOKEN\u3002`
+        );
+        return;
+      }
+      const profileLabel = activeProfile ? `${activeProfile.name}\uFF08${activeProfile.provider} / ${activeProfile.model}\uFF09` : "\u540E\u7AEF\u5F53\u524D\u5DF2\u751F\u6548\u914D\u7F6E";
+      statusEl.setText(
+        `\u6B63\u5728\u6D4B\u8BD5\u5F53\u524D Profile\uFF1A${profileLabel}...`
+      );
+      const client = new AgentClient(backendUrl());
+      const result2 = await client.testCurrentProfile(adminToken);
+      if (!result2.ok || !result2.data) {
+        const message = result2.status === null ? "\u540E\u7AEF\u5F53\u524D\u4E0D\u53EF\u8BBF\u95EE\u3002" : result2.detail || `HTTP ${result2.status}`;
+        statusEl.setText(`\u6D4B\u8BD5\u5931\u8D25\uFF1A${message}`);
+        new import_obsidian10.Notice(`\u6D4B\u8BD5\u5931\u8D25\uFF1A${message}`);
+        return;
+      }
+      statusEl.setText(result2.data.message);
+      new import_obsidian10.Notice(result2.data.ok ? result2.data.message : `\u6D4B\u8BD5\u672A\u901A\u8FC7\uFF1A${result2.data.message}`);
+    };
+    const renderProfiles = () => {
+      profileListEl.empty();
+      if (this.plugin.settings.llmProfiles.length === 0) {
+        const emptyState = profileListEl.createDiv();
+        emptyState.setText("\u8FD8\u6CA1\u6709\u914D\u7F6E\u3002\u70B9\u51FB\u201C\u6DFB\u52A0\u914D\u7F6E\u201D\u521B\u5EFA\u4E00\u4E2A\u65B0\u7684 LLM \u914D\u7F6E\u3002");
+        emptyState.style.color = "var(--text-muted)";
+        emptyState.style.fontStyle = "italic";
+        emptyState.style.padding = "8px 0";
+        return;
+      }
+      this.plugin.settings.llmProfiles.forEach((profile, index) => {
+        applyKnownModelCapabilities(profile);
+        const isActive = profile.id === this.plugin.settings.activeProfileId;
+        const card = profileListEl.createDiv({ cls: "llm-profile-card" });
+        Object.assign(card.style, {
+          border: `1px solid ${isActive ? "var(--interactive-accent)" : "var(--background-modifier-border)"}`,
+          borderRadius: "8px",
+          padding: "12px 16px",
+          marginBottom: "10px",
+          backgroundColor: isActive ? "var(--background-secondary-alt)" : "var(--background-secondary)",
+          transition: "border-color 0.15s, background-color 0.15s"
+        });
+        const headerRow = card.createDiv();
+        Object.assign(headerRow.style, {
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          marginBottom: "10px",
+          flexWrap: "wrap"
+        });
+        const activeBadge = headerRow.createSpan();
+        activeBadge.style.fontSize = "16px";
+        activeBadge.style.cursor = "pointer";
+        activeBadge.title = isActive ? "\u8FD9\u4E2A\u914D\u7F6E\u5F53\u524D\u5DF2\u542F\u7528\u3002" : "\u70B9\u51FB\u542F\u7528\u8FD9\u4E2A\u914D\u7F6E\uFF0C\u5E76\u70ED\u91CD\u8F7D\u540E\u7AEF\u3002";
+        activeBadge.setText(isActive ? "\u25CF" : "\u25CB");
+        activeBadge.addEventListener("click", async () => {
+          await applyProfileToBackend(profile);
+        });
+        const titleEl = headerRow.createEl("strong");
+        const getProfileTitle = () => profile.name || `\u914D\u7F6E ${index + 1}`;
+        titleEl.setText(getProfileTitle());
+        titleEl.style.flex = "1";
+        titleEl.style.fontSize = "14px";
+        const providerColors = Object.fromEntries(
+          LLM_PROVIDER_IDS.map((providerId) => [
+            providerId,
+            getLlmProviderPreset(providerId).badge
+          ])
+        );
+        const providerBadge = headerRow.createSpan();
+        Object.assign(providerBadge.style, {
+          fontSize: "11px",
+          padding: "2px 8px",
+          borderRadius: "12px",
+          backgroundColor: providerColors[profile.provider],
+          color: "#fff",
+          fontWeight: "600",
+          letterSpacing: "0.03em"
+        });
+        const updateProviderBadge = () => {
+          const provider = String(profile.provider || "");
+          providerBadge.setText(provider.toUpperCase() || "UNKNOWN");
+          providerBadge.style.backgroundColor = providerColors[provider] ?? "var(--text-muted)";
+        };
+        updateProviderBadge();
+        const saveBtn = headerRow.createEl("button");
+        saveBtn.setText("\u4FDD\u5B58");
+        saveBtn.title = isActive ? "\u4FDD\u5B58\u8FD9\u4E2A\u914D\u7F6E\uFF0C\u5E76\u7ACB\u5373\u5E94\u7528\u5230\u540E\u7AEF\u3002" : "\u628A\u8FD9\u4E2A\u914D\u7F6E\u4FDD\u5B58\u5230\u540E\u7AEF\u3002";
+        saveBtn.addEventListener("click", () => {
+          void saveProfile2(profile);
+        });
+        const deleteBtn = headerRow.createEl("button");
+        deleteBtn.setText("\u5220\u9664");
+        deleteBtn.title = "\u5220\u9664\u8FD9\u4E2A\u914D\u7F6E\u3002";
+        deleteBtn.addEventListener("click", async () => {
+          statusEl.setText(`\u6B63\u5728\u4ECE\u540E\u7AEF\u5220\u9664 ${profile.name}...`);
+          const client = new AgentClient(backendUrl());
+          const result2 = await deleteLlmProfileFromBackend(
+            this.plugin.settings,
+            profile.id,
+            client
+          );
+          statusEl.setText(result2.message);
+          if (!result2.ok) {
+            new import_obsidian10.Notice(`\u5220\u9664\u5931\u8D25\uFF1A${result2.message}`);
+            return;
+          }
+          await this.plugin.saveSettings();
+          renderProfiles();
+          updateStatusFromActiveProfile();
+          new import_obsidian10.Notice(`\u5DF2\u5220\u9664 ${profile.name}\u3002`);
+        });
+        {
+          const { activePreset, capabilities } = getEffectiveProfileCapabilities(profile);
+          const styleProfileRow = (row) => {
+            Object.assign(row.style, {
+              display: "grid",
+              gridTemplateColumns: "80px 1fr",
+              alignItems: "center",
+              gap: "8px",
+              marginBottom: "6px"
+            });
+          };
+          const styleProfileLabel = (labelEl) => {
+            Object.assign(labelEl.style, {
+              fontSize: "12px",
+              color: "var(--text-muted)",
+              textAlign: "right"
+            });
+          };
+          const styleProfileControl = (control) => {
+            Object.assign(control.style, {
+              width: "100%",
+              boxSizing: "border-box",
+              fontSize: "13px",
+              padding: "4px 8px",
+              borderRadius: "4px",
+              border: "1px solid var(--background-modifier-border)",
+              backgroundColor: "var(--background-primary)",
+              color: "var(--text-normal)"
+            });
+          };
+          const createTextRow = (parentEl, label, value, placeholder, onInput, type = "text") => {
+            const row = parentEl.createDiv();
+            styleProfileRow(row);
+            const labelEl = row.createEl("label");
+            labelEl.setText(label);
+            styleProfileLabel(labelEl);
+            const input = row.createEl("input");
+            input.type = type;
+            input.placeholder = placeholder;
+            input.value = value;
+            styleProfileControl(input);
+            input.addEventListener("input", async () => {
+              await onInput(input.value);
+              updateStatusFromActiveProfile();
+            });
+            return input;
+          };
+          const createCheckboxRow = (parentEl, label, checked, onChange) => {
+            const row = parentEl.createDiv();
+            styleProfileRow(row);
+            const labelEl = row.createEl("label");
+            labelEl.setText(label);
+            styleProfileLabel(labelEl);
+            const inputWrap = row.createDiv();
+            const input = inputWrap.createEl("input");
+            input.type = "checkbox";
+            input.checked = checked;
+            input.addEventListener("change", async () => {
+              await onChange(input.checked);
+              updateStatusFromActiveProfile();
+            });
+          };
+          createTextRow(card, "Name", profile.name, "Daily driver", async (value) => {
+            profile.name = value;
+            await this.plugin.saveSettings();
+            titleEl.setText(getProfileTitle());
+          });
+          const providerRow = card.createDiv();
+          styleProfileRow(providerRow);
+          const providerLabel = providerRow.createEl("label");
+          providerLabel.setText("Provider");
+          styleProfileLabel(providerLabel);
+          const providerSelect = providerRow.createEl("select");
+          styleProfileControl(providerSelect);
+          LLM_PROVIDER_IDS.forEach((providerId) => {
+            const option = providerSelect.createEl("option");
+            option.value = providerId;
+            option.setText(getLlmProviderPreset(providerId).label);
+          });
+          providerSelect.value = profile.provider;
+          providerSelect.addEventListener("change", async () => {
+            profile.provider = providerSelect.value;
+            const nextPreset = getLlmProviderPreset(profile.provider);
+            const defaultModel = getDefaultModelForProvider(profile.provider);
+            profile.model = defaultModel || profile.model;
+            profile.baseUrl = nextPreset.defaultBaseUrl;
+            applyKnownModelCapabilities(profile);
+            if (!nextPreset.capabilities.thinking) {
+              profile.thinkingMode = "";
+            }
+            if (!nextPreset.capabilities.thinkingBudget) {
+              profile.thinkingBudgetTokens = "1024";
+            }
+            if (!nextPreset.capabilities.reasoningEffort) {
+              profile.thinkingEffort = "";
+            }
+            if (!nextPreset.capabilities.reasoningSplit) {
+              profile.reasoningSplit = false;
+            }
+            await this.plugin.saveSettings();
+            renderProfiles();
+            updateStatusFromActiveProfile();
+          });
+          const modelList = card.createEl("datalist");
+          modelList.id = `llm-models-${profile.id}`;
+          activePreset.models.forEach((model) => {
+            const option = modelList.createEl("option");
+            option.value = model.id;
+            option.label = model.label;
+          });
+          const modelInput = createTextRow(
+            card,
+            "Model",
+            profile.model,
+            "Select or type a model id",
+            async (value) => {
+              profile.model = value.trim();
+              applyKnownModelCapabilities(profile);
+              await this.plugin.saveSettings();
+            }
+          );
+          modelInput.setAttribute("list", modelList.id);
+          modelInput.addEventListener("change", () => {
+            renderProfiles();
+            updateStatusFromActiveProfile();
+          });
+          if (capabilities.baseUrl) {
+            createTextRow(
+              card,
+              "Base URL",
+              profile.baseUrl,
+              activePreset.defaultBaseUrl,
+              async (value) => {
+                profile.baseUrl = value.trim();
+                await this.plugin.saveSettings();
+              }
+            );
+          }
+          if (capabilities.apiKey) {
+            createTextRow(
+              card,
+              "API Key",
+              profile.apiKey,
+              activePreset.apiKeyEnv || "LLM_API_KEY",
+              async (value) => {
+                profile.apiKey = value.trim();
+                await this.plugin.saveSettings();
+              },
+              "password"
+            );
+          }
+          const hasAdvancedFields = capabilities.vision || capabilities.thinking || capabilities.thinkingBudget || capabilities.reasoningEffort || capabilities.reasoningSplit;
+          if (hasAdvancedFields) {
+            const advancedEl = card.createEl("details");
+            advancedEl.style.marginTop = "8px";
+            const summaryEl = advancedEl.createEl("summary");
+            summaryEl.setText("Advanced");
+            summaryEl.style.cursor = "pointer";
+            summaryEl.style.fontSize = "12px";
+            summaryEl.style.color = "var(--text-muted)";
+            const advancedBody = advancedEl.createDiv();
+            advancedBody.style.marginTop = "8px";
+            if (capabilities.vision) {
+              createCheckboxRow(
+                advancedBody,
+                "Vision",
+                Boolean(profile.supportsVision),
+                async (checked) => {
+                  profile.supportsVision = checked;
+                  await this.plugin.saveSettings();
+                }
+              );
+            }
+            if (capabilities.thinking) {
+              createCheckboxRow(
+                advancedBody,
+                "Thinking",
+                profile.thinkingMode.trim().toLowerCase() === "enabled",
+                async (checked) => {
+                  profile.thinkingMode = checked ? "enabled" : "";
+                  await this.plugin.saveSettings();
+                }
+              );
+            }
+            if (capabilities.thinkingBudget) {
+              createTextRow(
+                advancedBody,
+                "Budget",
+                profile.thinkingBudgetTokens,
+                "1024",
+                async (value) => {
+                  profile.thinkingBudgetTokens = value.trim();
+                  await this.plugin.saveSettings();
+                }
+              );
+            }
+            if (capabilities.reasoningEffort) {
+              createTextRow(
+                advancedBody,
+                "Effort",
+                profile.thinkingEffort,
+                getReasoningEffortHint(profile.provider),
+                async (value) => {
+                  profile.thinkingEffort = value.trim();
+                  await this.plugin.saveSettings();
+                }
+              );
+            }
+            if (capabilities.reasoningSplit) {
+              createCheckboxRow(
+                advancedBody,
+                "Split",
+                Boolean(profile.reasoningSplit),
+                async (checked) => {
+                  profile.reasoningSplit = checked;
+                  await this.plugin.saveSettings();
+                }
+              );
+            }
+          }
+        }
+      });
+    };
+    renderProfiles();
+    updateStatusFromActiveProfile();
+    void refreshProfilesFromBackend();
+    new import_obsidian10.Setting(containerEl).setName("\u5237\u65B0\u540E\u7AEF Profile").setDesc("\u91CD\u65B0\u4ECE\u540E\u7AEF\u8BFB\u53D6\u5F53\u524D LLM Profile \u5217\u8868\u3002").addButton((button) => {
+      button.setButtonText("\u5237\u65B0");
+      button.onClick(() => {
+        void refreshProfilesFromBackend();
+      });
+    });
+    new import_obsidian10.Setting(containerEl).setName("\u6D4B\u8BD5\u5F53\u524D Profile").setDesc("\u6821\u9A8C\u540E\u7AEF\u5F53\u524D\u5DF2\u751F\u6548\u7684 provider\u3001model\u3001key\uFF0C\u5E76\u5728 DeepSeek / MiniMax \u4E0A\u505A\u4E00\u6B21\u4F4E token \u771F\u5B9E\u63A2\u6D4B\u3002").addButton((button) => {
+      button.setButtonText("\u6D4B\u8BD5");
+      button.onClick(() => {
+        void testCurrentProfile();
+      });
+    });
+    new import_obsidian10.Setting(containerEl).setName("\u6DFB\u52A0\u914D\u7F6E").setDesc("\u65B0\u589E\u4E00\u4E2A LLM \u914D\u7F6E\u9884\u8BBE\u3002").addButton((button) => {
+      button.setButtonText(resolution.ok ? "\u6DFB\u52A0" : "\u8BF7\u5148\u521D\u59CB\u5316\u540E\u7AEF");
+      button.setDisabled(!resolution.ok);
+      button.onClick(async () => {
+        const newProfile = {
+          id: crypto.randomUUID(),
+          name: "\u65B0\u914D\u7F6E",
+          provider: "anthropic",
+          model: "claude-sonnet-4-20250514",
+          baseUrl: "",
+          apiKey: "",
+          supportsVision: false,
+          thinkingMode: "",
+          thinkingEffort: "",
+          thinkingBudgetTokens: "1024",
+          reasoningSplit: false
+        };
+        const activate = this.plugin.settings.llmProfiles.length === 0;
+        statusEl.setText(`\u6B63\u5728\u521B\u5EFA ${newProfile.name}...`);
+        const client = new AgentClient(backendUrl());
+        const result2 = await saveLlmProfileToBackend(
+          this.plugin.settings,
+          newProfile,
+          client,
+          activate
+        );
+        statusEl.setText(result2.message);
+        if (!result2.ok) {
+          new import_obsidian10.Notice(`\u6DFB\u52A0\u5931\u8D25\uFF1A${result2.message}`);
+          return;
+        }
+        await this.plugin.saveSettings();
+        renderProfiles();
+        updateStatusFromActiveProfile();
+      });
+    });
+  }
+};
+
+// src/main.ts
+var CrabbyPlugin = class extends import_obsidian11.Plugin {
+  constructor() {
+    super(...arguments);
+    this.settings = hydrateSettings(DEFAULT_SETTINGS, null);
+    this.runtimeManager = null;
+    this.clientToolBridge = null;
+    this.unloaded = false;
+  }
+  async onload() {
+    this.unloaded = false;
+    await this.loadSettings();
+    this.runtimeManager = new BackendRuntimeManager(this.app, this.settings);
+    this.clientToolBridge = new ObsidianClientToolBridge(
+      this,
+      () => this.settings.backendUrl
+    );
+    this.clientToolBridge.start();
+    this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
+    this.addSettingTab(new CrabbySettingTab(this.app, this));
+    this.addRibbonIcon("bot", "Crabby", () => {
+      this.activateView();
+    });
+    this.addCommand({
+      id: "open-chat",
+      name: "Open Crabby Chat",
+      callback: () => this.activateView()
+    });
+    this.startRuntimeInBackground();
+  }
+  async onunload() {
+    this.unloaded = true;
+    this.app.workspace.detachLeavesOfType(VIEW_TYPE_CHAT);
+    if (this.clientToolBridge) {
+      this.clientToolBridge.stop();
+      this.clientToolBridge = null;
+    }
+    if (this.runtimeManager) {
+      await this.runtimeManager.stop();
+      this.runtimeManager = null;
+    }
+  }
+  startRuntimeInBackground() {
+    const manager = this.runtimeManager;
+    if (!manager) {
+      return;
+    }
+    void (async () => {
+      try {
+        await manager.ensureRuntimeLayout();
+        if (this.unloaded || this.runtimeManager !== manager) {
+          return;
+        }
+        const runtimeStatus = await manager.start();
+        if (this.unloaded || this.runtimeManager !== manager) {
+          return;
+        }
+        await this.syncLlmProfilesFromBackend({ migrateLocalProfiles: true });
+        await this.saveSettings();
+        if (!runtimeStatus.running && runtimeStatus.mode === "production") {
+          new import_obsidian11.Notice(
+            "Crabby backend runtime is not installed. Open settings to install it."
+          );
+        }
+      } catch (error) {
+        if (!this.unloaded) {
+          console.error(
+            "[Crabby] Failed to start backend runtime:",
+            error
+          );
+          const message = error instanceof Error ? error.message : String(error);
+          new import_obsidian11.Notice(`Crabby backend startup failed: ${message}`);
+        }
+      }
+    })();
+  }
+  async loadSettings() {
+    const loaded = await this.loadData();
+    this.settings = hydrateSettings(DEFAULT_SETTINGS, loaded);
+    if (needsBackendEnvPathMigration(loaded)) {
+      await this.saveSettings();
+    }
+  }
+  async saveSettings() {
+    await this.saveData(this.settings);
+    notifySettingsUpdated();
+  }
+  restartClientToolBridge() {
+    if (!this.clientToolBridge) {
+      return;
+    }
+    this.clientToolBridge.stop();
+    this.clientToolBridge.start();
+  }
+  getCurrentVaultPath() {
+    return (this.app.vault.adapter.basePath ?? "").trim();
+  }
+  async ensureBackendVaultPathSynced(client) {
+    try {
+      const result2 = await syncVaultPathLocally(
+        this.settings,
+        this.getCurrentVaultPath(),
+        client ?? new AgentClient(this.settings.backendUrl)
+      );
+      return {
+        ok: result2.ok,
+        changed: Boolean(result2.changed),
+        message: result2.message
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[Crabby] Failed to sync backend vault path:", error);
+      return {
+        ok: false,
+        changed: false,
+        message: "Failed to sync the current vault path with the backend .env. Check the plugin's backend .env path setting. " + message
+      };
+    }
+  }
+  async applyLlmProfile() {
+    const activeProfile = this.settings.llmProfiles.find(
+      (profile) => profile.id === this.settings.activeProfileId
+    ) ?? this.settings.llmProfiles[0];
+    if (!activeProfile) {
+      return { ok: false, message: "No LLM profile is configured." };
+    }
+    await this.saveSettings();
+    try {
+      const client = new AgentClient(this.settings.backendUrl);
+      const result2 = await activateLlmProfileOnBackend(
+        this.settings,
+        activeProfile.id,
+        client
+      );
+      if (result2.ok) {
+        await this.saveSettings();
+      }
+      return { ok: result2.ok, message: result2.message };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(error);
+      return {
+        ok: false,
+        message: `Failed to apply the active LLM profile: ${message}`
+      };
+    }
+  }
+  async syncLlmProfilesFromBackend(options = {}) {
+    const client = new AgentClient(this.settings.backendUrl);
+    const localProfiles = this.settings.llmProfiles.map((profile) => ({
+      ...profile
+    }));
+    const localActiveProfileId = this.settings.activeProfileId;
+    const fetched = await fetchLlmProfilesFromBackend(this.settings, client);
+    if (!fetched.ok) {
+      return { ok: false, message: fetched.message };
+    }
+    if (options.migrateLocalProfiles && fetched.profiles?.length === 0 && localProfiles.length > 0) {
+      for (const profile of localProfiles) {
+        const activate = profile.id === localActiveProfileId || !localActiveProfileId && profile.id === localProfiles[0].id;
+        const saved = await saveLlmProfileToBackend(
+          this.settings,
+          profile,
+          client,
+          activate
+        );
+        if (!saved.ok) {
+          return { ok: false, message: saved.message };
+        }
+      }
+      await this.saveSettings();
+      return { ok: true, message: "Migrated local LLM profiles to backend." };
+    }
+    await this.saveSettings();
+    return { ok: true, message: fetched.message };
+  }
+  async activateView() {
+    const { workspace } = this.app;
+    let leaf = workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
+    if (!leaf) {
+      const rightLeaf = workspace.getRightLeaf(false);
+      if (rightLeaf) {
+        leaf = rightLeaf;
+        await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
+      }
+    }
+    if (leaf) {
+      workspace.revealLeaf(leaf);
+    }
+  }
+};

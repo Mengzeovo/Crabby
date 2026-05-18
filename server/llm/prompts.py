@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import logging
 import platform
+from datetime import date
 from pathlib import Path
 import sys
 from typing import TYPE_CHECKING, Any
@@ -42,8 +42,7 @@ TOOL_USAGE = """\
 - Use `crabby_settings` when you need to inspect or change the Crabby plugin's own configuration, runtime paths, or backend-owned LLM profile state.
 
 ## 工具使用
-- 当专用文件工具和 shell 命令都能完成任务时，优先使用专用文件工具。
-- shell 工具在 Windows 上运行 PowerShell，在 macOS/Linux 上运行 bash。
+- shell 工具在 Windows 上运行 PowerShell，在 Linux 上运行 bash，在 macOS 上运行 zsh。
 - 在 Windows 上优先使用 PowerShell 语法；链式命令优先用 `;`，`&&` / `||` 只是兼容处理，不要依赖 bash-only 语法。
 - 当前没有 TTY，需要交互式输入的命令会失败。
 - 必要时使用 `-y`、`--force` 等非交互参数。
@@ -125,8 +124,16 @@ def _runtime_platform_label() -> str:
     return f"{system_name} {release}".strip()
 
 
+def _runtime_date_label() -> str:
+    return date.today().isoformat()
+
+
 def _runtime_shell_label() -> str:
-    return "PowerShell" if sys.platform == "win32" else "bash"
+    if sys.platform == "win32":
+        return "PowerShell"
+    if sys.platform == "darwin":
+        return "zsh"
+    return "bash"
 
 
 def _render_tool_catalog(tool_catalog: dict[str, Any] | None) -> str:
@@ -189,11 +196,10 @@ def build_system_prompt(
         prompt_segments["safety.md"],
         prompt_segments["tool_usage.md"],
     ]
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     dynamic = (
         "## 环境\n"
-        f"- 当前系统时间: {current_time}\n"
         f"- 运行平台: {_runtime_platform_label()} (sys.platform={sys.platform})\n"
+        f"- 当前日期: {_runtime_date_label()}\n"
         f"- shell 工具: {_runtime_shell_label()}\n"
         f"- Vault 路径: {settings.vault_path}\n"
     )

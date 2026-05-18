@@ -88,12 +88,19 @@ def set_persona_router(router: PersonaRouter) -> None:
 
 
 def _collect_allowed_tools(skills: list) -> set[str]:
-    result: set[str] = set()
+    """Collect allowed tool names from skills that explicitly restrict tools.
+
+    A skill with allowed_tools=[] means "no restriction" — skip it.
+    Only accumulate tools from skills that specify an explicit list.
+    Returns an empty set if every skill has no restriction, meaning
+    all tools should be available.
+    """
+    allowed: set[str] = set()
     for skill in skills:
         if not skill.allowed_tools:
-            return set()
-        result.update(skill.allowed_tools)
-    return result
+            continue
+        allowed.update(skill.allowed_tools)
+    return allowed
 
 
 def _build_tools_schema_and_catalog(

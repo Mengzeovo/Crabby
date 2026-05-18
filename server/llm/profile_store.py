@@ -27,7 +27,7 @@ PROVIDER_API_KEY_KEYS = [
     "MINIMAX_API_KEY",
     "ZAI_API_KEY",
 ]
-PROVIDER_BASE_URL_KEYS = ["OPENAI_BASE_URL", "OLLAMA_BASE_URL", "KIMI_BASE_URL"]
+PROVIDER_BASE_URL_KEYS = ["OPENAI_BASE_URL", "KIMI_BASE_URL"]
 ACTIVE_LLM_KEYS = [
     "LLM_PROVIDER",
     "LLM_MODEL",
@@ -269,8 +269,6 @@ def build_active_profile_env_map(profile: dict[str, Any]) -> dict[str, str | Non
     if base_url:
         if profile["provider"] == "openai":
             env_map["OPENAI_BASE_URL"] = base_url
-        elif profile["provider"] == "ollama":
-            env_map["OLLAMA_BASE_URL"] = base_url
         elif profile["provider"] == "kimi":
             env_map["KIMI_BASE_URL"] = base_url
 
@@ -376,8 +374,6 @@ def infer_provider_from_profile(
         return "zhipu"
     if "anthropic" in text or "claude" in text:
         return "anthropic"
-    if "ollama" in text or "localhost:11434" in text:
-        return "ollama"
     return None
 
 

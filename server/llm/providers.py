@@ -7,7 +7,7 @@ from typing import Literal
 
 from config import settings
 
-ProviderKind = Literal["anthropic", "openai_compatible", "ollama"]
+ProviderKind = Literal["anthropic", "openai_compatible"]
 UsageInputShape = Literal["anthropic", "openai_compatible", "deepseek"]
 ReasoningOutputShape = Literal[
     "reasoning_content",
@@ -77,14 +77,6 @@ PROVIDER_PRESETS: dict[str, LLMProviderPreset] = {
             "high",
             "xhigh",
         },
-    ),
-    "ollama": LLMProviderPreset(
-        id="ollama",
-        label="Ollama",
-        kind="ollama",
-        default_base_url="http://localhost:11434",
-        base_url_env="OLLAMA_BASE_URL",
-        api_key_required=False,
     ),
     "deepseek": LLMProviderPreset(
         id="deepseek",
@@ -172,8 +164,6 @@ def resolve_provider_base_url(preset: LLMProviderPreset) -> str:
 
     if preset.id in {"openai", "custom_openai"} and settings.openai_base_url.strip():
         return settings.openai_base_url.strip()
-    if preset.id == "ollama" and settings.ollama_base_url.strip():
-        return settings.ollama_base_url.strip()
 
     return preset.default_base_url
 

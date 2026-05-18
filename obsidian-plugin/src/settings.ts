@@ -618,13 +618,15 @@ export class CrabbySettingTab extends PluginSettingTab {
     const resolution = resolveBackendEnvPath(this.plugin.settings);
     const configHint = containerEl.createDiv({ cls: "llm-config-hint" });
     configHint.style.fontSize = "12px";
-    configHint.style.color = "var(--text-muted)";
     configHint.style.marginBottom = "10px";
-    configHint.setText(
-      resolution.ok && resolution.envPath
-        ? `当前生效配置文件：${resolution.envPath}`
-        : resolution.message,
-    );
+    if (resolution.ok && resolution.envPath) {
+      configHint.style.color = "var(--text-muted)";
+      configHint.setText(`当前生效配置文件：${resolution.envPath}`);
+    } else {
+      configHint.style.color = "var(--text-accent)";
+      configHint.style.fontWeight = "600";
+      configHint.setText(resolution.message);
+    }
 
     const statusEl = containerEl.createDiv({ cls: "llm-status-bar" });
     statusEl.style.fontSize = "12px";
@@ -1176,7 +1178,8 @@ export class CrabbySettingTab extends PluginSettingTab {
       .setName("添加配置")
       .setDesc("新增一个 LLM 配置预设。")
       .addButton((button) => {
-        button.setButtonText("添加");
+        button.setButtonText(resolution.ok ? "添加" : "请先初始化后端");
+        button.setDisabled(!resolution.ok);
         button.onClick(async () => {
           const newProfile: LlmProfile = {
             id: crypto.randomUUID(),

@@ -80,6 +80,25 @@ def test_system_prompt_injects_dynamic_platform_and_shell(monkeypatch) -> None:
 
     assert "- 运行平台: Linux test-release (sys.platform=linux)" in prompt
     assert "- shell 工具: bash" in prompt
+    assert "- 当前日期:" in prompt
+
+
+def test_system_prompt_injects_darwin_shell(monkeypatch) -> None:
+    monkeypatch.setattr(prompts_module.sys, "platform", "darwin")
+    monkeypatch.setattr(prompts_module.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(prompts_module.platform, "release", lambda: "test-release")
+
+    prompt = prompts_module.build_system_prompt()
+
+    assert "- shell 工具: zsh" in prompt
+
+
+def test_system_prompt_injects_current_date(monkeypatch) -> None:
+    monkeypatch.setattr(prompts_module, "_runtime_date_label", lambda: "2025-01-15")
+
+    prompt = prompts_module.build_system_prompt()
+
+    assert "- 当前日期: 2025-01-15" in prompt
 
 
 def test_system_prompt_injects_active_persona() -> None:

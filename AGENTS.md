@@ -333,7 +333,7 @@ npm run start
 - Provider-specific fallbacks include `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, `BAILIAN_CODING_PLAN_API_KEY`,
   `KIMI_API_KEY`, `MINIMAX_API_KEY`, and `ZAI_API_KEY`.
-- Built-in provider IDs are `anthropic`, `openai`, `ollama`, `deepseek`,
+- Built-in provider IDs are `anthropic`, `openai`, `deepseek`,
   `qwen`, `kimi`, `minimax`, `zhipu`, and `custom_openai`.
 - `kimi` targets Kimi Code: `https://api.kimi.com/coding/v1` and
   `kimi-for-coding`.
