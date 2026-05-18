@@ -18,15 +18,14 @@ def runtime_data_dir(path: str | Path | None = None) -> Path:
 def context_runtime_data_dir(ctx: Context) -> Path:
     """Return the runtime data directory carried by a tool context."""
     if ctx.runtime_data_path is not None:
-        return runtime_data_dir(ctx.runtime_data_path)
-    return (
-        ctx.vault_path / ".crabby" / "data"
-    ).expanduser().resolve()
-
-
-def cron_jobs_file(path: str | Path | None = None) -> Path:
-    """Return the cron job persistence file."""
-    return runtime_data_dir(path) / "cron_jobs.json"
+        path = ctx.runtime_data_path
+        if isinstance(path, str):
+            path = Path(path)
+        return runtime_data_dir(path)
+    vault_path = ctx.vault_path
+    if isinstance(vault_path, str):
+        vault_path = Path(vault_path)
+    return (vault_path / "data").expanduser().resolve()
 
 
 def tool_results_cache_dir(ctx: Context) -> Path:
