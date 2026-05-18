@@ -27,11 +27,32 @@ from user_turn import PreparedTurn, build_user_message_content
 
 logger = logging.getLogger(__name__)
 
+_session_store: "SessionStore | None" = None
+_current_vault_path: Path | None = None
+
 _SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 ROOT_CONVERSATION_ID = "root"
 SESSION_SCHEMA_VERSION = 2
 DEFAULT_BRANCH_CACHE_TTL_SECONDS = 30 * 60
 DEFAULT_BRANCH_CACHE_MAX_BYTES = 64 * 1024 * 1024
+
+
+def set_session_store(store: "SessionStore | None") -> None:
+    global _session_store
+    _session_store = store
+
+
+def get_session_store() -> "SessionStore | None":
+    return _session_store
+
+
+def set_vault_path(path: Path | None) -> None:
+    global _current_vault_path
+    _current_vault_path = path
+
+
+def get_vault_path() -> Path | None:
+    return _current_vault_path
 
 
 class InvalidSessionIdError(ValueError):
@@ -44,6 +65,10 @@ class ConversationNotFoundError(ValueError):
 
 class MessageNotFoundError(ValueError):
     """Raised when a message cannot be used as a fork point."""
+
+
+class InvalidPathError(ValueError):
+    """Raised when a resolved path falls outside the storage root."""
 
 
 def validate_session_id(session_id: str) -> str:
@@ -350,6 +375,10 @@ class Session:
     root_conversation_id: str = ROOT_CONVERSATION_ID
     active_conversation_id: str = ROOT_CONVERSATION_ID
     conversation_revision: int = 1
+    active_loop_id: str | None = None
+    """ID of the currently active interactive loop for this session, if any."""
+    vault_path: Path | None = None
+    """Vault root path used to derive runtime data directories. Set at Session creation."""
     conversation_index: dict[str, ConversationRecord] = field(
         default_factory=dict,
         repr=False,
@@ -364,6 +393,11 @@ class Session:
         if not self.last_activity_at:
             self.last_activity_at = self.created_at
         self.conversation_revision = max(1, int(self.conversation_revision or 1))
+        if self.active_loop_id is not None:
+            self.active_loop_id = validate_session_id(self.active_loop_id)
+        # Auto-set vault_path from global state if not already set.
+        if self.vault_path is None:
+            self.vault_path = _current_vault_path
         if self.conversation_index:
             self.conversation_index = {
                 validate_conversation_id(conversation_id): record
@@ -570,6 +604,8 @@ class Session:
             "persona_state": self.persona_state.model_dump(),
             "actual_usage_total": self.actual_usage_total,
             "conversation_revision": self.conversation_revision,
+            "active_loop_id": self.active_loop_id,
+            "vault_path": str(self.vault_path) if self.vault_path else None,
         }
 
     def to_manifest_dict(self) -> dict[str, Any]:
@@ -587,6 +623,8 @@ class Session:
             "pending_notifications": self.pending_notifications,
             "persona_state": self.persona_state.model_dump(),
             "actual_usage_total": self.actual_usage_total,
+            "active_loop_id": self.active_loop_id,
+            "vault_path": str(self.vault_path) if self.vault_path else None,
             "conversations": {
                 conversation.id: conversation.to_manifest_dict()
                 for conversation in conversation_index.values()
@@ -612,7 +650,7 @@ class Session:
         )
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Session:
+    def from_dict(cls, data: dict[str, Any], vault_path: Path | None = None) -> Session:
         actual_usage_total = data.get("actual_usage_total", {})
         if not isinstance(actual_usage_total, dict):
             actual_usage_total = {}
@@ -620,6 +658,13 @@ class Session:
         if not isinstance(messages, list):
             messages = []
         created_at = float(data.get("created_at") or 0.0)
+        # Prefer persisted vault_path, fall back to store-supplied value.
+        vp = data.get("vault_path")
+        resolved_vp: Path | None = None
+        if vp:
+            resolved_vp = Path(vp)
+        elif vault_path is not None:
+            resolved_vp = vault_path
         return cls(
             id=data["id"],
             title=data.get("title", ""),
@@ -636,6 +681,8 @@ class Session:
                 data.get("active_conversation_id") or ROOT_CONVERSATION_ID
             ),
             conversation_revision=int(data.get("conversation_revision") or 1),
+            active_loop_id=data.get("active_loop_id"),
+            vault_path=resolved_vp,
         )
 
     @classmethod
@@ -644,6 +691,7 @@ class Session:
         manifest: dict[str, Any],
         conversation: ConversationRecord,
         conversation_index: dict[str, ConversationRecord],
+        vault_path: Path | None = None,
     ) -> Session:
         actual_usage_total = manifest.get("actual_usage_total", {})
         if not isinstance(actual_usage_total, dict):
@@ -655,6 +703,13 @@ class Session:
         root_conversation_id = str(
             manifest.get("root_conversation_id") or conversation.id
         )
+        # Prefer persisted vault_path, fall back to store-supplied value.
+        vp = manifest.get("vault_path")
+        resolved_vp: Path | None = None
+        if vp:
+            resolved_vp = Path(vp)
+        elif vault_path is not None:
+            resolved_vp = vault_path
         return cls(
             id=manifest["id"],
             title=manifest.get("title", conversation.title),
@@ -672,6 +727,8 @@ class Session:
             active_conversation_id=active_conversation_id,
             conversation_revision=conversation.revision,
             conversation_index=conversation_index,
+            active_loop_id=manifest.get("active_loop_id"),
+            vault_path=resolved_vp,
         )
 
     def _derive_title_from_user_message(self, message: dict[str, Any]) -> str:
@@ -736,10 +793,15 @@ class SessionStore:
         max_sessions: int = 100,
         storage_dir: str | Path | None = None,
         branch_cache: BranchCache | None = None,
+        vault_path: Path | None = None,
     ) -> None:
         self._sessions: dict[str, Session] = {}
         self._max_sessions = max_sessions
         self.branch_cache = branch_cache if branch_cache is not None else BranchCache()
+        # Resolve vault_path at store creation time (before _load_all runs).
+        # Falls back to the module-level global for sessions created before
+        # set_vault_path() was called.
+        self._vault_path = vault_path if vault_path is not None else _current_vault_path
 
         if storage_dir is None:
             self._storage_dir = (
@@ -1009,14 +1071,20 @@ class SessionStore:
         safe_session_id = validate_session_id(session_id)
         storage_root = self._storage_dir.resolve()
         path = (storage_root / safe_session_id).resolve()
-        path.relative_to(storage_root)
+        try:
+            path.relative_to(storage_root)
+        except ValueError:
+            raise InvalidPathError(f"Path outside storage root: {path}")
         return path
 
     def _legacy_session_path(self, session_id: str) -> Path:
         safe_session_id = validate_session_id(session_id)
         storage_root = self._storage_dir.resolve()
         path = (storage_root / f"{safe_session_id}.json").resolve()
-        path.relative_to(storage_root)
+        try:
+            path.relative_to(storage_root)
+        except ValueError:
+            raise InvalidPathError(f"Path outside storage root: {path}")
         return path
 
     def _manifest_path(self, session_id: str) -> Path:
@@ -1027,7 +1095,10 @@ class SessionStore:
         session_dir = self._session_dir(session_id)
         conversations_dir = (session_dir / "conversations").resolve()
         path = (conversations_dir / f"{safe_conversation_id}.json").resolve()
-        path.relative_to(session_dir)
+        try:
+            path.relative_to(session_dir)
+        except ValueError:
+            raise InvalidPathError(f"Path outside session dir: {path}")
         return path
 
     def _persist(self, session: Session) -> None:
@@ -1097,7 +1168,7 @@ class SessionStore:
         for path in self._storage_dir.glob("*.json"):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                session = Session.from_dict(data)
+                session = Session.from_dict(data, vault_path=self._vault_path)
                 validate_session_id(session.id)
                 if path.name != f"{session.id}.json":
                     logger.warning(
@@ -1134,10 +1205,22 @@ class SessionStore:
             str(manifest.get("active_conversation_id") or ROOT_CONVERSATION_ID)
         )
         conversation_index = self._load_conversation_index(manifest, session_id)
-        conversation_data = self._read_conversation_file(
-            session_id,
-            active_conversation_id,
-        )
+
+        # Gracefully handle a corrupt active-conversation file: fall back to an
+        # empty conversation so the session can still be loaded from memory.
+        try:
+            conversation_data = self._read_conversation_file(
+                session_id,
+                active_conversation_id,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to read active conversation %s for session %s; using empty conversation",
+                active_conversation_id,
+                session_id,
+            )
+            conversation_data = {"messages": [], "id": active_conversation_id}
+
         conversation = ConversationRecord.from_file_dict(
             conversation_data,
             session_id=session_id,
@@ -1157,6 +1240,7 @@ class SessionStore:
             manifest,
             conversation,
             conversation_index,
+            vault_path=self._vault_path,
         )
         session.messages = self._materialize_branch_from_disk(session)
         return session
@@ -1270,9 +1354,14 @@ class SessionStore:
     def _remove_tree(self, root: Path) -> None:
         storage_root = self._storage_dir.resolve()
         resolved = root.resolve()
-        resolved.relative_to(storage_root)
+        try:
+            resolved.relative_to(storage_root)
+        except ValueError:
+            raise InvalidPathError(f"Path outside storage root: {resolved}")
         for path in sorted(resolved.rglob("*"), key=lambda p: len(p.parts), reverse=True):
-            if path.is_file():
+            if path.is_symlink():
+                path.unlink()
+            elif path.is_file():
                 path.unlink()
             elif path.is_dir():
                 path.rmdir()
