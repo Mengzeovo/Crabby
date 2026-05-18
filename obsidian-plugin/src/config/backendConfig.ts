@@ -274,8 +274,6 @@ export function buildActiveProfileEnvMap(
     envMap.LLM_BASE_URL = baseUrl;
     if (profile.provider === "openai") {
       envMap.OPENAI_BASE_URL = baseUrl;
-    } else if (profile.provider === "ollama") {
-      envMap.OLLAMA_BASE_URL = baseUrl;
     } else if (profile.provider === "kimi") {
       envMap.KIMI_BASE_URL = baseUrl;
     }
@@ -545,8 +543,19 @@ function applyBackendProfileState(
   settings: Pick<CrabbySettings, "llmProfiles" | "activeProfileId">,
   data: BackendLlmProfilesResponse,
 ): void {
-  settings.llmProfiles = data.profiles.map(fromBackendLlmProfile);
-  settings.activeProfileId = data.activeProfileId;
+  const backendProfiles = data.profiles.map(fromBackendLlmProfile);
+  const backendProfileIds = new Set(backendProfiles.map((profile) => profile.id));
+  const draftProfiles = settings.llmProfiles.filter(
+    (profile) => profile.isDraft === true && !backendProfileIds.has(profile.id),
+  );
+  const previousActiveProfileId = settings.activeProfileId;
+
+  settings.llmProfiles = [...backendProfiles, ...draftProfiles];
+  settings.activeProfileId =
+    data.activeProfileId ||
+    (draftProfiles.some((profile) => profile.id === previousActiveProfileId)
+      ? previousActiveProfileId
+      : "");
 }
 
 function toBackendLlmProfile(profile: LlmProfile): BackendLlmProfile {
@@ -646,7 +655,7 @@ function inferProviderFromProfile(
     return "anthropic";
   }
   if (text.includes("ollama") || text.includes("localhost:11434")) {
-    return "ollama";
+    return "custom_openai";
   }
 
   return null;

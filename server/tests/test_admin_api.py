@@ -217,6 +217,50 @@ def test_admin_profiles_roundtrip_uses_env_as_source(monkeypatch, tmp_path: Path
     assert "ACTIVE_PROFILE_ID=deepseek" not in deleted_content
 
 
+def test_admin_profile_rejects_env_unsafe_id(monkeypatch, tmp_path: Path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "CRABBY_ADMIN_ENABLED=true",
+                "CRABBY_ADMIN_TOKEN=secret",
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(config.Settings.model_config, "env_file", str(env_path))
+    config.reload_settings()
+
+    with TestClient(_build_admin_app()) as client:
+        saved = client.put(
+            "/admin/profiles/profile-with-hyphen",
+            headers={"X-Crabby-Admin-Token": "secret"},
+            json={
+                "activate": True,
+                "profile": {
+                    "id": "profile-with-hyphen",
+                    "name": "Unsafe",
+                    "provider": "openai",
+                    "model": "gpt-4.1",
+                    "baseUrl": "https://api.openai.com/v1",
+                    "apiKey": "provider-secret",
+                    "supportsVision": False,
+                    "thinkingMode": "",
+                    "thinkingEffort": "",
+                    "thinkingBudgetTokens": "1024",
+                    "reasoningSplit": False,
+                },
+            },
+        )
+
+    assert saved.status_code == 400
+    assert "letters, numbers, or '_'" in saved.json()["detail"]
+    assert "PROFILE_profile-with-hyphen_MODEL" not in env_path.read_text(
+        encoding="utf-8",
+    )
+
+
 @pytest.mark.parametrize(
     ("provider", "model", "delta", "expected_field"),
     [

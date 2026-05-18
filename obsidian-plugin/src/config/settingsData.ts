@@ -11,6 +11,12 @@ function normalizeString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value.trim() : fallback;
 }
 
+function normalizeProfileId(value: unknown, fallback = ""): string {
+  return normalizeString(value, fallback)
+    .replace(/[^A-Za-z0-9_]/g, "_")
+    .slice(0, 64);
+}
+
 function normalizeProvider(value: unknown): LlmProfile["provider"] {
   return normalizeLlmProviderId(value);
 }
@@ -42,7 +48,7 @@ function normalizeProfile(profile: unknown): LlmProfile | null {
     return null;
   }
 
-  const id = normalizeString(profile.id);
+  const id = normalizeProfileId(profile.id);
   const name = normalizeString(profile.name);
   const model = normalizeString(profile.model);
 
@@ -62,6 +68,7 @@ function normalizeProfile(profile: unknown): LlmProfile | null {
     thinkingEffort: normalizeString(profile.thinkingEffort),
     thinkingBudgetTokens: normalizeString(profile.thinkingBudgetTokens, "1024"),
     reasoningSplit: normalizeBoolean(profile.reasoningSplit),
+    isDraft: normalizeBoolean(profile.isDraft),
   };
 }
 
@@ -118,7 +125,7 @@ export function hydrateSettings(
           .map((profile) => normalizeProfile(profile))
           .filter((profile): profile is LlmProfile => profile !== null)
       : defaults.llmProfiles.map((profile) => ({ ...profile })),
-    activeProfileId: normalizeString(
+    activeProfileId: normalizeProfileId(
       source.activeProfileId,
       defaults.activeProfileId,
     ),

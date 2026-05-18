@@ -50,15 +50,12 @@ def build_runtime(version: str) -> Path:
     pyinstaller_dist = ROOT / "dist" / "pyinstaller"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Use `uv run` to get a temporary venv with pyinstaller AND all server
-    # dependencies (needed by PyInstaller to trace imports in main.py).
-    # --no-project avoids picking up the root pyproject.toml (which does not exist).
+    # Use the server project environment so PyInstaller can trace imports from
+    # the backend dependencies while adding PyInstaller only for this command.
     command = [
         "uv", "run",
-        "--no-project",
+        "--project", str(SERVER_DIR),
         "--with", "pyinstaller",
-        "--extra", str(SERVER_DIR),
-        "--extra-dev",
         "python", "-m", "PyInstaller",
         "--clean",
         "--noconfirm",

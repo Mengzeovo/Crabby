@@ -41,6 +41,7 @@ export interface LlmProfile {
   thinkingEffort: string;
   thinkingBudgetTokens: string;
   reasoningSplit: boolean;
+  isDraft?: boolean;
 }
 
 export interface CrabbySettings {
@@ -89,6 +90,14 @@ function getEffectiveProfileCapabilities(
   }
 
   return { activePreset, capabilities, modelPreset };
+}
+
+function createProfileId(): string {
+  return crypto.randomUUID().replace(/-/g, "_");
+}
+
+export function isDraftLlmProfile(profile: LlmProfile): boolean {
+  return profile.isDraft === true;
 }
 
 export const DEFAULT_SETTINGS: CrabbySettings = {
@@ -619,6 +628,7 @@ export class CrabbySettingTab extends PluginSettingTab {
     const configHint = containerEl.createDiv({ cls: "llm-config-hint" });
     configHint.style.fontSize = "12px";
     configHint.style.marginBottom = "10px";
+    configHint.style.wordBreak = "break-word";
     if (resolution.ok && resolution.envPath) {
       configHint.style.color = "var(--text-muted)";
       configHint.setText(`当前生效配置文件：${resolution.envPath}`);
@@ -633,6 +643,7 @@ export class CrabbySettingTab extends PluginSettingTab {
     statusEl.style.color = "var(--text-muted)";
     statusEl.style.marginBottom = "10px";
     statusEl.style.minHeight = "18px";
+    statusEl.style.wordBreak = "break-word";
 
     const profileListEl = containerEl.createDiv({ cls: "llm-profile-list" });
     profileListEl.style.marginBottom = "4px";
@@ -644,7 +655,7 @@ export class CrabbySettingTab extends PluginSettingTab {
       statusEl.setText("正在从后端读取 LLM 配置...");
       try {
         const result = await this.plugin.syncLlmProfilesFromBackend({
-          migrateLocalProfiles: true,
+          migrateLocalProfiles: false,
         });
         statusEl.setText(result.message);
         if (result.ok) {
@@ -659,13 +670,22 @@ export class CrabbySettingTab extends PluginSettingTab {
 
     const updateStatusFromActiveProfile = () => {
       const activeProfile = this.plugin.settings.llmProfiles.find(
-        (profile) => profile.id === this.plugin.settings.activeProfileId,
+        (profile) =>
+          profile.id === this.plugin.settings.activeProfileId &&
+          !isDraftLlmProfile(profile),
+      );
+      const activeDraft = this.plugin.settings.llmProfiles.find(
+        (profile) =>
+          profile.id === this.plugin.settings.activeProfileId &&
+          isDraftLlmProfile(profile),
       );
 
       if (activeProfile) {
         statusEl.setText(
           `当前启用：${activeProfile.name}（${activeProfile.provider} / ${activeProfile.model}）`,
         );
+      } else if (activeDraft) {
+        statusEl.setText("当前正在编辑未保存草稿。保存后才能启用。");
       } else if (this.plugin.settings.llmProfiles.length > 0) {
         statusEl.setText("当前还没有选中的配置。");
       } else {
@@ -736,7 +756,9 @@ export class CrabbySettingTab extends PluginSettingTab {
 
     const testCurrentProfile = async (): Promise<void> => {
       const activeProfile = this.plugin.settings.llmProfiles.find(
-        (profile) => profile.id === this.plugin.settings.activeProfileId,
+        (profile) =>
+          profile.id === this.plugin.settings.activeProfileId &&
+          !isDraftLlmProfile(profile),
       );
 
       const envResolution = resolveBackendEnvPath(this.plugin.settings);
@@ -793,7 +815,9 @@ export class CrabbySettingTab extends PluginSettingTab {
 
       this.plugin.settings.llmProfiles.forEach((profile, index) => {
         applyKnownModelCapabilities(profile);
-        const isActive = profile.id === this.plugin.settings.activeProfileId;
+        const isDraft = isDraftLlmProfile(profile);
+        const isActive =
+          profile.id === this.plugin.settings.activeProfileId && !isDraft;
 
         const card = profileListEl.createDiv({ cls: "llm-profile-card" });
         Object.assign(card.style, {
@@ -821,7 +845,9 @@ export class CrabbySettingTab extends PluginSettingTab {
         activeBadge.style.cursor = "pointer";
         activeBadge.title = isActive
           ? "这个配置当前已启用。"
-          : "点击启用这个配置，并热重载后端。";
+          : isDraft
+            ? "点击保存并启用这个草稿配置。"
+            : "点击启用这个配置，并热重载后端。";
         activeBadge.setText(isActive ? "●" : "○");
         activeBadge.addEventListener("click", async () => {
           await applyProfileToBackend(profile);
@@ -831,7 +857,11 @@ export class CrabbySettingTab extends PluginSettingTab {
         const getProfileTitle = () => profile.name || `\u914d\u7f6e ${index + 1}`;
         titleEl.setText(getProfileTitle());
         titleEl.style.flex = "1";
+        titleEl.style.minWidth = "0";
         titleEl.style.fontSize = "14px";
+        titleEl.style.overflow = "hidden";
+        titleEl.style.textOverflow = "ellipsis";
+        titleEl.style.whiteSpace = "nowrap";
 
         const providerColors: Record<string, string> = Object.fromEntries(
           LLM_PROVIDER_IDS.map((providerId) => [
@@ -857,9 +887,24 @@ export class CrabbySettingTab extends PluginSettingTab {
         };
         updateProviderBadge();
 
+        if (isDraft) {
+          const draftBadge = headerRow.createSpan();
+          Object.assign(draftBadge.style, {
+            fontSize: "11px",
+            padding: "2px 8px",
+            borderRadius: "12px",
+            backgroundColor: "var(--background-modifier-border)",
+            color: "var(--text-muted)",
+            fontWeight: "600",
+          });
+          draftBadge.setText("草稿");
+        }
+
         const saveBtn = headerRow.createEl("button");
         saveBtn.setText("保存");
-        saveBtn.title = isActive
+        saveBtn.title = isDraft
+          ? "把这个草稿配置保存到后端 .env。"
+          : isActive
           ? "保存这个配置，并立即应用到后端。"
           : "把这个配置保存到后端。";
         saveBtn.addEventListener("click", () => {
@@ -870,7 +915,21 @@ export class CrabbySettingTab extends PluginSettingTab {
         deleteBtn.setText("删除");
         deleteBtn.title = "删除这个配置。";
         deleteBtn.addEventListener("click", async () => {
-          statusEl.setText(`正在从后端删除 ${profile.name}...`);
+          const removeProfileLocally = async () => {
+            this.plugin.settings.llmProfiles =
+              this.plugin.settings.llmProfiles.filter(
+                (candidate) => candidate.id !== profile.id,
+              );
+            if (this.plugin.settings.activeProfileId === profile.id) {
+              this.plugin.settings.activeProfileId =
+                this.plugin.settings.llmProfiles[0]?.id ?? "";
+            }
+            await this.plugin.saveSettings();
+            renderProfiles();
+            updateStatusFromActiveProfile();
+          };
+
+          statusEl.setText(`正在删除 ${profile.name}...`);
           const client = new AgentClient(backendUrl());
           const result = await deleteLlmProfileFromBackend(
             this.plugin.settings,
@@ -879,12 +938,15 @@ export class CrabbySettingTab extends PluginSettingTab {
           );
           statusEl.setText(result.message);
           if (!result.ok) {
+            if (result.message.includes("Profile not found")) {
+              await removeProfileLocally();
+              new Notice(`已删除本地草稿 ${profile.name}。`);
+              return;
+            }
             new Notice(`删除失败：${result.message}`);
             return;
           }
-          await this.plugin.saveSettings();
-          renderProfiles();
-          updateStatusFromActiveProfile();
+          await removeProfileLocally();
           new Notice(`已删除 ${profile.name}。`);
         });
 
@@ -895,7 +957,7 @@ export class CrabbySettingTab extends PluginSettingTab {
           const styleProfileRow = (row: HTMLDivElement) => {
             Object.assign(row.style, {
               display: "grid",
-              gridTemplateColumns: "80px 1fr",
+              gridTemplateColumns: "80px minmax(0, 1fr)",
               alignItems: "center",
               gap: "8px",
               marginBottom: "6px",
@@ -1181,8 +1243,9 @@ export class CrabbySettingTab extends PluginSettingTab {
         button.setButtonText(resolution.ok ? "添加" : "请先初始化后端");
         button.setDisabled(!resolution.ok);
         button.onClick(async () => {
+          const wasEmpty = this.plugin.settings.llmProfiles.length === 0;
           const newProfile: LlmProfile = {
-            id: crypto.randomUUID(),
+            id: createProfileId(),
             name: "新配置",
             provider: "anthropic",
             model: "claude-sonnet-4-20250514",
@@ -1193,25 +1256,17 @@ export class CrabbySettingTab extends PluginSettingTab {
             thinkingEffort: "",
             thinkingBudgetTokens: "1024",
             reasoningSplit: false,
+            isDraft: true,
           };
 
-          const activate = this.plugin.settings.llmProfiles.length === 0;
-          statusEl.setText(`正在创建 ${newProfile.name}...`);
-          const client = new AgentClient(backendUrl());
-          const result = await saveLlmProfileToBackend(
-            this.plugin.settings,
-            newProfile,
-            client,
-            activate,
-          );
-          statusEl.setText(result.message);
-          if (!result.ok) {
-            new Notice(`添加失败：${result.message}`);
-            return;
+          this.plugin.settings.llmProfiles.push(newProfile);
+          if (wasEmpty) {
+            this.plugin.settings.activeProfileId = newProfile.id;
           }
           await this.plugin.saveSettings();
           renderProfiles();
           updateStatusFromActiveProfile();
+          statusEl.setText("已添加新配置草稿。填写完成后点击“保存”写入后端 .env。");
         });
       });
   }

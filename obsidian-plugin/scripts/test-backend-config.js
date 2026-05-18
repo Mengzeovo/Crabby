@@ -31,14 +31,14 @@ async function testBackendConfig(mod) {
     backendPath: path.join(tempDir, "server"),
   });
   assert.equal(unresolved.ok, false);
-  assert.equal(unresolved.derivedFromLegacyPath, false);
-  assert.equal(unresolved.envPath, undefined);
+  assert.equal(unresolved.derivedFromLegacyPath, true);
+  assert.equal(unresolved.envPath, path.resolve(tempDir, "server", ".env"));
   assert.equal(
     mod.getBackendEnvPathInputValue({
       backendEnvPath: "",
       backendPath: path.join(tempDir, "server"),
     }),
-    "",
+    path.resolve(tempDir, "server", ".env"),
   );
   assert.equal(
     mod.getBackendEnvPathInputValue({
@@ -241,6 +241,48 @@ async function testBackendConfig(mod) {
   assert.equal(mergeSettings.llmProfiles[1].id, "profile_deepseek_env");
   assert.equal(mergeSettings.llmProfiles[1].provider, "deepseek");
   assert.equal(mergeSettings.activeProfileId, "profile_deepseek_env");
+
+  const draftSyncSettings = {
+    backendEnvPath: envPath,
+    backendPath: "",
+    llmProfiles: [
+      {
+        id: "draft_profile",
+        name: "Draft",
+        provider: "anthropic",
+        model: "claude-sonnet-4-20250514",
+        baseUrl: "",
+        apiKey: "",
+        supportsVision: false,
+        thinkingMode: "",
+        thinkingEffort: "",
+        thinkingBudgetTokens: "1024",
+        reasoningSplit: false,
+        isDraft: true,
+      },
+    ],
+    activeProfileId: "draft_profile",
+  };
+  const fetchedWithDraft = await mod.fetchLlmProfilesFromBackend(
+    draftSyncSettings,
+    {
+      listLlmProfiles: async () => ({
+        ok: true,
+        status: 200,
+        detail: null,
+        data: {
+          envPath,
+          activeProfileId: "",
+          profiles: [],
+        },
+      }),
+    },
+  );
+  assert.equal(fetchedWithDraft.ok, true);
+  assert.equal(draftSyncSettings.llmProfiles.length, 1);
+  assert.equal(draftSyncSettings.llmProfiles[0].id, "draft_profile");
+  assert.equal(draftSyncSettings.llmProfiles[0].isDraft, true);
+  assert.equal(draftSyncSettings.activeProfileId, "draft_profile");
 
   mod.upsertEnvFile(envPath, { ACTIVE_PROFILE_ID: "missing-profile" });
   const fallbackActiveSettings = {
@@ -483,8 +525,9 @@ function testSettingsData(mod) {
   );
   assert.equal(hydrated.runtimeManifestUrl, "");
   assert.equal(hydrated.backendPath, "");
-  assert.equal(hydrated.activeProfileId, "profile-openai");
+  assert.equal(hydrated.activeProfileId, "profile_openai");
   assert.equal(hydrated.llmProfiles.length, 1);
+  assert.equal(hydrated.llmProfiles[0].id, "profile_openai");
   assert.equal(hydrated.llmProfiles[0].supportsVision, false);
   assert.equal(hydrated.llmProfiles[0].name, "OpenAI Local");
   assert.equal(hydrated.llmProfiles[0].model, "gpt-5.4-mini");

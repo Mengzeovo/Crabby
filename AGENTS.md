@@ -56,8 +56,9 @@ workflows. It is not a cloud multi-user SaaS.
 - `skills/`: checked-in runtime skills.
 - `reference/`: reference material.
 - `scripts/`: backend runtime build and release packaging helpers.
-- `scripts/build-backend-runtime.py`: builds a PyInstaller backend runtime.
-  Generated PyInstaller `.spec` files are ignored by git.
+- `scripts/build-backend-runtime.py`: builds a PyInstaller backend runtime by
+  running PyInstaller in the `server/` uv project with PyInstaller injected for
+  that command. Generated PyInstaller `.spec` files are ignored by git.
 - `scripts/package-obsidian-release.py`: builds a manual-install Obsidian
   plugin zip with `manifest.json`, `main.js`, relative production
   `runtime/state.json`, and a prebuilt backend binary. It resolves
@@ -342,6 +343,13 @@ npm run start
   `LLM_REASONING_SPLIT`.
 - Backend-owned profiles are stored in `.env` as `PROFILE_<id>_*`, with
   `ACTIVE_PROFILE_ID` selecting the active profile.
+- Backend-owned profile IDs must be env-key safe: ASCII letters, digits, and
+  underscores only, up to 64 chars.
+- In the plugin settings UI, "添加配置" creates a local editable draft card;
+  the profile is written to the backend `.env` only when the card's save/apply
+  action calls the backend profile admin API. Draft profiles are preserved
+  across settings refreshes but are ignored by startup migration, chat model
+  selection, and send-time profile activation until saved.
 - Managed backend cleanup uses `CRABBY_HOST_HEARTBEAT_FILE`,
   `CRABBY_HOST_HEARTBEAT_TIMEOUT_SECONDS`, `CRABBY_HOST_PID`, and
   `CRABBY_BACKEND_RELOADER_PARENT`.

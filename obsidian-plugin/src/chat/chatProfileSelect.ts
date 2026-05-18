@@ -5,7 +5,7 @@ import { activateLlmProfileOnBackend } from "../config/backendConfig";
 import { getLlmProviderPreset } from "../config/llmProviders";
 import { SETTINGS_UPDATED_EVENT } from "../config/settingsEvents";
 import type CrabbyPlugin from "../main";
-import type { LlmProfile } from "../settings";
+import { isDraftLlmProfile, type LlmProfile } from "../settings";
 import type { ChatCleanup } from "./chatTypes";
 
 type ProfileOption = {
@@ -42,10 +42,13 @@ export function mountProfileSelect(
   });
   let optionEls: ProfileOption[] = [];
 
+  const getSavedProfiles = () =>
+    plugin.settings.llmProfiles.filter((profile) => !isDraftLlmProfile(profile));
+
   const getDisplayedProfile = () =>
-    plugin.settings.llmProfiles.find(
+    getSavedProfiles().find(
       (profile) => profile.id === plugin.settings.activeProfileId,
-    ) ?? plugin.settings.llmProfiles[0];
+    ) ?? getSavedProfiles()[0];
 
   const refreshSelectionUi = () => {
     const activeProfile = getDisplayedProfile();
@@ -67,7 +70,8 @@ export function mountProfileSelect(
     dropdownList.empty();
     optionEls = [];
 
-    if (plugin.settings.llmProfiles.length === 0) {
+    const savedProfiles = getSavedProfiles();
+    if (savedProfiles.length === 0) {
       const emptyEl = dropdownList.createDiv({
         cls: "custom-select-option custom-select-option-empty",
       });
@@ -76,7 +80,7 @@ export function mountProfileSelect(
       return;
     }
 
-    plugin.settings.llmProfiles.forEach((profile) => {
+    savedProfiles.forEach((profile) => {
       const optionEl = dropdownList.createDiv({ cls: "custom-select-option" });
       optionEls.push({ profileId: profile.id, optionEl });
 
@@ -98,7 +102,7 @@ export function mountProfileSelect(
         customSelect.classList.remove("open");
 
         const currentProfile =
-          plugin.settings.llmProfiles.find((item) => item.id === profile.id) ??
+          getSavedProfiles().find((item) => item.id === profile.id) ??
           profile;
 
         if (currentProfile.id === plugin.settings.activeProfileId) {

@@ -12,9 +12,9 @@ from llm.providers import PROVIDER_PRESETS, get_provider_preset
 
 ENV_ASSIGNMENT = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$")
 PROFILE_ENV_KEY = re.compile(
-    r"^PROFILE_([A-Za-z0-9_-]+)_(NAME|PROVIDER|MODEL|BASE_URL|API_KEY|SUPPORTS_VISION|THINKING_MODE|THINKING_EFFORT|THINKING_BUDGET_TOKENS|REASONING_SPLIT)$",
+    r"^PROFILE_([A-Za-z0-9_]+)_(NAME|PROVIDER|MODEL|BASE_URL|API_KEY|SUPPORTS_VISION|THINKING_MODE|THINKING_EFFORT|THINKING_BUDGET_TOKENS|REASONING_SPLIT)$",
 )
-PROFILE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+PROFILE_ID = re.compile(r"^[A-Za-z0-9_]{1,64}$")
 
 PROVIDER_API_KEY_KEYS = [
     "ANTHROPIC_API_KEY",
@@ -336,7 +336,7 @@ def normalize_profile(profile: dict[str, Any]) -> dict[str, Any]:
 def validate_profile_id(profile_id: str) -> None:
     if not PROFILE_ID.fullmatch(profile_id):
         raise ProfileStoreError(
-            "Profile id must be 1-64 characters of letters, numbers, '_' or '-'.",
+            "Profile id must be 1-64 characters of letters, numbers, or '_'.",
         )
 
 

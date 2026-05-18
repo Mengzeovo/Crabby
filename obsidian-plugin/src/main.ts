@@ -22,6 +22,7 @@ import {
   DEFAULT_SETTINGS,
   CrabbySettings,
   CrabbySettingTab,
+  isDraftLlmProfile,
 } from "./settings";
 import { BackendRuntimeManager } from "./runtime/backendRuntime";
 
@@ -165,8 +166,11 @@ export default class CrabbyPlugin extends Plugin {
   public async applyLlmProfile(): Promise<{ ok: boolean; message: string }> {
     const activeProfile =
       this.settings.llmProfiles.find(
-        (profile) => profile.id === this.settings.activeProfileId,
-      ) ?? this.settings.llmProfiles[0];
+        (profile) =>
+          profile.id === this.settings.activeProfileId &&
+          !isDraftLlmProfile(profile),
+      ) ??
+      this.settings.llmProfiles.find((profile) => !isDraftLlmProfile(profile));
 
     if (!activeProfile) {
       return { ok: false, message: "No LLM profile is configured." };
@@ -199,9 +203,11 @@ export default class CrabbyPlugin extends Plugin {
     options: { migrateLocalProfiles?: boolean } = {},
   ): Promise<{ ok: boolean; message: string }> {
     const client = new AgentClient(this.settings.backendUrl);
-    const localProfiles = this.settings.llmProfiles.map((profile) => ({
-      ...profile,
-    }));
+    const localProfiles = this.settings.llmProfiles
+      .filter((profile) => !isDraftLlmProfile(profile))
+      .map((profile) => ({
+        ...profile,
+      }));
     const localActiveProfileId = this.settings.activeProfileId;
 
     const fetched = await fetchLlmProfilesFromBackend(this.settings, client);

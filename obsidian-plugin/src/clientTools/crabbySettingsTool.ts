@@ -326,6 +326,7 @@ function sanitizeProfile(profile: LlmProfile): Record<string, unknown> {
     thinkingEffort: profile.thinkingEffort,
     thinkingBudgetTokens: profile.thinkingBudgetTokens,
     reasoningSplit: profile.reasoningSplit,
+    isDraft: profile.isDraft === true,
     hasApiKey: profile.apiKey.trim().length > 0,
     apiKeyMasked: maskSecret(profile.apiKey),
   };
@@ -355,6 +356,7 @@ function normalizeProfile(profile: unknown): LlmProfile | null {
     thinkingEffort: normalizeString(record.thinkingEffort),
     thinkingBudgetTokens: normalizeString(record.thinkingBudgetTokens, "1024"),
     reasoningSplit: normalizeBoolean(record.reasoningSplit),
+    isDraft: normalizeBoolean(record.isDraft),
   };
 }
 

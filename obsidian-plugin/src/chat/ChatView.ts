@@ -8,6 +8,7 @@ import { AgentClient } from "../api/client";
 import { createDefaultPersonaState } from "../api/client";
 import { SETTINGS_UPDATED_EVENT } from "../config/settingsEvents";
 import type CrabbyPlugin from "../main";
+import { isDraftLlmProfile } from "../settings";
 import { createChatComposer } from "./chatComposer";
 import {
   ICON_ATTACH,
@@ -135,7 +136,10 @@ export class ChatView extends ItemView {
 
     const bodyArea = container.createDiv({ cls: "chat-body" });
 
-    if (this.plugin.settings.llmProfiles.length === 0) {
+    const hasSavedProfile = this.plugin.settings.llmProfiles.some(
+      (profile) => !isDraftLlmProfile(profile),
+    );
+    if (!hasSavedProfile) {
       const banner = bodyArea.createDiv({ cls: "chat-no-profile-banner" });
       banner.createDiv({ cls: "chat-no-profile-banner-icon" }).setText("!");
       const bannerText = banner.createDiv({ cls: "chat-no-profile-banner-text" });
