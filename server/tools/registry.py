@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from tools.base import Tool
+
+logger = logging.getLogger(__name__)
 
 
 class ToolRegistry:
@@ -199,8 +202,31 @@ def create_default_registry() -> ToolRegistry:
     if FetchTool is not None:
         registry.register(FetchTool())
 
+    # Loop tools (interactive, frontend-driven)
     try:
-        from tools.cron import CronCreateTool, CronDeleteTool, CronListTool
+        from tools.loop_task import (
+            LoopAskTool,
+            LoopNextTool,
+            LoopPauseTool,
+            LoopStartTool,
+            LoopStopTool,
+            LoopSubmitTool,
+        )
+
+        registry.register(LoopStartTool())
+        registry.register(LoopAskTool())
+        registry.register(LoopSubmitTool())
+        registry.register(LoopNextTool())
+        registry.register(LoopPauseTool())
+        registry.register(LoopStopTool())
+    except ModuleNotFoundError:
+        logger.warning(
+            "loop_task module not found — interactive loop and cron tools are disabled"
+        )
+
+    # Cron-compatibility tools (non-interactive, daemon-driven)
+    try:
+        from tools.loop_task import CronCreateTool, CronDeleteTool, CronListTool
     except ModuleNotFoundError:
         CronCreateTool = CronListTool = CronDeleteTool = None
 
