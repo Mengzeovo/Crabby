@@ -16,6 +16,7 @@ from llm.agent_runner import DEFAULT_MAX_AGENT_ITERATIONS
 from llm.client import chat_completion
 from llm.context_meter import measure_context
 from llm.prompts import build_system_prompt
+from llm.providers import get_provider_preset
 from llm.token_usage import (
     TokenUsageAccumulator,
     context_with_actual_usage,
@@ -78,6 +79,10 @@ def set_persona_registry(registry: PersonaRegistry) -> None:
 def set_persona_router(router: PersonaRouter) -> None:
     global _persona_router
     _persona_router = router
+
+
+def _context_limit() -> int:
+    return get_provider_preset().context_window
 
 
 def _collect_allowed_tools(skills: list) -> set[str]:
@@ -324,7 +329,7 @@ async def context_stats(session_id: str, conversation_id: str) -> dict[str, Any]
 
     breakdown = measure_context(system, tools_schema, messages)
     return context_with_actual_usage(
-        breakdown.to_dict(),
+        breakdown.to_dict(_context_limit()),
         TokenUsageAccumulator(provider=settings.llm_provider),
         session.actual_usage_total,
     )
@@ -453,7 +458,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                             conversation_id,
                         )
                         or session.get_messages(_attachment_store),
-                    ).to_dict(),
+                    ).to_dict(_context_limit()),
                     usage_accumulator,
                     cumulative_usage,
                 )
@@ -527,7 +532,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                     conversation_id,
                 )
                 or session.get_messages(_attachment_store),
-            ).to_dict(),
+            ).to_dict(_context_limit()),
             usage_accumulator,
             cumulative_usage,
         )

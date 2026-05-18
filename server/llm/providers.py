@@ -35,6 +35,7 @@ class LLMProviderPreset:
     reasoning_output_shape: ReasoningOutputShape = "none"
     usage_input_shape: UsageInputShape = "openai_compatible"
     allowed_reasoning_efforts: set[str] = field(default_factory=set)
+    context_window: int = 200_000
 
 
 DEFAULT_REASONING_EFFORTS = {"low", "medium", "high"}

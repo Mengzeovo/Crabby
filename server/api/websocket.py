@@ -15,7 +15,7 @@ from llm.agent_runner import DEFAULT_MAX_AGENT_ITERATIONS
 from llm.client import chat_completion, chat_completion_stream
 from llm.context_meter import measure_context
 from llm.prompts import build_system_prompt
-from llm.providers import supports_streaming_tool_calls
+from llm.providers import get_provider_preset, supports_streaming_tool_calls
 from llm.token_usage import (
     TokenUsageAccumulator,
     context_with_actual_usage,
@@ -42,6 +42,10 @@ from tools.registry import ToolRegistry
 from user_turn import prepare_user_turn
 
 logger = logging.getLogger(__name__)
+
+
+def _context_limit() -> int:
+    return get_provider_preset().context_window
 
 router = APIRouter()
 
@@ -546,7 +550,7 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                         turn_notifications,
                     )
                     ctx_breakdown = measure_context(system, tools_schema, messages)
-                    logger.info(ctx_breakdown.to_log_line())
+                    logger.info(ctx_breakdown.to_log_line(_context_limit()))
 
                     full_response: dict[str, Any] | None = None
                     tools_for_turn = tools_schema if tools_schema else None
@@ -639,7 +643,7 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                             or session.get_messages(_attachment_store),
                         )
                         context = context_with_actual_usage(
-                            final_breakdown.to_dict(),
+                            final_breakdown.to_dict(_context_limit()),
                             usage_accumulator,
                             cumulative_usage,
                         )
@@ -729,7 +733,7 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                                         conversation_id,
                                     )
                                     or session.get_messages(_attachment_store),
-                                ).to_dict(),
+                                ).to_dict(_context_limit()),
                                 usage_accumulator,
                                 cumulative_usage,
                             ),

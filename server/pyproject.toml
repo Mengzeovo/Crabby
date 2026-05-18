@@ -1,6 +1,6 @@
 [project]
 name = "crabby"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local AI assistant built on Obsidian Vault"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,6 +14,7 @@ dependencies = [
     "beautifulsoup4>=4.14.3",
     "markdownify>=1.2.2",
     "croniter>=6.2.2",
+    "tiktoken>=0.7",
 ]
 
 [project.optional-dependencies]

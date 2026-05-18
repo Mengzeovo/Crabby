@@ -1,45 +1,96 @@
 """Context meter — estimate token usage before each LLM call.
 
-Provides a lightweight token estimator and a structured breakdown
-of context composition (system prompt, tool schema, messages by role).
+Provides a token estimator and structured breakdown of context composition
+(system prompt, tool schema, messages by role).
 
-Token estimation uses a simple heuristic:
-  - CJK characters: ~1.5 chars per token
-  - ASCII/Latin: ~4 chars per token
-  - Mixed content: weighted average based on CJK ratio
-
-This is intentionally approximate — exact tokenization depends on the
-provider's tokenizer, which we don't have access to for DeepSeek etc.
+Token estimation strategy (in priority order):
+  1. tiktoken cl100k_base — covers OpenAI, DeepSeek, Qwen, Kimi, MiniMax, Zhipu
+  2. Fallback heuristic with content-type-aware ratios:
+       - CJK text: 1.7 chars/token
+       - JSON/schema: 2.0 chars/token
+       - Code blocks:  2.5 chars/token
+       - Tool results:  2.8 chars/token
+       - Plain text:    4.0 chars/token
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import tiktoken
 
 
-# CJK Unicode ranges (common blocks)
+logger = logging.getLogger(__name__)
+
+# ── Tokenizer cache ──────────────────────────────────────────────────────────
+
+_tiktoken_enc: "tiktoken.Encoding | None" = None
+
+
+def _get_tiktoken() -> "tiktoken.Encoding":
+    global _tiktoken_enc
+    if _tiktoken_enc is None:
+        import tiktoken as _tiktoken
+
+        _tiktoken_enc = _tiktoken.get_encoding("cl100k_base")
+    return _tiktoken_enc
+
+
+# ── CJK detection ────────────────────────────────────────────────────────────
+
 _CJK_RE = re.compile(
     r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff"
     r"\U00020000-\U0002a6df\U0002a700-\U0002b73f"
     r"\U0002b740-\U0002b81f\U0002b820-\U0002ceaf]"
 )
 
+# Heuristic chars-per-token ratios, tuned for the content types that differ most
+# from the "4 chars ≈ 1 token" baseline.
+_HEURISTIC_RATIOS: dict[str, float] = {
+    "json_schema": 2.0,
+    "code": 2.5,
+    "tool_result": 2.8,
+    "plain": 4.0,
+}
 
-def estimate_tokens(text: str) -> int:
-    """Estimate token count for a string using CJK-aware heuristic."""
+
+def _cjk_heuristic(text: str, ratio: float) -> int:
+    cjk_chars = len(_CJK_RE.findall(text))
+    non_cjk = len(text) - cjk_chars
+    return max(1, int(cjk_chars / 1.7 + non_cjk / ratio))
+
+
+def estimate_tokens(text: str, *, content_type: str = "plain") -> int:
+    """Estimate token count for a string.
+
+    Args:
+        text: The string to estimate.
+        content_type: One of "plain" | "json_schema" | "code" | "tool_result".
+                      Affects the heuristic fallback ratio when tiktoken is unavailable.
+                      Defaults to "plain".
+    """
     if not text:
         return 0
 
-    total_chars = len(text)
-    cjk_chars = len(_CJK_RE.findall(text))
-    non_cjk_chars = total_chars - cjk_chars
+    ratio = _HEURISTIC_RATIOS.get(content_type, 4.0)
 
-    # CJK: ~1.5 chars/token, non-CJK: ~4 chars/token
-    tokens = cjk_chars / 1.5 + non_cjk_chars / 4.0
-    return max(1, int(tokens))
+    try:
+        enc = _get_tiktoken()
+        # tiktoken encodes all text equivalently regardless of "content_type"
+        # — the type only affects the heuristic fallback path.
+        return len(enc.encode(text))
+    except (OSError, ValueError):
+        # tiktoken raises OSError on missing vocab file and ValueError on
+        # malformed input (e.g. surrogate characters that encode() can't handle).
+        # All other exceptions are unexpected and should propagate.
+        pass
+
+    return _cjk_heuristic(text, ratio)
 
 
 def _content_to_text(content: Any) -> str:
@@ -67,6 +118,23 @@ def _content_to_text(content: Any) -> str:
     return str(content)
 
 
+def _is_tool_result_msg(msg: dict[str, Any]) -> bool:
+    content = msg.get("content", "")
+    if isinstance(content, list):
+        return any(
+            isinstance(b, dict) and b.get("type") == "tool_result"
+            for b in content
+        )
+    return False
+
+
+# ── Context breakdown ─────────────────────────────────────────────────────────
+
+# 200k token — matches the LLMProviderPreset default; used as the fallback
+# context_limit in to_dict() when the caller doesn't provide one.
+CONTEXT_LIMIT = 200_000
+
+
 @dataclass
 class ContextBreakdown:
     """Structured breakdown of context token usage."""
@@ -91,7 +159,8 @@ class ContextBreakdown:
             + self.tool_result_tokens
         )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, context_limit: int = CONTEXT_LIMIT) -> dict[str, Any]:
+        usage_percent = round(self.total_tokens / context_limit * 100, 1) if context_limit else 0.0
         return {
             "total_tokens": self.total_tokens,
             "system_tokens": self.system_tokens,
@@ -103,23 +172,19 @@ class ContextBreakdown:
             "user_message_count": self.user_message_count,
             "assistant_message_count": self.assistant_message_count,
             "tool_result_count": self.tool_result_count,
-            "context_limit": CONTEXT_LIMIT,
-            "usage_percent": round(self.total_tokens / CONTEXT_LIMIT * 100, 1),
+            "context_limit": context_limit,
+            "usage_percent": usage_percent,
         }
 
-    def to_log_line(self) -> str:
+    def to_log_line(self, context_limit: int = CONTEXT_LIMIT) -> str:
         return (
             f"[context] system={self.system_tokens} schema={self.schema_tokens} "
             f"user={self.user_tokens} assistant={self.assistant_tokens} "
             f"tool_result={self.tool_result_tokens} "
-            f"total={self.total_tokens}/{CONTEXT_LIMIT} "
-            f"({self.total_tokens / CONTEXT_LIMIT * 100:.1f}%) "
+            f"total={self.total_tokens}/{context_limit} "
+            f"({self.total_tokens / context_limit * 100:.1f}%) "
             f"msgs={self.message_count}"
         )
-
-
-# 256k token context window
-CONTEXT_LIMIT = 256_000
 
 
 def measure_context(
@@ -130,35 +195,29 @@ def measure_context(
     """Measure token usage of the full context that will be sent to the LLM."""
     breakdown = ContextBreakdown()
 
-    # System prompt
     breakdown.system_tokens = estimate_tokens(system_prompt)
 
-    # Tool schema
     if tools_schema:
         schema_text = json.dumps(tools_schema, ensure_ascii=False)
-        breakdown.schema_tokens = estimate_tokens(schema_text)
+        breakdown.schema_tokens = estimate_tokens(schema_text, content_type="json_schema")
 
-    # Messages
     breakdown.message_count = len(messages)
     for msg in messages:
         role = msg.get("role", "")
         content = msg.get("content", "")
         content_text = _content_to_text(content)
-        tokens = estimate_tokens(content_text)
 
         if role == "user":
-            # Check if this is a tool_result message
-            if isinstance(content, list) and any(
-                isinstance(b, dict) and b.get("type") == "tool_result"
-                for b in content
-            ):
-                breakdown.tool_result_tokens += tokens
+            if _is_tool_result_msg(msg):
+                breakdown.tool_result_tokens += estimate_tokens(
+                    content_text, content_type="tool_result"
+                )
                 breakdown.tool_result_count += 1
             else:
-                breakdown.user_tokens += tokens
+                breakdown.user_tokens += estimate_tokens(content_text)
                 breakdown.user_message_count += 1
         elif role == "assistant":
-            breakdown.assistant_tokens += tokens
+            breakdown.assistant_tokens += estimate_tokens(content_text)
             breakdown.assistant_message_count += 1
 
     return breakdown
