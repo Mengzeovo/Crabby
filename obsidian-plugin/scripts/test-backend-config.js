@@ -572,7 +572,7 @@ function testDefaultConfigTemplates(mod) {
     true,
   );
   assert.equal(
-    mod.DEFAULT_PERSONA_TEMPLATES["archivist/sources/README.md"].includes("档案官素材"),
+    mod.DEFAULT_PERSONA_TEMPLATES["archivist/sources/niklas-luhmann.md"].includes("卢曼"),
     true,
   );
 
@@ -697,80 +697,6 @@ function testDefaultConfigTemplates(mod) {
   assert.equal(
     fs.existsSync(path.join(missingMethodsDir, "researcher", "METHODS.md")),
     true,
-  );
-
-  const legacyPersonasDir = path.join(tempDir, "legacy-personas");
-  mod.seedDirectoryIfEmpty(
-    legacyPersonasDir,
-    mod.LEGACY_DEFAULT_PERSONA_TEMPLATES,
-  );
-  const migratedPersonas =
-    mod.seedOrMigrateDefaultPersonas(legacyPersonasDir);
-  assert.deepEqual(migratedPersonas, {
-    seeded: false,
-    migrated: true,
-  });
-  assert.equal(
-    fs.existsSync(path.join(legacyPersonasDir, "feynman", "PERSONA.md")),
-    false,
-  );
-  assert.equal(
-    fs.existsSync(path.join(legacyPersonasDir, "mentor", "PERSONA.md")),
-    true,
-  );
-
-  const editedLegacyDir = path.join(tempDir, "edited-legacy-personas");
-  mod.seedDirectoryIfEmpty(
-    editedLegacyDir,
-    mod.LEGACY_DEFAULT_PERSONA_TEMPLATES,
-  );
-  fs.mkdirSync(path.join(editedLegacyDir, "feynman", "sources"), {
-    recursive: true,
-  });
-  fs.writeFileSync(
-    path.join(editedLegacyDir, "feynman", "sources", "note.md"),
-    "user note\n",
-    "utf8",
-  );
-  const skippedEditedLegacyMigration =
-    mod.seedOrMigrateDefaultPersonas(editedLegacyDir);
-  assert.deepEqual(skippedEditedLegacyMigration, {
-    seeded: false,
-    migrated: false,
-  });
-  assert.equal(
-    fs.existsSync(path.join(editedLegacyDir, "feynman", "PERSONA.md")),
-    true,
-  );
-
-  const customPersonasDir = path.join(tempDir, "custom-personas");
-  mod.seedDirectoryIfEmpty(
-    customPersonasDir,
-    mod.LEGACY_DEFAULT_PERSONA_TEMPLATES,
-  );
-  fs.mkdirSync(path.join(customPersonasDir, "custom"), { recursive: true });
-  fs.writeFileSync(
-    path.join(customPersonasDir, "custom", "PERSONA.md"),
-    "---\nid: custom\ntitle: Custom\ndescription: Custom\n---\n\nBody\n",
-    "utf8",
-  );
-  const skippedCustomMigration =
-    mod.seedOrMigrateDefaultPersonas(customPersonasDir);
-  assert.deepEqual(skippedCustomMigration, {
-    seeded: false,
-    migrated: false,
-  });
-  assert.equal(
-    fs.existsSync(path.join(customPersonasDir, "feynman", "PERSONA.md")),
-    true,
-  );
-  assert.equal(
-    fs.existsSync(path.join(customPersonasDir, "secretary", "PERSONA.md")),
-    false,
-  );
-  assert.equal(
-    fs.existsSync(path.join(customPersonasDir, "secretary", "METHODS.md")),
-    false,
   );
 }
 

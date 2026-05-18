@@ -1,22 +1,38 @@
 const fs = require("fs");
 const path = require("path");
 
-const DEFAULT_VAULT = path.join(
-  process.env.USERPROFILE || process.env.HOME || process.cwd(),
-  "ObsidianVault",
-);
-
 function getObsidianConfigCandidates() {
-  const appData = process.env.APPDATA;
-  if (!appData) {
-    return [];
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA;
+    if (!appData) {
+      return [];
+    }
+    return [
+      path.join(appData, "obsidian", "obsidian.json"),
+      path.join(appData, "Obsidian", "obsidian.json"),
+    ];
   }
 
-  return [
-    path.join(appData, "obsidian", "obsidian.json"),
-    path.join(appData, "Obsidian", "obsidian.json"),
-  ];
+  if (process.platform === "darwin") {
+    const home = process.env.HOME;
+    if (!home) {
+      return [];
+    }
+    return [
+      path.join(home, "Library", "Application Support", "obsidian", "obsidian.json"),
+    ];
+  }
+
+  // Linux / other Unix
+  const xdgConfig = process.env.XDG_CONFIG_HOME
+    || path.join(process.env.HOME || "", ".config");
+  return [path.join(xdgConfig, "obsidian", "obsidian.json")];
 }
+
+const DEFAULT_VAULT = path.join(
+  process.env.HOME || process.cwd(),
+  process.platform === "darwin" ? "Documents" : "ObsidianVault",
+);
 
 function findObsidianConfigPath() {
   for (const candidate of getObsidianConfigCandidates()) {
