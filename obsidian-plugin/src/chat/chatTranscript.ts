@@ -592,6 +592,17 @@ export function createChatTranscript(
     }
   }
 
+  function deleteToolKeys(id: string | undefined, name: string): void {
+    const primary = id ?? name;
+    state.toolBlocks.delete(primary);
+    if (id) {
+      state.toolIdToName.delete(id);
+      if (id !== name) {
+        state.toolBlocks.delete(name);
+      }
+    }
+  }
+
   function beginTool(name: string, id: string): void {
     const wrapper = elements.messagesEl.createDiv({
       cls: "chat-tool-block running",
@@ -608,11 +619,14 @@ export function createChatTranscript(
     const termEl = wrapper.createDiv({ cls: "chat-tool-terminal" });
     termEl.createSpan({ cls: "chat-tool-cursor", text: "█" });
 
+    const primary = id || name;
+    state.toolBlocks.set(primary, wrapper);
     if (id) {
-      state.toolBlocks.set(id, wrapper);
       state.toolIdToName.set(id, name);
+      if (id !== name) {
+        state.toolBlocks.set(name, wrapper);
+      }
     }
-    state.toolBlocks.set(name, wrapper);
 
     scrollToBottom(false);
   }
@@ -620,26 +634,17 @@ export function createChatTranscript(
   function completeTool(name: string, output: string): void {
     let wrapper: HTMLDivElement | undefined;
 
-    if (state.toolBlocks.has(name)) {
-      wrapper = state.toolBlocks.get(name);
-      state.toolBlocks.delete(name);
-
-      for (const [id, mappedName] of state.toolIdToName) {
-        if (mappedName === name) {
-          state.toolBlocks.delete(id);
-          state.toolIdToName.delete(id);
-          break;
-        }
-      }
+    const foundByName = state.toolBlocks.get(name);
+    if (foundByName) {
+      wrapper = foundByName;
+      deleteToolKeys(undefined, name);
     }
 
     if (!wrapper) {
       for (const [id, mappedName] of state.toolIdToName) {
         if (mappedName === name) {
           wrapper = state.toolBlocks.get(id);
-          state.toolBlocks.delete(id);
-          state.toolIdToName.delete(id);
-          state.toolBlocks.delete(name);
+          deleteToolKeys(id, name);
           break;
         }
       }
@@ -680,26 +685,12 @@ export function createChatTranscript(
     const toolId = getToolPayloadId(payload);
     let wrapper: HTMLDivElement | undefined;
 
-    if (toolId && state.toolBlocks.has(toolId)) {
-      wrapper = state.toolBlocks.get(toolId);
-      state.toolBlocks.delete(toolId);
-      state.toolIdToName.delete(toolId);
-      if (state.toolBlocks.get(name) === wrapper) {
-        state.toolBlocks.delete(name);
-      }
-    }
-
-    if (!wrapper && state.toolBlocks.has(name)) {
+    if (toolId) {
+      wrapper = state.toolBlocks.get(toolId) ?? state.toolBlocks.get(name);
+      deleteToolKeys(toolId, name);
+    } else if (state.toolBlocks.has(name)) {
       wrapper = state.toolBlocks.get(name);
-      state.toolBlocks.delete(name);
-
-      for (const [id, mappedName] of state.toolIdToName) {
-        if (mappedName === name && state.toolBlocks.get(id) === wrapper) {
-          state.toolBlocks.delete(id);
-          state.toolIdToName.delete(id);
-          break;
-        }
-      }
+      deleteToolKeys(undefined, name);
     }
 
     if (!wrapper) {
