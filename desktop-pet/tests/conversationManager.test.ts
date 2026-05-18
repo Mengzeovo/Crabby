@@ -87,6 +87,10 @@ class MockBackend implements ConversationBackend {
     this.callbacks.push(callbacks);
   }
 
+  sendUserMessage(payload: ChatRequestPayload, callbacks: StreamCallbacks): void {
+    this.streamChat(payload, callbacks);
+  }
+
   abort(): void {}
   disconnect(): void {}
 

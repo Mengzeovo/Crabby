@@ -30,6 +30,7 @@ export interface ConversationBackend {
   getSessionMessages(sessionId: string, conversationId: string): Promise<any[]>;
   ensureConnected(): Promise<void>;
   streamChat(payload: ChatRequestPayload, callbacks: StreamCallbacks): Promise<void>;
+  sendUserMessage(payload: ChatRequestPayload, callbacks: StreamCallbacks): void;
   abort(): void;
   disconnect(): void;
   getState(): { state: ConnectionState; error: string | null };
@@ -262,11 +263,11 @@ export class ConversationManager {
           void this.sendAutoResume();
         }
       },
-      onError: (message) => {
+      onError: (payload) => {
         this.snapshot.isStreaming = false;
-        this.snapshot.lastError = message;
+        this.snapshot.lastError = payload.message;
         this.finalizeStreamingAssistant();
-        this.appendStatus(message);
+        this.appendStatus(payload.message);
       },
     };
   }
@@ -390,7 +391,7 @@ export class ConversationManager {
 
   private noteUnread(): void {
     if (!this.chatVisible) {
-      this.snapshot.unreadCount += 1;
+      this.snapshot.unreadCount = Math.min(this.snapshot.unreadCount + 1, 999);
     }
   }
 

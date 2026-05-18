@@ -12,6 +12,14 @@ import type {
   SystemNotificationEvent,
 } from "../shared/types";
 
+interface ChatMessage {
+  type: "message";
+  content: string;
+  session_id?: string;
+  conversation_id?: string;
+  attachments?: string[];
+}
+
 interface BackendClientEvents {
   connection: (state: ConnectionState, error?: string | null) => void;
   notification: (event: SystemNotificationEvent) => void;
@@ -126,13 +134,11 @@ export class BackendClient {
       this.pendingResolve = resolve;
       this.pendingReject = reject;
 
-      this.ws?.send(
-        JSON.stringify({
-          type: "message",
-          content: payload.content,
-        }),
-      );
-    });
+      const message: ChatMessage = {
+        type: "message",
+        content: payload.content,
+      };
+      this.ws?.send(JSON.stringify(message));
   }
 
   abort(): void {
@@ -226,7 +232,7 @@ export class BackendClient {
           if (shouldSuppressError) {
             resolvePending?.();
           } else {
-            callbacks.onError?.("WebSocket connection was closed.");
+            callbacks.onError?.({ message: "WebSocket connection was closed.", code: "CONNECTION_CLOSED" });
             rejectPending?.(new Error("WebSocket connection was closed."));
           }
         }
@@ -322,7 +328,7 @@ export class BackendClient {
         this.pendingResolve = null;
         this.pendingReject = null;
         const message = String(payload.message ?? "Unknown backend error.");
-        callbacks.onError?.(message);
+        callbacks.onError?.({ message, code: "BACKEND_ERROR" });
         rejectPending?.(new Error(message));
         break;
       }
