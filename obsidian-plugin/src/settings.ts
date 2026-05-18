@@ -1169,7 +1169,7 @@ export class CrabbySettingTab extends PluginSettingTab {
         button.setButtonText("添加");
         button.onClick(async () => {
           const newProfile: LlmProfile = {
-            id: Math.random().toString(36).substring(2, 10),
+            id: crypto.randomUUID(),
             name: "新配置",
             provider: "anthropic",
             model: "claude-sonnet-4-20250514",
