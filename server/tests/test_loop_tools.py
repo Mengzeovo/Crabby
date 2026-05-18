@@ -620,7 +620,7 @@ def test_context_runtime_data_dir_with_str_vault_path(tmp_path: Path):
 
     ctx = Context(vault_path=str(tmp_path))
     result = context_runtime_data_dir(ctx)
-    assert result == (tmp_path / "data").resolve()
+    assert result == (tmp_path / ".crabby" / "data").resolve()
 
 
 def test_context_runtime_data_dir_with_path_vault_path(tmp_path: Path):
@@ -630,7 +630,7 @@ def test_context_runtime_data_dir_with_path_vault_path(tmp_path: Path):
 
     ctx = Context(vault_path=tmp_path)
     result = context_runtime_data_dir(ctx)
-    assert result == (tmp_path / "data").resolve()
+    assert result == (tmp_path / ".crabby" / "data").resolve()
 
 
 def test_context_runtime_data_dir_with_runtime_data_path(tmp_path: Path):

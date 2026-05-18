@@ -8,8 +8,6 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
-
 from attachment_store import AttachmentStore
 from config import settings
 from llm.agent_runner import DEFAULT_MAX_AGENT_ITERATIONS
@@ -40,6 +38,8 @@ from personas.runtime import apply_persona_selection, resolve_active_persona
 from skills import SkillRegistry
 from tools.registry import ToolRegistry
 from user_turn import prepare_user_turn
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -502,12 +502,13 @@ async def chat(req: ChatRequest) -> ChatResponse:
                     tool_id=tool_id,
                 )
                 all_tool_calls.append(ui_payload)
+                ui_for_storage = {k: v for k, v in ui_payload.items() if k != "output"}
                 tool_results.append(
                     {
                         "type": "tool_result",
                         "tool_use_id": tool_id,
                         "content": llm_text,
-                        "ui": ui_payload,
+                        "ui": ui_for_storage,
                     }
                 )
 

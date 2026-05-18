@@ -11,8 +11,8 @@ from loop_manager import load as loop_load
 
 
 def _runtime_data(vault_path: Path) -> Path:
-    """Runtime data dir: vault_path / 'data' (matches context_runtime_data_dir)."""
-    return vault_path / "data"
+    """Runtime data dir: vault_path / '.crabby' / 'data' (matches context_runtime_data_dir)."""
+    return vault_path / ".crabby" / "data"
 
 
 async def test_cron_create_accepts_seconds_at_beginning(tmp_path: Path):
@@ -27,7 +27,7 @@ async def test_cron_create_accepts_seconds_at_beginning(tmp_path: Path):
     assert jobs[0].source_session_id == "session-1"
     assert result.metadata["job_id"] == jobs[0].id
     # Now uses loop_jobs.json
-    assert (tmp_path / "data" / "loop_jobs.json").exists()
+    assert (tmp_path / ".crabby" / "data" / "loop_jobs.json").exists()
 
 
 async def test_cron_create_uses_conversation_id_as_fallback(tmp_path: Path):

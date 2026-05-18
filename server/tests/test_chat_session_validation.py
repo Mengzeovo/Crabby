@@ -193,4 +193,7 @@ def test_chat_tool_iteration_limit_returns_user_message_id(
     session = store.get("session-1")
     assert session is not None
     assert session.messages[0]["message_id"] == body["user_message_id"]
-    assert session.messages[2]["content"][0]["ui"] == body["tool_calls"][0]
+    persisted_ui = session.messages[2]["content"][0]["ui"]
+    assert persisted_ui["status"] == "success"
+    assert persisted_ui["is_error"] is False
+    assert "output" not in persisted_ui

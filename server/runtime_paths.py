@@ -25,7 +25,7 @@ def context_runtime_data_dir(ctx: Context) -> Path:
     vault_path = ctx.vault_path
     if isinstance(vault_path, str):
         vault_path = Path(vault_path)
-    return (vault_path / "data").expanduser().resolve()
+    return (vault_path / ".crabby" / "data").expanduser().resolve()
 
 
 def tool_results_cache_dir(ctx: Context) -> Path:

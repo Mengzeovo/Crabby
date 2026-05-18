@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from llm.context_meter import (
     CONTEXT_LIMIT,
     ContextBreakdown,

@@ -282,7 +282,7 @@ async def _handle_loop_message(
     # with the tool path (which uses context_runtime_data_dir).
     vault_path = getattr(session, 'vault_path', None)
     if vault_path is not None:
-        runtime_data_path = (Path(vault_path) / "data").resolve()
+        runtime_data_path = (Path(vault_path) / ".crabby" / "data").resolve()
     else:
         logger.warning(
             "Loop message for session %s: vault_path is None, falling back to DATA_DIR",
@@ -689,12 +689,13 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                             ctx=ctx,
                             tool_id=tool_id,
                         )
+                        ui_for_storage = {k: v for k, v in ui_payload.items() if k != "output"}
                         tool_results.append(
                             {
                                 "type": "tool_result",
                                 "tool_use_id": tool_id,
                                 "content": llm_text,
-                                "ui": ui_payload,
+                                "ui": ui_for_storage,
                             }
                         )
 

@@ -131,11 +131,45 @@ class Tool(ABC):
     def format_for_llm(self, result: ToolResult) -> str:
         """将结果格式化为精简纯文本，供 LLM 消费。
 
-        若结果被截断，会附加缓存文件路径的提示。
+        在文本前追加执行状态前缀（[success]/[error]/[warning]），
+        使 LLM 能可靠判断工具是否成功执行。
         """
-        if result.is_truncated:
-            return f"{result.output}\n\n[结果已截断，完整内容: {result.cache_path}]"
-        return result.output
+        if (
+            result.metadata.get("blocked")
+            or result.metadata.get("timeout")
+            or self._has_nonzero_exit(result.metadata)
+        ):
+            status = "[error]"
+        elif result.is_truncated or self._has_warnings(result.metadata):
+            status = "[warning]"
+        else:
+            status = "[success]"
+
+        output = result.output
+        if result.is_truncated and result.cache_path:
+            output = f"{output}\n\n[结果已截断，完整内容: {result.cache_path}]"
+        return f"{status} {output}"
+
+    @staticmethod
+    def _has_nonzero_exit(metadata: dict[str, Any]) -> bool:
+        exit_code = metadata.get("exit_code")
+        if exit_code is None or isinstance(exit_code, bool):
+            return False
+        if isinstance(exit_code, int | float):
+            return exit_code != 0
+        try:
+            return int(str(exit_code)) != 0
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _has_warnings(metadata: dict[str, Any]) -> bool:
+        warnings = metadata.get("warnings")
+        if isinstance(warnings, list | tuple | set):
+            return len(warnings) > 0
+        if isinstance(warnings, str):
+            return bool(warnings.strip())
+        return bool(warnings)
 
     def format_for_ui(self, result: ToolResult) -> dict[str, Any]:
         """将结果格式化为结构化 JSON，供 Obsidian 插件前端渲染。"""
