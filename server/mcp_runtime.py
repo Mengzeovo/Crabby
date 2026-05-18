@@ -6,16 +6,22 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
 
-from config import MCP_CONFIG_FILE
+from config import DATA_DIR, MCP_CONFIG_FILE, settings
 from mcp_client.bridge import register_mcp_tools
 from mcp_client.client import MCPClientManager, MCPServerConfig
 from mcp_config import load_mcp_server_configs
 from tools.base import Tool
 from tools.registry import ToolRegistry
+
+# Server directory resolved without importing from config (avoids circular deps).
+_SERVER_DIR = Path(__file__).resolve().parent
+
+VAULT_TOOLS_SERVER_NAME = "vault-tools"
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +179,37 @@ async def reload_mcp_servers(app: FastAPI) -> dict[str, Any]:
                         f"MCP server {config.name!r} failed: {exc}",
                     ) from exc
                 logger.info("MCP %s: registered %d tools", config.name, count)
+
+            # Inject vault-tools runner as an internal MCP server when enabled.
+            if settings.vault_tools_enabled:
+                import sys
+
+                runner_path = str(
+                    (_SERVER_DIR / "tools" / "vault_tools_runner.py").resolve()
+                )
+                vault_tools_cfg = MCPServerConfig(
+                    name=VAULT_TOOLS_SERVER_NAME,
+                    command=sys.executable,
+                    args=[runner_path],
+                    env={
+                        "VAULT_PATH": str(settings.vault_path),
+                        "CRABBY_DATA_DIR": str(DATA_DIR),
+                    },
+                )
+                try:
+                    session = await next_manager.connect(vault_tools_cfg)
+                    count = await register_mcp_tools(
+                        session, staged_registry, VAULT_TOOLS_SERVER_NAME
+                    )
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"MCP server {VAULT_TOOLS_SERVER_NAME!r} failed: {exc}",
+                    ) from exc
+                logger.info(
+                    "MCP %s: registered %d vault tools",
+                    VAULT_TOOLS_SERVER_NAME,
+                    count,
+                )
 
             staged_entries = _tool_entries_for_source(staged_registry, "mcp")
             staged_tools_by_server = _tools_by_server(staged_registry)
