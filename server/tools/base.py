@@ -93,6 +93,7 @@ class Tool(ABC):
     input_schema: type[BaseModel]   # 输入参数的 Pydantic Schema
     is_read_only: bool = True       # 是否为只读工具（默认只读）
     max_result_chars: int = 30_000  # 输出最大字符数（超出则截断）
+    always_eager: bool = False      # True = 始终以 schema 暴露给 LLM；False = 延迟加载
 
     # -- 权限检查 -----------------------------------------------------------
 

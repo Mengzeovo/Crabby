@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from tools.base import Tool
+
+if TYPE_CHECKING:
+    from llm.tool_search_service import ToolSearchService
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +125,31 @@ class ToolRegistry:
     def to_anthropic_tools(self) -> list[dict[str, Any]]:
         return [tool.to_anthropic_tool() for tool in self._tools.values()]
 
+    def is_eager_tool(self, name: str) -> bool:
+        """Return True if the named tool has always_eager=True."""
+        tool = self._tools.get(name)
+        return getattr(tool, "always_eager", False)
+
+    def get_eager_and_deferred(
+        self, allowed_names: set[str] | None = None
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Split all tools into eager and deferred lists, filtered by allowed_names.
+
+        Returns (eager_schemas, deferred_schemas), each a list of
+        Anthropic-format tool schema dicts.
+        """
+        all_schemas = self.to_anthropic_tools()
+        eager: list[dict[str, Any]] = []
+        deferred: list[dict[str, Any]] = []
+        for schema in all_schemas:
+            if allowed_names is not None and schema["name"] not in allowed_names:
+                continue
+            if self.is_eager_tool(schema["name"]):
+                eager.append(schema)
+            else:
+                deferred.append(schema)
+        return eager, deferred
+
     def build_tool_catalog(
         self,
         allowed_names: set[str] | None = None,
@@ -129,6 +157,7 @@ class ToolRegistry:
         builtin: list[dict[str, str]] = []
         mcp_by_server: dict[str, list[dict[str, str]]] = {}
         other_by_source: dict[str, list[dict[str, str]]] = {}
+        deferred_tool_names: list[str] = []
 
         for name, tool, source, metadata in self.snapshot():
             if allowed_names is not None and name not in allowed_names:
@@ -138,16 +167,24 @@ class ToolRegistry:
                 "name": name,
                 "description": tool.description,
             }
+            is_eager = getattr(tool, "always_eager", False)
+
             if source == "builtin":
                 builtin.append(entry)
+                if not is_eager:
+                    deferred_tool_names.append(name)
                 continue
 
             if source == "mcp":
                 server_name = str(metadata.get("server_name", "")).strip() or "unknown"
                 mcp_by_server.setdefault(server_name, []).append(entry)
+                if not is_eager:
+                    deferred_tool_names.append(name)
                 continue
 
             other_by_source.setdefault(source, []).append(entry)
+            if not is_eager:
+                deferred_tool_names.append(name)
 
         def _sort_entries(entries: list[dict[str, str]]) -> list[dict[str, str]]:
             return sorted(entries, key=lambda item: item["name"])
@@ -171,7 +208,26 @@ class ToolRegistry:
             "mcp_by_server": mcp_by_server,
             "other_by_source": other_by_source,
             "total_tools": total_tools,
+            "deferred_tool_names": sorted(deferred_tool_names),
         }
+
+
+# Module-level singleton search service — populated when the first registry is created.
+_search_service: "ToolSearchService | None" = None
+
+
+def get_search_service(registry: ToolRegistry) -> "ToolSearchService | None":
+    """Return the shared ToolSearchService for a registry, if one was created.
+
+    Returns None if create_default_registry() has not been called yet,
+    or if the registry does not contain a ToolSearchTool.
+    """
+    global _search_service
+    if _search_service is None:
+        tool = registry.get("tool_search")
+        if tool is not None:
+            _search_service = getattr(tool, "_search", None)
+    return _search_service
 
 
 def create_default_registry() -> ToolRegistry:
@@ -186,12 +242,24 @@ def create_default_registry() -> ToolRegistry:
     from tools.task_query import TaskQueryTool
 
     registry = ToolRegistry()
+
+    # Build the search service first, then wrap it in ToolSearchTool.
+    # Imports are deferred to avoid top-level circular dependencies.
+    from llm.tool_search_service import ToolSearchService
+    from tools.tool_search import ToolSearchTool
+
+    search_service = ToolSearchService(registry)
+    registry.register(ToolSearchTool(search_service))  # always_eager=True by default
+
+    # Core eager tools
+    registry.register(ReadTool())          # always_eager=True
+    registry.register(GrepTool())          # always_eager=True
+    registry.register(GlobTool())          # always_eager=True
+
+    # Deferred tools (always_eager=False, the default)
     registry.register(ObsidianSearchTool())
     registry.register(CrabbySettingsTool())
-    registry.register(ReadTool())
     registry.register(EditTool())
-    registry.register(GrepTool())
-    registry.register(GlobTool())
     registry.register(TaskQueryTool())
 
     try:

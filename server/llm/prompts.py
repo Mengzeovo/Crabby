@@ -180,6 +180,15 @@ def _render_tool_catalog(tool_catalog: dict[str, Any] | None) -> str:
             ]
             lines.append(f"- {source}: {', '.join(sorted(tool_names))}")
 
+    deferred_names = tool_catalog.get("deferred_tool_names") or []
+    if deferred_names:
+        lines.append("### 可搜索的延迟工具")
+        lines.append(
+            "以下工具未直接加载，如有需要请通过 `tool_search` 搜索并加载："
+        )
+        for name in sorted(deferred_names):
+            lines.append(f"- {name}")
+
     return "\n".join(lines) + "\n"
 
 

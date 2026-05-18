@@ -21,6 +21,7 @@ from llm.token_usage import (
     merge_accumulated_usage,
 )
 from llm.tool_executor import build_default_context, execute_tool_call
+from llm.tool_search_service import ToolSearchService
 from memory import (
     ConversationNotFoundError,
     InvalidSessionIdError,
@@ -36,7 +37,7 @@ from notification_utils import (
 from personas import PersonaRegistry, PersonaRouter
 from personas.runtime import apply_persona_selection, resolve_active_persona
 from skills import SkillRegistry
-from tools.registry import ToolRegistry
+from tools.registry import ToolRegistry, get_search_service
 from user_turn import prepare_user_turn
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _registry: ToolRegistry | None = None
+_search_service: ToolSearchService | None = None
 _session_store: SessionStore | None = None
 _skill_registry: SkillRegistry | None = None
 _attachment_store: AttachmentStore | None = None
@@ -52,8 +54,9 @@ _persona_router: PersonaRouter | None = None
 
 
 def set_registry(registry: ToolRegistry) -> None:
-    global _registry
+    global _registry, _search_service
     _registry = registry
+    _search_service = get_search_service(registry)
 
 
 def set_session_store(store: SessionStore) -> None:
@@ -103,20 +106,44 @@ def _collect_allowed_tools(skills: list) -> set[str]:
 
 def _build_tools_schema_and_catalog(
     active_skills: list,
+    session_id: str | None = None,
+    search_service: ToolSearchService | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     assert _registry is not None
 
-    tools_schema = _registry.to_anthropic_tools()
+    # 1. skill allowed_tools filter (existing logic)
     allowed_names: set[str] | None = None
-
     if active_skills:
         allowed = _collect_allowed_tools(active_skills)
         if allowed:
-            tools_schema = [tool for tool in tools_schema if tool["name"] in allowed]
             allowed_names = allowed
 
+    # 2. Split eager / deferred
+    eager_schemas, deferred_schemas = _registry.get_eager_and_deferred(allowed_names)
+
+    # 3. Promote discovered deferred tools into eager for this request
+    if session_id and search_service:
+        discovered = search_service.get_discovered(session_id)
+        eager_schemas.extend(
+            s for s in deferred_schemas
+            if s["name"] in discovered
+        )
+
+    # 4. tool_search tool is always_eager=True so it is already in eager_schemas
+
+    # 5. tool_catalog for system prompt (remains the complete list)
     tool_catalog = _registry.build_tool_catalog(allowed_names=allowed_names)
-    return tools_schema, tool_catalog
+
+    # 6. Deduplicate by name — a tool with always_eager=True that is also
+    # discovered via tool_search would otherwise appear twice.
+    seen_names: set[str] = set()
+    deduped_eager: list[dict[str, Any]] = []
+    for s in eager_schemas:
+        if s["name"] not in seen_names:
+            seen_names.add(s["name"])
+            deduped_eager.append(s)
+
+    return deduped_eager, tool_catalog
 
 
 def _consume_pending_notifications(session) -> list[str]:
@@ -402,7 +429,11 @@ async def chat(req: ChatRequest) -> ChatResponse:
         current_turn_text=prepared_turn.model_text,
     )
 
-    tools_schema, tool_catalog = _build_tools_schema_and_catalog(active_skills)
+    tools_schema, tool_catalog = _build_tools_schema_and_catalog(
+        active_skills,
+        session_id=session.id,
+        search_service=_search_service,
+    )
     system = build_system_prompt(
         active_persona=active_persona,
         active_skills=active_skills,
