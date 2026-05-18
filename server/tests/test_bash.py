@@ -288,6 +288,47 @@ class TestCommandExecution:
 
         assert "测试错误" in result.output
 
+    def test_detect_shell_returns_zsh_on_darwin(self):
+        """macOS 上 _detect_shell 必须返回 /bin/zsh。"""
+        if sys.platform != "darwin":
+            pytest.skip("macOS only")
+        assert bash_module._detect_shell() == "/bin/zsh"
+
+    def test_detect_shell_returns_bash_on_linux(self):
+        """Linux 上 _detect_shell 必须返回 /bin/bash。"""
+        if sys.platform not in ("linux", "linux2"):
+            pytest.skip("Linux only")
+        assert bash_module._detect_shell() == "/bin/bash"
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(sys.platform == "win32", reason="Unix shell only")
+    async def test_echo_and_chain_via_detected_shell(
+        self, tool: BashTool, ctx: Context
+    ):
+        """验证 && 链在检测到的 shell 上正确执行并返回两条输出。"""
+        shell = bash_module._detect_shell()
+        result = await tool.call(
+            tool.input_schema(command=f'{shell} -c \'echo line1 && echo line2\''),
+            ctx,
+        )
+        assert "line1" in result.output
+        assert "line2" in result.output
+        assert result.metadata["exit_code"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(sys.platform == "win32", reason="Unix shell only")
+    async def test_or_chain_via_detected_shell(
+        self, tool: BashTool, ctx: Context
+    ):
+        """验证 || 链在检测到的 shell 上正确短路（左侧失败时右侧执行）。"""
+        shell = bash_module._detect_shell()
+        result = await tool.call(
+            tool.input_schema(command=f'{shell} -c \'(exit 1) || echo ran\''),
+            ctx,
+        )
+        assert "ran" in result.output
+        assert result.metadata["exit_code"] == 0
+
 
 # -- 权限检查 ----------------------------------------------------------------
 
