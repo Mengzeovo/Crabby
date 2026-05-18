@@ -77,9 +77,16 @@ async def startup() -> None:
 
     sessions_dir = DATA_DIR / "sessions"
     attachments_dir = DATA_DIR / "attachments"
-    store = SessionStore(storage_dir=sessions_dir)
-    attachment_store = AttachmentStore(storage_dir=attachments_dir)
+
+    from memory import set_vault_path
+    set_vault_path(settings.vault_path)
+
+    store = SessionStore(
+        storage_dir=sessions_dir,
+        vault_path=settings.vault_path,
+    )
     set_session_store(store)
+    attachment_store = AttachmentStore(storage_dir=attachments_dir)
     set_store(store)
     ws_set_session_store(store)
     rest_set_attachment_store(attachment_store)
@@ -96,15 +103,11 @@ async def startup() -> None:
     )
     background_tasks.extend(start_host_heartbeat_watchdog())
 
-    try:
-        from cron_daemon import start_cron_daemon
-    except ModuleNotFoundError:
-        logger.warning("croniter is unavailable; cron daemon is disabled")
-    else:
-        background_tasks.extend(start_cron_daemon(registry, store, settings.vault_path))
+    from loop_daemon import start_loop_daemon
+    background_tasks.extend(start_loop_daemon(registry, store, settings.vault_path))
     background_tasks.append(
         asyncio.create_task(
-            auto_save_daemon_loop(registry),
+            auto_save_daemon_loop(registry, store),
             name="auto-save-daemon",
         )
     )
