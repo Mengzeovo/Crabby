@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from attachment_store import AttachmentStore
 from config import settings
@@ -26,6 +29,7 @@ from memory import (
     validate_conversation_id,
     validate_session_id,
 )
+from memory.auto_save import should_trigger_auto_save, trigger_auto_save
 from notification_utils import (
     format_notifications_for_display,
     inject_notifications_into_messages,
@@ -543,3 +547,8 @@ async def chat(req: ChatRequest) -> ChatResponse:
         )
     finally:
         stop_session_activity("api_call")
+        try:
+            if should_trigger_auto_save(session):
+                trigger_auto_save(session)
+        except Exception:
+            logger.exception("Auto-save trigger failed for session %s", session.id)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
@@ -29,6 +30,7 @@ from memory import (
     validate_conversation_id,
     validate_session_id,
 )
+from memory.auto_save import should_trigger_auto_save, trigger_auto_save
 from notification_utils import (
     format_notifications_for_display,
     inject_notifications_into_messages,
@@ -108,14 +110,6 @@ def _build_tools_schema_and_catalog(
     return tools_schema, tool_catalog
 
 
-def _should_trigger_auto_save(session: Session) -> bool:
-    return (
-        settings.auto_save_interval > 0
-        and session.turn_count > 0
-        and session.turn_count % settings.auto_save_interval == 0
-    )
-
-
 async def _send(ws: WebSocket, event: dict[str, Any]) -> None:
     await ws.send_text(json.dumps(event, ensure_ascii=False))
 
@@ -152,8 +146,10 @@ class ConnectionManager:
             return
         try:
             await _send(ws, message)
-        except Exception:
-            pass
+        except WebSocketDisconnect:
+            self.disconnect(session_id)
+        except Exception as exc:
+            logger.warning("Failed to notify session %s: %s", session_id, exc)
 
 
 manager = ConnectionManager()
@@ -179,8 +175,10 @@ async def push_notification(session_id: str, content: str) -> None:
                 "后台任务已完成，结果会在下一轮回复开头显示。",
                 auto_trigger=True,
             )
-        except Exception:
-            pass
+        except WebSocketDisconnect:
+            manager.disconnect(session_id)
+        except Exception as exc:
+            logger.warning("Failed to push notification to session %s: %s", session_id, exc)
         return
 
     if not manager.active_connections:
@@ -191,11 +189,13 @@ async def push_notification(session_id: str, content: str) -> None:
         "message": f"后台定时任务已完成（来源会话: {session_id}）。切换到对应会话可查看结果。",
         "auto_trigger": False,
     }
-    for ws in list(manager.active_connections.values()):
+    for sid, ws in list(manager.active_connections.items()):
         try:
             await _send(ws, broadcast_msg)
-        except Exception:
-            pass
+        except WebSocketDisconnect:
+            manager.disconnect(sid)
+        except Exception as exc:
+            logger.warning("Failed to broadcast notification: %s", exc)
 
 
 async def notify_visible_client(session_id: str, content: str) -> None:
@@ -209,14 +209,165 @@ async def notify_visible_client(session_id: str, content: str) -> None:
             content,
             auto_trigger=False,
         )
-    except Exception:
-        pass
+    except WebSocketDisconnect:
+        manager.disconnect(session_id)
+    except Exception as exc:
+        logger.warning("Failed to notify visible client for session %s: %s", session_id, exc)
+
+
+async def send_loop_event(session_id: str, event: dict[str, Any]) -> bool:
+    """Send a structured loop lifecycle event directly to the frontend (no wrapping).
+
+    Used by loop tools to notify the frontend of loop_start / loop_ask / loop_ended etc.
+    so the frontend can drive the countdown UI without polling.
+
+    Returns True if the event was sent, False if no connection is available.
+    """
+    if not session_id:
+        return False
+    ws = manager.active_connections.get(session_id)
+    if ws is None:
+        return False
+    try:
+        await _send(ws, event)
+        return True
+    except WebSocketDisconnect:
+        manager.disconnect(session_id)
+        return False
+    except Exception as exc:
+        logger.warning("Failed to send loop event to session %s: %s", session_id, exc)
+        return False
 
 
 def _consume_pending_notifications(session: Session) -> list[str]:
     notifications = [note for note in session.pending_notifications if note.strip()]
     session.pending_notifications.clear()
     return notifications
+
+
+async def _handle_loop_message(
+    ws: WebSocket,
+    session: Session,
+    loop_type: str,
+    msg: dict[str, Any],
+) -> None:
+    """Handle frontend → backend loop control messages.
+
+    loop_submit : User submitted a response for the current round
+    loop_next   : User wants to skip/continue to next round
+    loop_stop   : User wants to stop the loop early
+    loop_pause  : User wants to pause the loop
+    """
+    from loop_manager import (
+        complete_job,
+        get as loop_get,
+        update_status as loop_update_status,
+    )
+    from loop_models import LoopStatus
+    from tools.base import Context
+    from runtime_paths import context_runtime_data_dir
+
+    # Derive runtime_data_path from session.vault_path to stay consistent
+    # with the tool path (which uses context_runtime_data_dir).
+    vault_path = getattr(session, 'vault_path', None)
+    if vault_path is not None:
+        runtime_data_path = (Path(vault_path) / "data").resolve()
+    else:
+        logger.warning(
+            "Loop message for session %s: vault_path is None, falling back to DATA_DIR",
+            session.id,
+        )
+        # Use context_runtime_data_dir for consistency with tool-layer path resolution.
+        ctx = Context(vault_path=None)
+        runtime_data_path = context_runtime_data_dir(ctx)
+    job_id = str(msg.get("job_id") or "")
+    job = loop_get(job_id, runtime_data_path=runtime_data_path) if job_id else None
+
+    if loop_type == "loop_submit":
+        user_input = str(msg.get("user_input") or "")
+        if not job:
+            await _send(ws, {"type": "error", "message": f"未找到 Loop 任务 [{job_id}]"})
+            return
+        from loop_manager import update_round as loop_update_round
+        updated = loop_update_round(
+            job.id,
+            response={"user_input": user_input},
+            runtime_data_path=runtime_data_path,
+        )
+        if updated is None:
+            await _send(ws, {"type": "error", "message": f"无法更新 Loop 任务 [{job_id}]"})
+            return
+        await _send(
+            ws,
+            {
+                "type": "loop_recorded",
+                "job_id": job.id,
+                "current_round": updated.current_round,
+                "all_rounds_complete": updated.status == LoopStatus.DONE,
+            },
+        )
+
+    elif loop_type == "loop_next":
+        if not job:
+            await _send(ws, {"type": "error", "message": f"未找到 Loop 任务 [{job_id}]"})
+            return
+        from loop_manager import update_round as loop_update_round
+        updated = loop_update_round(
+            job.id,
+            response={},
+            runtime_data_path=runtime_data_path,
+        )
+        if updated is None:
+            await _send(ws, {"type": "error", "message": f"无法更新 Loop 任务 [{job_id}]"})
+            return
+        if updated.status == LoopStatus.DONE and getattr(session, 'active_loop_id', None) == job.id:
+            session.active_loop_id = None
+            _session_store.persist(session)
+        await _send(
+            ws,
+            {
+                "type": "loop_next",
+                "job_id": updated.id,
+                "current_round": updated.current_round,
+                "total_rounds": updated.rounds or 0,
+                "done": updated.status == LoopStatus.DONE,
+            },
+        )
+
+    elif loop_type == "loop_stop":
+        if not job:
+            await _send(ws, {"type": "error", "message": f"未找到 Loop 任务 [{job_id}]"})
+            return
+        complete_job(job.id, runtime_data_path=runtime_data_path)
+        if getattr(session, 'active_loop_id', None) == job.id:
+            session.active_loop_id = None
+            _session_store.persist(session)
+        await _send(
+            ws,
+            {
+                "type": "loop_ended",
+                "job_id": job.id,
+                "reason": "user_stopped",
+                "done": True,
+            },
+        )
+
+    elif loop_type == "loop_pause":
+        if not job:
+            await _send(ws, {"type": "error", "message": f"未找到 Loop 任务 [{job_id}]"})
+            return
+        ok = loop_update_status(job.id, LoopStatus.PAUSED, runtime_data_path=runtime_data_path)
+        if not ok:
+            await _send(ws, {"type": "error", "message": f"无法暂停 Loop [{job.id}]"})
+            return
+        # PAUSED is not DONE — do NOT clear active_loop_id; the loop is still active.
+        await _send(
+            ws,
+            {
+                "type": "loop_paused",
+                "job_id": job.id,
+            },
+        )
 
 
 def _validate_manual_persona(msg: dict[str, Any]) -> str | None:
@@ -295,6 +446,13 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
 
             has_content = bool(msg.get("content"))
             has_images = bool(msg.get("pasted_contents"))
+
+            # -- Loop control messages (frontend → backend) ----------------------
+            loop_type = str(msg.get("type") or "")
+            if loop_type in ("loop_submit", "loop_next", "loop_stop", "loop_pause"):
+                await _handle_loop_message(ws, session, loop_type, msg)
+                continue
+
             if msg.get("type") != "message" or (not has_content and not has_images):
                 await _send(
                     ws,
@@ -468,9 +626,7 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                         )
                         cumulative_usage = _record_turn_usage(session, usage_accumulator)
                         _session_store.persist(session)
-                        if _should_trigger_auto_save(session):
-                            from memory.auto_save import trigger_auto_save
-
+                        if should_trigger_auto_save(session):
                             trigger_auto_save(session)
                         final_breakdown = measure_context(
                             system,
@@ -584,12 +740,22 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                 stop_session_activity("api_call")
 
     except WebSocketDisconnect:
-        logger.info("WebSocket disconnected: session=%s", session.id)
+        logger.info("WebSocket disconnected: session=%s", getattr(session, 'id', '<unknown>'))
     except Exception as exc:  # pragma: no cover - defensive
-        logger.exception("WebSocket error: session=%s", session.id)
+        logger.exception("WebSocket error: session=%s", getattr(session, 'id', '<unknown>'))
         try:
             await _send(ws, {"type": "error", "message": str(exc)})
         except Exception:
             pass
     finally:
-        manager.disconnect(session.id)
+        # Resolve disconnect key — prefer session.id, fall back to safe_session_id
+        # if session was never assigned (e.g. error during set_active_conversation
+        # after ws.accept()).  Both connect() and disconnect() must use the same
+        # key to avoid leaking connections.
+        disconnect_key = None
+        if "session" in locals():
+            disconnect_key = session.id
+        elif "safe_session_id" in locals():
+            disconnect_key = safe_session_id
+        if disconnect_key is not None:
+            manager.disconnect(disconnect_key)
