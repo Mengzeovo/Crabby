@@ -19,6 +19,20 @@ from tools.base import Context, Tool, ToolResult
 logger = logging.getLogger(__name__)
 
 IS_WINDOWS = sys.platform == "win32"
+IS_MAC = sys.platform == "darwin"
+
+DEFAULT_BASH_TIMEOUT = int(os.getenv("CRABBY_BASH_TIMEOUT", "1800"))
+
+
+def _detect_shell() -> str:
+    """Return the preferred shell for the current platform.
+
+    macOS 10.15+ defaults to zsh; use it directly to avoid ambiguous bash/zsh
+    resolution on those systems. Linux and other Unix platforms use bash.
+    """
+    if IS_MAC:
+        return "/bin/zsh"
+    return "/bin/bash"
 
 WINDOWS_UTF8_PREAMBLE = (
     "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; "
@@ -174,7 +188,8 @@ def _build_shell_command(command: str) -> list[str]:
             "-Command",
             _build_windows_script(command),
         ]
-    return ["bash", "-lc", command]
+    shell = _detect_shell()
+    return [shell, "-c", command]
 
 
 def _clean_env_vars() -> dict[str, str]:
@@ -195,6 +210,8 @@ def _kill_process_tree(pid: int) -> None:
                 check=False,
                 capture_output=True,
             )
+        elif IS_MAC:
+            os.kill(pid, signal.SIGKILL)
         else:
             os.kill(pid, signal.SIGKILL)
     except Exception as exc:  # pragma: no cover - best effort cleanup
@@ -225,7 +242,7 @@ async def _run_background_task(
 
     from api.websocket import push_notification
 
-    timeout_seconds = 1800
+    timeout_seconds = DEFAULT_BASH_TIMEOUT
     timed_out = False
     exit_code = -1
 
@@ -282,7 +299,8 @@ class BashInput(BaseModel):
 class BashTool(Tool):
     name = "bash"
     description = (
-        "执行跨平台、非交互式 shell 命令。该工具没有 TTY，不适合需要人工输入的命令。"
+        "执行跨平台、非交互式 shell 命令（Windows 用 PowerShell，macOS 用 zsh，"
+        "Linux 用 bash）。该工具没有 TTY，不适合需要人工输入的命令。"
     )
     input_schema = BashInput
     is_read_only = False
