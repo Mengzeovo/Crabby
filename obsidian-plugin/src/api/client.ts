@@ -193,6 +193,12 @@ export interface BackendCapabilities {
   supports_vision: boolean;
 }
 
+/** Error payload sent when a streaming error occurs. */
+export interface StreamErrorPayload {
+  message: string;
+  code: string;
+}
+
 /** Events emitted during a streaming chat turn. */
 export interface StreamCallbacks {
   onAssistantPrefix?: (text: string) => void;
@@ -208,7 +214,7 @@ export interface StreamCallbacks {
     context?: ContextStats,
     personaState?: PersonaState,
   ) => void;
-  onError?: (message: string) => void;
+  onError?: (payload: StreamErrorPayload) => void;
   onWarning?: (message: string) => void;
 }
 
@@ -329,12 +335,18 @@ export function createDefaultPersonaState(): PersonaState {
 export class AgentClient {
   private ws: WebSocket | null = null;
   private pendingCallbacks: StreamCallbacks | null = null;
-  private pendingUserOnError: ((message: string) => void) | null = null;
+  private pendingUserOnError: ((payload: StreamErrorPayload) => void) | null = null;
   private pendingResolve: (() => void) | null = null;
   private pendingReject: ((error: Error) => void) | null = null;
   private pendingMessageSent = false;
   private _sessionId: string | null = null;
   private _conversationId: string | null = null;
+  private _wsHandlers: {
+    onopen: () => void;
+    onerror: () => void;
+    onmessage: (evt: MessageEvent) => void;
+    onclose: () => void;
+  } | null = null;
 
   /** Global listener for out-of-band system notifications (e.g. background task completion). */
   public onSysNotify?: (event: SystemNotificationEvent) => void;
@@ -355,6 +367,13 @@ export class AgentClient {
       return;
     }
     if (this.ws) {
+      if (this._wsHandlers) {
+        this.ws.removeEventListener("open", this._wsHandlers.onopen);
+        this.ws.removeEventListener("error", this._wsHandlers.onerror);
+        this.ws.removeEventListener("message", this._wsHandlers.onmessage);
+        this.ws.removeEventListener("close", this._wsHandlers.onclose);
+        this._wsHandlers = null;
+      }
       this.ws.close();
       this.ws = null;
     }
@@ -373,6 +392,13 @@ export class AgentClient {
       throw new Error("conversationId is required when sessionId is set");
     }
     if (this.ws) {
+      if (this._wsHandlers) {
+        this.ws.removeEventListener("open", this._wsHandlers.onopen);
+        this.ws.removeEventListener("error", this._wsHandlers.onerror);
+        this.ws.removeEventListener("message", this._wsHandlers.onmessage);
+        this.ws.removeEventListener("close", this._wsHandlers.onclose);
+        this._wsHandlers = null;
+      }
       this.ws.close();
       this.ws = null;
     }
@@ -414,7 +440,7 @@ export class AgentClient {
     this.resetPendingStream();
     reject(new WebSocketTransportError(message, canFallbackToRest));
     if (notifyUser) {
-      onError?.(message);
+      onError?.({ message, code: "TRANSPORT_ERROR" });
     }
   }
 
@@ -637,9 +663,9 @@ export class AgentClient {
             personaState,
           );
         },
-        onError: (msg: string) => {
-          this.rejectPendingStream(new WebSocketServerError(msg));
-          callbacks.onError?.(msg);
+        onError: (payload: StreamErrorPayload) => {
+          this.rejectPendingStream(new WebSocketServerError(payload.message));
+          callbacks.onError?.(payload);
         },
       };
 
@@ -689,75 +715,76 @@ export class AgentClient {
       `${wsUrl}/sessions/${encodeURIComponent(this._sessionId)}/conversations/${encodeURIComponent(this._conversationId)}/ws`,
     );
 
+    let opened = false;
+    let settled = false;
+    let resolveConnection: (() => void) | null = null;
+    let rejectConnection: ((error: Error) => void) | null = null;
+
+    const onOpen = () => {
+      opened = true;
+      if (settled) return;
+      settled = true;
+      resolveConnection?.();
+    };
+
+    const onError = () => {
+      if (!opened) {
+        if (settled) return;
+        settled = true;
+        this.ws = null;
+        rejectConnection?.(new WebSocketTransportError(WEB_SOCKET_CONNECTION_FAILED_MESSAGE, true));
+        return;
+      }
+      this.failPendingStreamFromSocket(
+        WEB_SOCKET_STREAM_INTERRUPTED_MESSAGE,
+        !this.pendingMessageSent,
+        this.pendingMessageSent,
+      );
+    };
+
+    const onMessage = (evt: MessageEvent) => {
+      try {
+        const data = JSON.parse(evt.data);
+        if (data.type === "sys_notify") {
+          this.onSysNotify?.({
+            message: String(data.message ?? ""),
+            autoTrigger: Boolean(data.auto_trigger),
+          });
+        } else {
+          this.handleEvent(data);
+        }
+      } catch {
+        // Ignore malformed messages.
+      }
+    };
+
+    const onClose = () => {
+      this.ws = null;
+      if (!opened) {
+        if (settled) return;
+        settled = true;
+        rejectConnection?.(new WebSocketTransportError(WEB_SOCKET_CONNECTION_FAILED_MESSAGE, true));
+        return;
+      }
+      this.failPendingStreamFromSocket(
+        this.pendingMessageSent
+          ? WEB_SOCKET_STREAM_INTERRUPTED_MESSAGE
+          : WEB_SOCKET_CONNECTION_FAILED_MESSAGE,
+        !this.pendingMessageSent,
+        this.pendingMessageSent,
+      );
+    };
+
+    this.ws.addEventListener("open", onOpen);
+    this.ws.addEventListener("error", onError);
+    this.ws.addEventListener("message", onMessage);
+    this.ws.addEventListener("close", onClose);
+
+    this._wsHandlers = { onopen: onOpen, onerror: onError, onmessage: onMessage, onclose: onClose };
+
     return new Promise<void>((resolve, reject) => {
-      const ws = this.ws!;
-      let opened = false;
-      let settled = false;
-
-      const rejectConnection = (error: Error): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        this.ws = null;
-        reject(error);
-      };
-
-      ws.onopen = () => {
-        opened = true;
-        if (settled) {
-          return;
-        }
-        settled = true;
-        resolve();
-      };
-
-      ws.onerror = () => {
-        if (!opened) {
-          rejectConnection(
-            new WebSocketTransportError(WEB_SOCKET_CONNECTION_FAILED_MESSAGE, true),
-          );
-          return;
-        }
-        this.failPendingStreamFromSocket(
-          WEB_SOCKET_STREAM_INTERRUPTED_MESSAGE,
-          !this.pendingMessageSent,
-          this.pendingMessageSent,
-        );
-      };
-
-      ws.onmessage = (evt: MessageEvent) => {
-        try {
-          const data = JSON.parse(evt.data);
-          if (data.type === "sys_notify") {
-            this.onSysNotify?.({
-              message: String(data.message ?? ""),
-              autoTrigger: Boolean(data.auto_trigger),
-            });
-          } else {
-            this.handleEvent(data);
-          }
-        } catch {
-          // Ignore malformed messages.
-        }
-      };
-
-      ws.onclose = () => {
-        this.ws = null;
-        if (!opened) {
-          rejectConnection(
-            new WebSocketTransportError(WEB_SOCKET_CONNECTION_FAILED_MESSAGE, true),
-          );
-          return;
-        }
-        this.failPendingStreamFromSocket(
-          this.pendingMessageSent
-            ? WEB_SOCKET_STREAM_INTERRUPTED_MESSAGE
-            : WEB_SOCKET_CONNECTION_FAILED_MESSAGE,
-          !this.pendingMessageSent,
-          this.pendingMessageSent,
-        );
-      };
+      resolveConnection = resolve;
+      rejectConnection = reject;
     });
   }
 
@@ -798,7 +825,7 @@ export class AgentClient {
             ? data.user_message_id
             : null;
         if (!this._sessionId || !this._conversationId) {
-          cb.onError?.("Stream completed without session/conversation IDs");
+          cb.onError?.({ message: "Stream completed without session/conversation IDs", code: "MISSING_IDS" });
           break;
         }
         cb.onDone?.(
@@ -811,13 +838,20 @@ export class AgentClient {
         );
         break;
       case "error":
-        cb.onError?.(data.message as string);
+        cb.onError?.({ message: data.message as string, code: "SERVER_ERROR" });
         break;
     }
   }
 
   disconnect(): void {
     if (this.ws) {
+      if (this._wsHandlers) {
+        this.ws.removeEventListener("open", this._wsHandlers.onopen);
+        this.ws.removeEventListener("error", this._wsHandlers.onerror);
+        this.ws.removeEventListener("message", this._wsHandlers.onmessage);
+        this.ws.removeEventListener("close", this._wsHandlers.onclose);
+        this._wsHandlers = null;
+      }
       this.ws.close();
       this.ws = null;
     }
@@ -829,6 +863,13 @@ export class AgentClient {
     const resolve = this.pendingResolve;
     this.resetPendingStream();
     if (this.ws) {
+      if (this._wsHandlers) {
+        this.ws.removeEventListener("open", this._wsHandlers.onopen);
+        this.ws.removeEventListener("error", this._wsHandlers.onerror);
+        this.ws.removeEventListener("message", this._wsHandlers.onmessage);
+        this.ws.removeEventListener("close", this._wsHandlers.onclose);
+        this._wsHandlers = null;
+      }
       this.ws.close();
       this.ws = null;
     }
