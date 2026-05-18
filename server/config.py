@@ -153,6 +153,34 @@ class Settings(BaseSettings):
         ),
     )
 
+    # MemPalace
+    mempalace_palace_path: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "MEMPALACE_PALACE_PATH",
+            "LIFE_ASSISTANT_MEMPALACE_PALACE_PATH",
+        ),
+    )
+
+    # Vault tools
+    vault_tools_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "VAULT_TOOLS_ENABLED",
+            "CRABBY_VAULT_TOOLS_ENABLED",
+        ),
+    )
+
+    # Ollama embedding (passed to MemPalace subprocess via mcp_servers.json)
+    ollama_embedding_model: str = Field(
+        default="",
+        validation_alias="OLLAMA_EMBEDDING_MODEL",
+    )
+    ollama_base_url: str = Field(
+        default="http://localhost:11434",
+        validation_alias="OLLAMA_BASE_URL",
+    )
+
     @property
     def cors_allowed_origins_list(self) -> list[str]:
         """Return the allowed business API CORS origins."""
