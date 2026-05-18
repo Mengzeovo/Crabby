@@ -126,13 +126,18 @@ export interface StreamDonePayload {
   context?: ContextStats;
 }
 
+export interface StreamErrorPayload {
+  message: string;
+  code: string;
+}
+
 export interface StreamCallbacks {
   onAssistantPrefix?: (text: string) => void;
   onTextDelta?: (text: string) => void;
   onToolStart?: (name: string, id: string) => void;
   onToolResult?: (name: string, output: string) => void;
   onDone?: (payload: StreamDonePayload) => void;
-  onError?: (message: string) => void;
+  onError?: (payload: StreamErrorPayload) => void;
   onWarning?: (message: string) => void;
 }
 
