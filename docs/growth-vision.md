@@ -104,7 +104,7 @@ Crabby 不是另一个"和 AI 聊天"的工具。它是一个**个人成长伙�
 **当前状态**：
 
 - Session/Conversation 二层模型成熟
-- Cron daemon 和 task_query 已实现
+- Loop daemon（重构自 Cron）和 task_query 已实现，支持交互式轮次任务（番茄钟等）和非交互式定时任务
 - Obsidian 集成完整
 - 会话标签、习惯追踪专用工具、日历集成为空白
 
@@ -123,8 +123,9 @@ Crabby 不是另一个"和 AI 聊天"的工具。它是一个**个人成长伙�
 
 - `server/memory/session_store.py`：Session 标签扩展
 - `server/tools/task_query.py`：通用化扫描配置
-- `server/tools/cron.py`：习惯追踪 Cron 模板
-- `server/cron_daemon.py`：任务依赖队列
+- `server/loop_models.py` / `server/loop_manager.py`：统一 Loop 数据模型和管理器
+- `server/loop_daemon.py`：任务依赖队列（通过 `_job_queue` 支持）
+- `server/tools/loop_task.py`：交互式轮次工具（loop_start/loop_ask/loop_submit/loop_next/loop_stop）
 
 ---
 
