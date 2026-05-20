@@ -173,9 +173,29 @@ class ConnectionManager:
         self.active_connections: dict[str, WebSocket] = {}
 
     def connect(self, session_id: str, ws: WebSocket) -> None:
+        # If a previous WS for the same session is still tracked, replace it.
+        # Disconnect-by-identity below (see ``disconnect``) ensures the old
+        # WS's finally-block can't later evict the new entry.
+        existing = self.active_connections.get(session_id)
+        if existing is not None and existing is not ws:
+            logger.info(
+                "Session %s reconnected; replacing previous WebSocket entry.",
+                session_id,
+            )
         self.active_connections[session_id] = ws
 
-    def disconnect(self, session_id: str) -> None:
+    def disconnect(self, session_id: str, ws: WebSocket | None = None) -> None:
+        """Remove the tracked WS for a session.
+
+        When ``ws`` is given, only remove the entry if it is *that* WS object —
+        protects against the "newer WS overwrote older entry; older WS later
+        ran its finally and evicted the newer one" race.
+        """
+        current = self.active_connections.get(session_id)
+        if current is None:
+            return
+        if ws is not None and current is not ws:
+            return
         self.active_connections.pop(session_id, None)
 
     async def notify(self, session_id: str, message: dict[str, Any]) -> None:
@@ -185,7 +205,7 @@ class ConnectionManager:
         try:
             await _send(ws, message)
         except WebSocketDisconnect:
-            self.disconnect(session_id)
+            self.disconnect(session_id, ws)
         except Exception as exc:
             logger.warning("Failed to notify session %s: %s", session_id, exc)
 
@@ -214,7 +234,7 @@ async def push_notification(session_id: str, content: str) -> None:
                 auto_trigger=True,
             )
         except WebSocketDisconnect:
-            manager.disconnect(session_id)
+            manager.disconnect(session_id, target_ws)
         except Exception as exc:
             logger.warning("Failed to push notification to session %s: %s", session_id, exc)
         return
@@ -231,7 +251,7 @@ async def push_notification(session_id: str, content: str) -> None:
         try:
             await _send(ws, broadcast_msg)
         except WebSocketDisconnect:
-            manager.disconnect(sid)
+            manager.disconnect(sid, ws)
         except Exception as exc:
             logger.warning("Failed to broadcast notification: %s", exc)
 
@@ -248,7 +268,7 @@ async def notify_visible_client(session_id: str, content: str) -> None:
             auto_trigger=False,
         )
     except WebSocketDisconnect:
-        manager.disconnect(session_id)
+        manager.disconnect(session_id, target_ws)
     except Exception as exc:
         logger.warning("Failed to notify visible client for session %s: %s", session_id, exc)
 
@@ -270,7 +290,7 @@ async def send_loop_event(session_id: str, event: dict[str, Any]) -> bool:
         await _send(ws, event)
         return True
     except WebSocketDisconnect:
-        manager.disconnect(session_id)
+        manager.disconnect(session_id, ws)
         return False
     except Exception as exc:
         logger.warning("Failed to send loop event to session %s: %s", session_id, exc)
@@ -760,9 +780,18 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                     session.add_tool_result(tool_results)
                     _session_store.persist(session)
                 else:
+                    # Iteration limit hit. Mirror agent_runner.run_agent_turn:
+                    # append a final assistant text so the persisted message
+                    # sequence stays well-formed (...→user(tool_result)→assistant)
+                    # — otherwise the next user turn produces two consecutive
+                    # user messages, which some providers reject.
+                    from llm.agent_runner import TOOL_ITERATION_LIMIT_MESSAGE
+
+                    limit_message_id = session.add_assistant_message(
+                        [{"type": "text", "text": TOOL_ITERATION_LIMIT_MESSAGE}]
+                    )
                     cumulative_usage = _record_turn_usage(session, usage_accumulator)
-                    if usage_accumulator.has_usage:
-                        _session_store.persist(session)
+                    _session_store.persist(session)
                     await _send(
                         ws,
                         {
@@ -779,7 +808,7 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                             "branch_fingerprint": session.branch_fingerprint(
                                 conversation_id
                             ),
-                            "message_id": None,
+                            "message_id": limit_message_id,
                             "user_message_id": user_message_id,
                             "context": context_with_actual_usage(
                                 measure_context(
@@ -813,11 +842,13 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
         # Resolve disconnect key — prefer session.id, fall back to safe_session_id
         # if session was never assigned (e.g. error during set_active_conversation
         # after ws.accept()).  Both connect() and disconnect() must use the same
-        # key to avoid leaking connections.
+        # key to avoid leaking connections.  Disconnect by *identity* (pass ws)
+        # so a stale finally-block from a replaced connection cannot evict the
+        # newer connection's entry.
         disconnect_key = None
         if "session" in locals():
             disconnect_key = session.id
         elif "safe_session_id" in locals():
             disconnect_key = safe_session_id
         if disconnect_key is not None:
-            manager.disconnect(disconnect_key)
+            manager.disconnect(disconnect_key, ws)

@@ -379,9 +379,22 @@ def test_tool_iteration_limit_emits_warning_then_done(monkeypatch, tmp_path: Pat
         "done",
     ]
     assert events[2]["message"] == "Tool call iteration limit exceeded (1 rounds)"
-    assert events[-1]["message_id"] is None
+    # Iteration-limit path now appends a synthetic assistant text so the
+    # persisted sequence ends on assistant (not user/tool_result). This
+    # avoids "two consecutive user turns" for the next user message.
+    assert events[-1]["message_id"] is not None
+    assert events[-1]["message_id"].startswith("m_")
     assert events[-1]["user_message_id"].startswith("m_")
     assert all(event["type"] != "error" for event in events)
+
+    # Last persisted message is assistant (the iteration-limit message),
+    # not a user/tool_result block.
+    persisted = session_store.get("session-1")
+    assert persisted is not None
+    assert persisted.messages[-1]["role"] == "assistant"
+    last_block = persisted.messages[-1]["content"][0]
+    assert last_block["type"] == "text"
+    assert "iteration limit" in last_block["text"].lower()
 
 
 def test_stream_usage_accumulates_across_session_turns(monkeypatch, tmp_path: Path):
