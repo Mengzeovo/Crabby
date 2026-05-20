@@ -303,6 +303,13 @@ def create_default_registry() -> ToolRegistry:
         registry.register(CronListTool())
         registry.register(CronDeleteTool())
 
+    # Memory tools (deferred)
+    from tools.memory_search import MemorySearchTool
+    from tools.memory_write import MemoryWriteTool
+
+    registry.register(MemorySearchTool())
+    registry.register(MemoryWriteTool())
+
     if settings.bash_enabled:
         registry.register(BashTool())
 

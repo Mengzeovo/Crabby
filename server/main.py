@@ -79,7 +79,10 @@ async def startup() -> None:
     attachments_dir = DATA_DIR / "attachments"
 
     from memory import set_vault_path
+    from memory.layout import ensure_memory_layout
+
     set_vault_path(settings.vault_path)
+    ensure_memory_layout(settings.vault_path)
 
     store = SessionStore(
         storage_dir=sessions_dir,
