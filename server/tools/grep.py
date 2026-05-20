@@ -15,6 +15,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from tools._path_utils import is_within_path
 from tools.base import Context, Tool, ToolResult
 
 # Agent 绝不可搜索的目录（系统/配置/版本控制等）
@@ -118,8 +119,8 @@ class GrepTool(Tool):
         # 计算搜索起始目录
         search_root = (vault / params.path).resolve() if params.path else vault
 
-        # 安全检查：禁止路径逃逸
-        if not str(search_root).startswith(str(vault)):
+        # 安全检查：禁止路径逃逸（用 relative_to，不要 startswith）
+        if not is_within_path(search_root, vault):
             return ToolResult(output="错误：路径不能超出 Vault 根目录")
 
         # 目录存在性检查

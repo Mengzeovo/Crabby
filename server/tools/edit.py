@@ -9,15 +9,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from tools._path_utils import is_within_path
 from tools.base import Context, Tool, ToolResult
-
-
-def _is_within_path(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return False
-    return True
 
 
 def _detect_newline(text: str) -> str:
@@ -98,7 +91,7 @@ class EditTool(Tool):
         # 检查路径逃逸：解析后的路径必须仍在你给定的 Vault 下
         vault = ctx.vault_path.resolve()
         resolved = (vault / params.file_path).resolve()
-        return _is_within_path(resolved, vault)
+        return is_within_path(resolved, vault)
 
     async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
         """执行编辑替换操作。"""
@@ -106,7 +99,7 @@ class EditTool(Tool):
         vault = ctx.vault_path.resolve()
         full_path = (vault / params.file_path).resolve()
 
-        if not _is_within_path(full_path, vault):
+        if not is_within_path(full_path, vault):
             return ToolResult(output="错误：路径不能超出 Vault 根目录")
 
         # 判断文件是否存在

@@ -14,16 +14,32 @@
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
+from pathlib import PurePosixPath, PureWindowsPath
 
 from pydantic import BaseModel, Field
 
 from runtime_paths import tool_results_cache_dir
+from tools._path_utils import is_within_path
 from tools.base import Context, Tool, ToolResult
 
 # 敏感文件名模式——Agent 绝不可读取这些文件
-# 使用简单通配符：'*.env*' 匹配任何包含 ".env" 的文件名
-BLOCKED_PATTERNS = ("*.env*", "*credentials*", "*secret*")
+# 通配符匹配作用于 *basename* 而非整个路径，避免父目录名误中
+# (例如 "secrets-public" 这样的目录不该让里面的 "notes.md" 被拦截)
+BLOCKED_PATTERNS: tuple[str, ...] = (
+    "*.env",
+    ".env",
+    ".env.*",
+    "*.env.*",
+    "*credentials*",
+    "*secret*",
+    "*secrets*",
+    "id_rsa",
+    "id_rsa.*",
+    "id_ed25519",
+    "id_ed25519.*",
+)
 
 
 class ReadInput(BaseModel):
@@ -65,8 +81,8 @@ class ReadTool(Tool):
         """检查权限：拦截敏感文件和路径逃逸。
 
         检查逻辑：
-        1. 文件路径是否匹配敏感文件名模式（.env、credentials 等）
-        2. 解析后的绝对路径是否仍在 Vault 根目录下
+        1. 文件 *basename* 是否匹配敏感文件名通配符（.env、credentials 等）
+        2. 解析后的绝对路径是否仍在 Vault 根目录下（用 relative_to，不是 startswith）
 
         Args:
             params: ReadInput 实例。
@@ -76,18 +92,20 @@ class ReadTool(Tool):
             True 表示允许读取，False 表示拒绝。
         """
         assert isinstance(params, ReadInput)
-        p = params.file_path.lower()
 
-        # 检查文件名是否匹配敏感模式
+        # 取 basename 做敏感文件名匹配（兼容 POSIX 和 Windows 路径分隔符）
+        raw = params.file_path
+        basename = (
+            PureWindowsPath(raw).name if "\\" in raw else PurePosixPath(raw).name
+        ).lower()
         for pat in BLOCKED_PATTERNS:
-            # Simple glob: *.env* matches anything containing ".env"
-            core = pat.replace("*", "")
-            if core in p:
+            if fnmatch.fnmatch(basename, pat):
                 return False
 
-        # 检查路径逃逸：解析后的路径必须仍在 Vault 下
-        resolved = (ctx.vault_path / params.file_path).resolve()
-        return str(resolved).startswith(str(ctx.vault_path.resolve()))
+        # 路径逃逸检查：用 relative_to，不要用 startswith
+        vault = ctx.vault_path.resolve()
+        resolved = (vault / params.file_path).resolve()
+        return is_within_path(resolved, vault)
 
     async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
         """读取文件内容并返回。
@@ -107,7 +125,13 @@ class ReadTool(Tool):
             ToolResult，output 为文件内容文本。
         """
         assert isinstance(params, ReadInput)
-        full_path = (ctx.vault_path / params.file_path).resolve()
+        vault = ctx.vault_path.resolve()
+        full_path = (vault / params.file_path).resolve()
+
+        # 二次防御：即使有人绕过 check_permission 直接调 call，
+        # 也不能读到 vault 之外的内容。
+        if not is_within_path(full_path, vault):
+            return ToolResult(output="错误：路径不能超出 Vault 根目录")
 
         # 文件存在性检查
         if not full_path.is_file():
