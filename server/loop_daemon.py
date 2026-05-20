@@ -66,10 +66,11 @@ async def _loop_scanner(registry, session_store, vault_path: Path) -> None:
     await asyncio.sleep(3)  # Let startup finish first
 
     consecutive_errors = 0
+    runtime_data_path = _runtime_data_path_for(vault_path)
 
     while True:
         try:
-            jobs = load_jobs()
+            jobs = load_jobs(runtime_data_path=runtime_data_path)
             consecutive_errors = 0
             now = datetime.now()
 
@@ -80,7 +81,10 @@ async def _loop_scanner(registry, session_store, vault_path: Path) -> None:
                     logger.info("Loop: enqueuing non-interactive job [%s]", job.id)
                     try:
                         await _job_queue.put(job)
-                        update_last_fired(job.id)
+                        update_last_fired(
+                            job.id,
+                            runtime_data_path=runtime_data_path,
+                        )
                     except Exception as exc:
                         logger.error(
                             "Loop: failed to enqueue [%s]: %s", job.id, exc
@@ -100,6 +104,17 @@ async def _loop_scanner(registry, session_store, vault_path: Path) -> None:
         await asyncio.sleep(1)
 
 
+def _runtime_data_path_for(vault_path: Path | None) -> Path | None:
+    """Derive the runtime data dir for a given vault path.
+
+    Mirrors the convention used by ``runtime_paths.context_runtime_data_dir``
+    so the daemon and tools agree on the same on-disk location.
+    """
+    if vault_path is None:
+        return None
+    return (Path(vault_path) / ".crabby" / "data").expanduser().resolve()
+
+
 # _should_fire is now loop_models.should_fire — imported as `should_fire` above.
 # Keeping a local alias avoids changing the public test file.
 _should_fire = should_fire
@@ -112,6 +127,7 @@ _should_fire = should_fire
 
 async def _loop_consumer(registry, session_store, vault_path: Path) -> None:
     """Dequeue and execute non-interactive jobs. Waits for idle session before running."""
+    runtime_data_path = _runtime_data_path_for(vault_path)
     while True:
         job = await _job_queue.get()
         try:
@@ -133,14 +149,27 @@ async def _loop_consumer(registry, session_store, vault_path: Path) -> None:
 
             await asyncio.sleep(random.uniform(0.001, 0.05))
 
-            await _execute_loop_job(job, registry, session_store, vault_path)
+            await _execute_loop_job(
+                job,
+                registry,
+                session_store,
+                vault_path,
+                runtime_data_path=runtime_data_path,
+            )
         except Exception:
             logger.exception("Loop consumer: job [%s] failed", job.id)
         finally:
             _job_queue.task_done()
 
 
-async def _execute_loop_job(job, registry, session_store, vault_path: Path) -> None:
+async def _execute_loop_job(
+    job,
+    registry,
+    session_store,
+    vault_path: Path,
+    *,
+    runtime_data_path: Path | None = None,
+) -> None:
     """Execute a non-interactive loop job in an isolated session."""
     from llm.agent_runner import DEFAULT_MAX_AGENT_ITERATIONS, run_agent_turn
     from llm.prompts import build_system_prompt
@@ -197,7 +226,7 @@ async def _execute_loop_job(job, registry, session_store, vault_path: Path) -> N
         session_store.persist(session)
 
         if not job.recurring:
-            complete_job(job.id)
+            complete_job(job.id, runtime_data_path=runtime_data_path)
             logger.info("Loop: one-shot job [%s] done and removed", job.id)
 
         notify_target = job.source_session_id or isolated_session_id
@@ -212,7 +241,11 @@ async def _execute_loop_job(job, registry, session_store, vault_path: Path) -> N
     except Exception:
         logger.exception("Loop: job [%s] execution error", job.id)
         if not job.recurring:
-            update_last_fired(job.id, clear=True)
+            update_last_fired(
+                job.id,
+                clear=True,
+                runtime_data_path=runtime_data_path,
+            )
     finally:
         stop_session_activity("loop_job")
 

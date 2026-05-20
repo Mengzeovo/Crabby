@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
+import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -81,13 +83,34 @@ def load(runtime_data_path: Path | None = None) -> list[LoopJob]:
 def _atomic_write(file_path: Path, payload: str) -> None:
     """Write payload to file_path atomically via a temp-file rename.
 
-    os.replace() is atomic on both Windows and POSIX: it overwrites the target
-    if it exists and does not follow symlinks.
+    Uses a unique temp filename in the same directory so that concurrent
+    writers cannot clobber each other's payload before the rename.
+    os.replace() is atomic on both Windows and POSIX: it overwrites the
+    target if it exists and does not follow symlinks.
     """
-    tmp = file_path.with_suffix(".tmp")
-    tmp.write_text(payload, "utf-8")
-    import os
-    os.replace(tmp, file_path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=file_path.name + ".",
+        suffix=".tmp",
+        dir=str(file_path.parent),
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                handle.write(payload)
+                handle.flush()
+                try:
+                    os.fsync(handle.fileno())
+                except OSError:
+                    pass
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
+        os.replace(tmp_path, file_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def save(runtime_data_path: Path | None, jobs: list[LoopJob]) -> None:
