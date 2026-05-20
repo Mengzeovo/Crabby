@@ -1,6 +1,6 @@
 # Agent Handoff
 
-Last rewritten: 2026-05-15
+Last rewritten: 2026-05-19
 
 This file is the fast entry point for agents and maintainers taking over the
 Crabby repository. It should reflect the current repo, not old plans or memory
@@ -48,7 +48,9 @@ workflows. It is not a cloud multi-user SaaS.
 - `docs/技术路线.md`: technical direction and extension boundaries.
 - `docs/会话设计.md`: session/conversation split, branch materialization, and
   active branch cache.
-- `docs/llm-provider-matrix.md`: built-in provider presets and compatibility.
+- `docs/记忆沉淀设计.md`: long-term memory facet model, directory layout,
+  registry rules, write/search tool contract, diary relationship, and
+  aggregation plan.
 - `docs/execution-plan.md`: release roadmap.
 - `docs/claude-code-analysis.md`: design reference, not current implementation.
 - `prompts/`: repository default prompt fragments.
@@ -122,6 +124,11 @@ Important backend files and folders:
 - `server/memory/`: file-backed session manifest/conversation storage, legacy
   flat-session migration, active branch materialization/cache, ID validation,
   actual usage snapshots, pending notifications, and auto-save support.
+- `server/memory/layout.py`: creates the Vault-backed long-term memory layout
+  under `<vault>/.crabby/memory/`, seeds `MEMORY.md`, `REGISTRY.md`, the
+  `user/`, `feedback/`, `project/`, and `reference/` type directories, and the
+  editable diary template at
+  `<vault>/.crabby/templates/diary.md` without overwriting existing files.
 - `server/tests/`: backend tests.
 - `server/data/mcp_servers.example.json`: example MCP config.
 - `server/data/mcp_servers.json`: local private MCP config when present.
@@ -150,6 +157,9 @@ Important plugin files and folders:
 - `obsidian-plugin/src/chat/`: chat view, transcript, context/token usage bar,
   composer, assistant rendering, personas, profiles, sessions, current-session
   tree, fork actions, stylesheet injection, and turn runner.
+- `obsidian-plugin/src/chat/ChatView.ts`: chat view shell. When no saved LLM
+  profile exists, it shows a dismissing banner whose settings action opens the
+  Obsidian settings modal and switches to the Crabby plugin tab.
 - `obsidian-plugin/src/chat/chatAssistantContent.ts`: assistant markdown and
   thought rendering helpers, including shared `Crabby` identity header.
 - `obsidian-plugin/src/clientTools/`: WebSocket client-tool bridge.
@@ -162,8 +172,8 @@ Important plugin files and folders:
 - `obsidian-plugin/src/config/llmProviders.ts`: provider/model presets and UI
   capability metadata.
 - `obsidian-plugin/src/runtime/`: backend runtime management, host heartbeat,
-  managed-backend reuse/shutdown, runtime state path helpers, and default
-  config templates.
+  managed-backend reuse/shutdown, runtime state path helpers, default config
+  templates, and first-run creation of Vault-root memory/template directories.
 - `obsidian-plugin/src/runtime/defaultConfigTemplates.ts`: seeds default prompt
   and persona templates. Persona seeding is based on discovered `PERSONA.md`
   files, so incidental files do not block first-run defaults.
@@ -318,8 +328,22 @@ npm run start
 
 - All runtime configuration, secrets, and user data live under the vault, never in
   the repository. The backend (whether in dev or production mode) reads its `.env`
-  from `<vault>/.crabby/config/.env`. All data lives under `<vault>/.crabby/`, with
-  `config/`, `data/`, and `logs/` subdirectories.
+  from `<vault>/.crabby/config/.env`. Runtime state lives under
+  `<vault>/.crabby/`, with `config/`, `data/`, `logs/`, `memory/`, and
+  `templates/` subdirectories.
+- Long-term memory source files live under `<vault>/.crabby/memory/` as
+  `MEMORY.md`, `REGISTRY.md`, and `user/`, `feedback/`, `project/`, and
+  `reference/` type directories. Topic subdirectories are created by memory
+  write code when a memory is actually written. `MEMORY.md` is a read/load rule
+  entry point, not a full memory index.
+- Planned memory frontmatter follows the facet model in
+  `docs/记忆沉淀设计.md`: `type`, `topic`, `domain`, `kind`, `state`,
+  `valid_from`, and `valid_to`. Timestamps, links, and provenance are
+  frontmatter metadata but not facet fields. The facet model does not include
+  `scope`, `confidence`, or `description`.
+- The default diary template lives at `<vault>/.crabby/templates/diary.md`.
+  Diary entries themselves are user-facing Vault notes outside
+  `.crabby/memory/`, with `Journal/` as the intended default setting.
 - The plugin and backend derive vault paths from the `VAULT_PATH` environment
   variable set by the plugin at startup. The backend falls back to the repo root
   when `VAULT_PATH` is absent (e.g., bare `uv run python main.py` outside of
