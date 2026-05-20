@@ -100,14 +100,27 @@ def stop_session_activity(reason: str, session_id: str = "") -> None:
         reason: 与 start_session_activity 对应的原因标识
         session_id: 会话 ID，默认为空字符串（全局累积）。
     """
-    if _refcount[session_id] > 0:
-        _refcount[session_id] -= 1
+    # 通过 .get 访问，避免 defaultdict 在 stop 一个从未 start 过的
+    # session_id 时被默认创建 0 值条目（导致长跑时无界增长）。
+    current = _refcount.get(session_id, 0)
+    if current > 0:
+        new_count = current - 1
         session_reasons = _active_reasons[session_id]
         count = session_reasons.get(reason, 0) - 1
         if count > 0:
             session_reasons[reason] = count
         else:
             session_reasons.pop(reason, None)
+
+        if new_count == 0 and session_id != "":
+            # 归零后立即清理命名 session 的条目，避免大量唯一 session_id
+            # （如带时间戳的 loop_*）累积导致内存无界增长。
+            # 全局桶 "" 是固定 key，不清理（保持现有调用方约定）。
+            _refcount.pop(session_id, None)
+            if session_id in _active_reasons and not _active_reasons[session_id]:
+                del _active_reasons[session_id]
+        else:
+            _refcount[session_id] = new_count
 
     if sum(_refcount.values()) == 0:
         logger.debug("Session 回到空闲: session_id=%r last_reason=%s", session_id, reason)

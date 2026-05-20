@@ -169,3 +169,36 @@ class TestActiveReasonsTracking:
         assert "" in info["active_reasons"]
         assert "global_reason" in info["active_reasons"][""]
         stop_session_activity("global_reason", "")
+
+
+class TestNoUnboundedGrowth:
+    """Long-running daemons cycle thousands of unique session_ids
+    (loop_<id>_<timestamp>); the refcount tables must NOT accumulate
+    zero-valued entries forever.
+    """
+
+    def test_refcount_entry_removed_after_drop_to_zero(self):
+        sid = "session-cleanup"
+        start_session_activity("r", sid)
+        stop_session_activity("r", sid)
+        info = get_session_activity_info()
+        assert sid not in info["refcount"]
+        assert sid not in info["active_reasons"]
+
+    def test_many_unique_sessions_do_not_leak(self):
+        for i in range(200):
+            sid = f"loop_job_{i}_t"
+            start_session_activity("loop_job", sid)
+            stop_session_activity("loop_job", sid)
+        info = get_session_activity_info()
+        # Only the autouse-fixture's "" key (if any) might remain — but in
+        # practice it is also cleaned. Either way, no per-job entries
+        # should be present.
+        for sid in info["refcount"]:
+            assert not sid.startswith("loop_job_"), (
+                f"leaked refcount entry for {sid}"
+            )
+        for sid in info["active_reasons"]:
+            assert not sid.startswith("loop_job_"), (
+                f"leaked active_reasons entry for {sid}"
+            )
