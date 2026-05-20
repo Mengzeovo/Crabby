@@ -50,6 +50,48 @@ const HOST_HEARTBEAT_INTERVAL_MS = 5000;
 // Obsidian plugin timers run in Electron's renderer and can be throttled while
 // the window is backgrounded, commonly to about one tick per minute.
 const HOST_HEARTBEAT_TIMEOUT_SECONDS = 180;
+const MEMORY_TYPES = ["user", "feedback", "project", "reference"] as const;
+const MEMORY_OPERATING_RULES = `# Memory Operating Rules
+
+- Use \`memory_search(mode="list_registry")\` before writing new memories.
+- Prefer existing topics and domains from \`REGISTRY.md\` when they match.
+- Recall project, feedback, and reference memories from the current topic first.
+- Recall global constraints from \`type=user|feedback, topic=general\`.
+- Use domains for cross-topic recall; read \`state=active\` memories by default.
+- More specific feedback overrides general feedback.
+
+# Hot Entries
+
+- Current focus: general
+- Common global topic: general
+`;
+const MEMORY_REGISTRY = `# Memory Registry
+
+## Topics
+
+- general
+
+## Domains
+
+`;
+const DIARY_TEMPLATE = `---
+date: {{date}}
+---
+
+# {{date}} 日记
+
+## 今日要点
+
+{{summary}}
+
+## 涉及主题
+
+{{topics}}
+
+## 关联记忆
+
+(由 agent 在写入时填入相关 memory 文件链接)
+`;
 
 export interface RuntimeLayout {
   pluginDir: string;
@@ -59,6 +101,8 @@ export interface RuntimeLayout {
   mcpConfigPath: string;
   promptsDir: string;
   personasDir: string;
+  memoryDir: string;
+  templatesDir: string;
   dataDir: string;
   sessionsDir: string;
   attachmentsDir: string;
@@ -109,6 +153,8 @@ export interface RuntimeStatus {
   mcpConfigPath: string;
   promptsDir: string;
   personasDir: string;
+  memoryDir: string;
+  templatesDir: string;
   dataDir: string;
   logsDir: string;
   detail: string;
@@ -144,6 +190,8 @@ export function resolvePluginRuntimeLayout(app: App): RuntimeLayout {
   const configDir = join(userDataDir, "config");
   const dataDir = join(userDataDir, "data");
   const logsDir = join(userDataDir, "logs");
+  const memoryDir = join(userDataDir, "memory");
+  const templatesDir = join(userDataDir, "templates");
   const runtimeDir = join(pluginDir, "runtime");
 
   return {
@@ -154,6 +202,8 @@ export function resolvePluginRuntimeLayout(app: App): RuntimeLayout {
     mcpConfigPath: join(configDir, "mcp_servers.json"),
     promptsDir: join(configDir, "prompts"),
     personasDir: join(configDir, "personas"),
+    memoryDir,
+    templatesDir,
     dataDir,
     sessionsDir: join(dataDir, "sessions"),
     attachmentsDir: join(dataDir, "attachments"),
@@ -191,6 +241,8 @@ export class BackendRuntimeManager {
       this.layout.configDir,
       this.layout.promptsDir,
       this.layout.personasDir,
+      this.layout.memoryDir,
+      this.layout.templatesDir,
       this.layout.sessionsDir,
       this.layout.attachmentsDir,
       this.layout.logsDir,
@@ -199,6 +251,7 @@ export class BackendRuntimeManager {
     ]) {
       mkdirSync(path, { recursive: true });
     }
+    this.ensureMemoryLayout();
 
     const token = this.ensureAdminToken();
     upsertEnvFile(this.layout.envPath, {
@@ -480,6 +533,8 @@ export class BackendRuntimeManager {
       mcpConfigPath: this.layout.mcpConfigPath,
       promptsDir: this.layout.promptsDir,
       personasDir: this.layout.personasDir,
+      memoryDir: this.layout.memoryDir,
+      templatesDir: this.layout.templatesDir,
       dataDir: this.layout.dataDir,
       logsDir: this.layout.logsDir,
       detail: this.statusDetail,
@@ -780,6 +835,23 @@ export class BackendRuntimeManager {
       const message = error instanceof Error ? error.message : String(error);
       this.appendRuntimeLog(`failed to write host heartbeat: ${message}`);
     }
+  }
+
+  private ensureMemoryLayout(): void {
+    for (const memoryType of MEMORY_TYPES) {
+      mkdirSync(join(this.layout.memoryDir, memoryType), { recursive: true });
+    }
+    this.writeFileIfMissing(join(this.layout.memoryDir, "MEMORY.md"), MEMORY_OPERATING_RULES);
+    this.writeFileIfMissing(join(this.layout.memoryDir, "REGISTRY.md"), MEMORY_REGISTRY);
+    this.writeFileIfMissing(join(this.layout.templatesDir, "diary.md"), DIARY_TEMPLATE);
+  }
+
+  private writeFileIfMissing(path: string, content: string): void {
+    if (existsSync(path)) {
+      return;
+    }
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content, "utf8");
   }
 
   private ensureAdminToken(): string {

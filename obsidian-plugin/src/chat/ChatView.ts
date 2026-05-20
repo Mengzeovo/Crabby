@@ -2,7 +2,7 @@
  * Chat sidebar view with session management and enhanced composer.
  */
 
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
 
 import { AgentClient } from "../api/client";
 import { createDefaultPersonaState } from "../api/client";
@@ -26,6 +26,11 @@ import { createChatTurnRunner } from "./chatTurnRunner";
 import type { ChatCleanup, ChatElements, ChatViewState } from "./chatTypes";
 
 export const VIEW_TYPE_CHAT = "crabby-chat";
+
+type ObsidianSettingsApi = {
+  open?: () => void;
+  openTabById?: (id: string) => void;
+};
 
 export class ChatView extends ItemView {
   private readonly client: AgentClient;
@@ -149,8 +154,10 @@ export class ChatView extends ItemView {
         text: "前往设置",
       });
       bannerAction.addEventListener("click", () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (this.app as any).setting?.openTabById?.("crabby");
+        banner.remove();
+        if (!this.openPluginSettings()) {
+          new Notice("无法自动打开 Crabby 设置，请从 Obsidian 设置中打开插件设置。");
+        }
       });
     }
 
@@ -326,6 +333,20 @@ export class ChatView extends ItemView {
       "assistant",
       "你好！我是你的 Crabby，有什么可以帮你的？",
     );
+  }
+
+  private openPluginSettings(): boolean {
+    const setting = (this.app as unknown as { setting?: ObsidianSettingsApi })
+      .setting;
+
+    if (!setting?.open && !setting?.openTabById) {
+      return false;
+    }
+
+    setting.open?.();
+    setting.openTabById?.(this.plugin.manifest.id);
+    window.setTimeout(() => setting.openTabById?.(this.plugin.manifest.id), 0);
+    return true;
   }
 
   async onClose(): Promise<void> {
