@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -191,8 +193,6 @@ def upsert_env_file(env_path: Path, env_map: dict[str, str | None]) -> None:
     existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
     newline = "\r\n" if "\r\n" in existing else "\n"
     lines = existing.splitlines()
-    if existing.endswith(("\n", "\r\n")):
-        lines = existing.splitlines()
 
     pending = dict(env_map)
     next_lines: list[str] = []
@@ -217,7 +217,44 @@ def upsert_env_file(env_path: Path, env_map: dict[str, str | None]) -> None:
 
     env_path.parent.mkdir(parents=True, exist_ok=True)
     content = newline.join(next_lines)
-    env_path.write_text("" if content == "" else f"{content}{newline}", encoding="utf-8")
+    payload = "" if content == "" else f"{content}{newline}"
+    _atomic_write_text(env_path, payload)
+
+
+def _atomic_write_text(target: Path, payload: str) -> None:
+    """Write ``payload`` to ``target`` atomically.
+
+    Writes to a unique temp file in the same directory, fsyncs, then
+    ``os.replace`` — atomic on both POSIX and Windows. The unique tmp name
+    prevents two concurrent writers from clobbering each other's payload.
+    A crash mid-write leaves the original file untouched.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=target.name + ".",
+        suffix=".tmp",
+        dir=str(target.parent),
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                handle.write(payload)
+                handle.flush()
+                try:
+                    os.fsync(handle.fileno())
+                except OSError:
+                    # fsync can fail on some filesystems / Windows handles —
+                    # the os.replace below is still atomic, so this is best effort.
+                    pass
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
+        os.replace(tmp_path, target)
+    except Exception:
+        # Final cleanup if replace itself failed
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def build_saved_profile_env_map(profile: dict[str, Any]) -> dict[str, str]:
