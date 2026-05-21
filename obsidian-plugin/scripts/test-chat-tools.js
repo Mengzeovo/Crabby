@@ -75,6 +75,34 @@ async function main() {
   assert.match(formatToolOutput(truncatedPayload), /result truncated/);
   assert.match(formatToolOutput(truncatedPayload), /cache\/tool-results\/read.txt/);
 
+  const editPayload = normalizeToolPayload({
+    name: "edit",
+    output: "修改文件: note.md",
+    metadata: {
+      file_changes: [
+        {
+          path: "note.md",
+          operation: "modified",
+        },
+      ],
+    },
+  });
+  assert.equal(formatToolMeta(editPayload), "1 file modified");
+
+  const createPayload = normalizeToolPayload({
+    name: "edit",
+    output: "创建文件: notes/new.md",
+    metadata: {
+      file_changes: [
+        {
+          path: "notes/new.md",
+          operation: "created",
+        },
+      ],
+    },
+  });
+  assert.equal(formatToolMeta(createPayload), "1 file created");
+
   const legacyPayload = normalizeToolPayload("grep", "old output");
   assert.equal(getToolPayloadName(legacyPayload), "grep");
   assert.equal(legacyPayload.output, "old output");

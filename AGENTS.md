@@ -116,7 +116,9 @@ Important backend files and folders:
   Windows it launches PowerShell without a profile, forces UTF-8 output, and
   translates top-level `&&` / `||` chains for PowerShell 5.x compatibility.
 - `server/tools/edit.py`: Vault-relative exact replacement/new-file tool that
-  preserves dominant newline style and rejects paths outside the Vault.
+  preserves dominant newline style, rejects paths outside the Vault, and returns
+  user-readable change summaries plus structured `metadata.file_changes` entries
+  for successful writes.
 - `server/tools/crabby_settings.py`: self-management tool that talks to the
   Obsidian bridge and backend admin profile APIs.
 - `server/tools/cron.py`: cron create/list/delete tool and
@@ -156,7 +158,8 @@ Important plugin files and folders:
   calls, and active-profile test calls.
 - `obsidian-plugin/src/chat/`: chat view, transcript, context/token usage bar,
   composer, assistant rendering, personas, profiles, sessions, current-session
-  tree, fork actions, stylesheet injection, and turn runner.
+  tree, fork actions, stylesheet injection, turn runner, and tool-block metadata
+  rendering including file-change counts from `metadata.file_changes`.
 - `obsidian-plugin/src/chat/ChatView.ts`: chat view shell. When no saved LLM
   profile exists, it shows a dismissing banner whose settings action opens the
   Obsidian settings modal and switches to the Crabby plugin tab.
@@ -502,6 +505,10 @@ Use the smallest relevant verification set:
 - REST `tool_calls`, WebSocket `tool_result` events, and persisted tool-result
   `ui` payloads share the same tool UI shape with ID, name, output, metadata,
   status, truncation/cache fields, and elapsed time when available.
+- Successful `edit` tool writes include a concise text change summary in the
+  model-visible tool result plus `metadata.file_changes` entries with path,
+  operation, replacement count, replace-all flag, old/new previews, and character
+  counts for UI restoration and non-git user visibility.
 - Non-streaming agent-runner tool results persist that same `ui` payload while
   `Session.get_messages()` strips it from model-bound messages.
 - `obsidian-plugin/src/chat/chatStyles.ts` upserts the shared style tag on

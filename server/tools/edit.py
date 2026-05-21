@@ -34,6 +34,63 @@ def _normalize_newlines(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
+def _preview_text(text: str, limit: int = 160) -> str:
+    preview = _normalize_newlines(text).replace("\n", "\\n")
+    if len(preview) <= limit:
+        return preview
+    return f"{preview[:limit].rstrip()}..."
+
+
+def _build_file_change(
+    *,
+    path: str,
+    operation: str,
+    replacement_count: int,
+    replace_all: bool,
+    old_text: str,
+    new_text: str,
+) -> dict[str, object]:
+    return {
+        "path": path,
+        "operation": operation,
+        "replacement_count": replacement_count,
+        "replace_all": replace_all,
+        "old_preview": _preview_text(old_text),
+        "new_preview": _preview_text(new_text),
+        "old_chars": len(old_text),
+        "new_chars": len(new_text),
+    }
+
+
+def _format_file_change_output(change: dict[str, object]) -> str:
+    path = str(change["path"])
+    operation = str(change["operation"])
+    replacement_count = int(change["replacement_count"])
+    replace_all = "true" if change["replace_all"] else "false"
+    old_preview = str(change["old_preview"]) or "(empty)"
+    new_preview = str(change["new_preview"]) or "(empty)"
+    new_chars = int(change["new_chars"])
+
+    if operation == "created":
+        first_line = f"创建文件: {path}（写入 {new_chars} 个字符，replace_all={replace_all}）"
+        summary = "变更摘要: 新建文件。"
+    elif replacement_count == 0:
+        first_line = f"修改文件: {path}（从空文件写入 {new_chars} 个字符，replace_all={replace_all}）"
+        summary = "变更摘要: 从空文件写入内容。"
+    else:
+        first_line = f"修改文件: {path}（替换 {replacement_count} 处，replace_all={replace_all}）"
+        summary = f"变更摘要: 替换 {replacement_count} 处文本。"
+
+    return "\n".join(
+        [
+            first_line,
+            summary,
+            f"- old: {old_preview}",
+            f"- new: {new_preview}",
+        ]
+    )
+
+
 def _read_text_raw(path: Path) -> str:
     with path.open("r", encoding="utf-8", newline="") as handle:
         return handle.read()
@@ -75,7 +132,8 @@ class EditTool(Tool):
     description = (
         "修改 Vault 中指定文件的内容。\n"
         "你需要提供准确的 old_string 以及要替换成的 new_string。\n"
-        "如果 old_string 存在多处而你需要全部替换，请设置 replace_all=true。"
+        "如果 old_string 存在多处而你需要全部替换，请设置 replace_all=true。\n"
+        "工具成功后会返回变更摘要；请基于该摘要告知用户改动结果，不要自行猜测未返回的细节。"
     )
     input_schema = EditInput
     is_read_only = False
@@ -114,7 +172,18 @@ class EditTool(Tool):
                         _normalize_newlines(params.new_string),
                         newline,
                     )
-                    return ToolResult(output=f"成功创建并写入新文件: {params.file_path}")
+                    change = _build_file_change(
+                        path=params.file_path,
+                        operation="created",
+                        replacement_count=0,
+                        replace_all=params.replace_all,
+                        old_text="",
+                        new_text=_normalize_newlines(params.new_string),
+                    )
+                    return ToolResult(
+                        output=_format_file_change_output(change),
+                        metadata={"file_changes": [change]},
+                    )
                 except Exception as e:
                     return ToolResult(output=f"创建新文件失败: {e}")
             return ToolResult(output=f"文件不存在: {params.file_path} 返回创建请保持 old_string 为空。")
@@ -137,7 +206,18 @@ class EditTool(Tool):
             if raw_text == "":
                 newline = _detect_newline(params.new_string)
             _write_text_with_newline(full_path, new_string, newline)
-            return ToolResult(output=f"文件 {params.file_path} 更新成功（从空文件吸入内容）。")
+            change = _build_file_change(
+                path=params.file_path,
+                operation="modified",
+                replacement_count=0,
+                replace_all=params.replace_all,
+                old_text="",
+                new_text=new_string,
+            )
+            return ToolResult(
+                output=_format_file_change_output(change),
+                metadata={"file_changes": [change]},
+            )
 
         if old_string not in text:
             return ToolResult(
@@ -167,8 +247,16 @@ class EditTool(Tool):
         except Exception as e:
             return ToolResult(output=f"写入文件失败: {e}")
 
-        msg = f"文件 {params.file_path} 成功更新。"
-        if params.replace_all and match_count > 1:
-            msg += f" (已替换所有 {match_count} 处匹配)"
-
-        return ToolResult(output=msg)
+        replacement_count = match_count if params.replace_all else 1
+        change = _build_file_change(
+            path=params.file_path,
+            operation="modified",
+            replacement_count=replacement_count,
+            replace_all=params.replace_all,
+            old_text=old_string,
+            new_text=new_string,
+        )
+        return ToolResult(
+            output=_format_file_change_output(change),
+            metadata={"file_changes": [change]},
+        )

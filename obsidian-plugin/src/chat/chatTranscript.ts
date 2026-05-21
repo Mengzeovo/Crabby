@@ -104,12 +104,50 @@ export function toolStatusLabel(status: string): string {
   return "done";
 }
 
+function fileChangeOperationLabel(operation: unknown): string {
+  if (operation === "created") {
+    return "created";
+  }
+  if (operation === "modified") {
+    return "modified";
+  }
+  return "changed";
+}
+
+function formatFileChangesMeta(metadata: Record<string, unknown>): string | null {
+  const rawChanges = metadata.file_changes;
+  if (!Array.isArray(rawChanges)) {
+    return null;
+  }
+
+  const changes = rawChanges.filter(
+    (change): change is Record<string, unknown> =>
+      !!change && typeof change === "object" && !Array.isArray(change),
+  );
+  if (changes.length === 0) {
+    return null;
+  }
+
+  const operations = new Set(
+    changes.map((change) => fileChangeOperationLabel(change.operation)),
+  );
+  const fileLabel = changes.length === 1 ? "file" : "files";
+  if (operations.size === 1) {
+    return `${changes.length} ${fileLabel} ${Array.from(operations)[0]}`;
+  }
+  return `${changes.length} ${fileLabel} changed`;
+}
+
 export function formatToolMeta(payload: ToolCallPayload): string {
   const parts: string[] = [];
   const metadata = payload.metadata || {};
   const exitCode = metadata.exit_code;
   if (exitCode !== undefined && exitCode !== null) {
     parts.push(`exit ${String(exitCode)}`);
+  }
+  const fileChangesMeta = formatFileChangesMeta(metadata);
+  if (fileChangesMeta) {
+    parts.push(fileChangesMeta);
   }
   if (payload.elapsed_ms !== undefined && payload.elapsed_ms !== null) {
     parts.push(`${Math.round(payload.elapsed_ms)}ms`);
