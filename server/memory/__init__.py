@@ -131,6 +131,43 @@ def _serialized_message_bytes(messages: list[dict[str, Any]]) -> int:
     return len(payload.encode("utf-8"))
 
 
+def _normalize_auto_save_checkpoints(data: Any) -> dict[str, dict[str, Any]]:
+    """Return sanitized per-conversation auto-save review checkpoints."""
+    if not isinstance(data, dict):
+        return {}
+
+    normalized: dict[str, dict[str, Any]] = {}
+    for raw_conversation_id, raw_checkpoint in data.items():
+        try:
+            conversation_id = validate_conversation_id(str(raw_conversation_id))
+        except InvalidSessionIdError:
+            continue
+        if not isinstance(raw_checkpoint, dict):
+            continue
+
+        message_id = raw_checkpoint.get("last_reviewed_message_id")
+        branch_fingerprint = raw_checkpoint.get("last_reviewed_branch_fingerprint")
+        try:
+            revision = max(1, int(raw_checkpoint.get("last_reviewed_revision") or 1))
+        except (TypeError, ValueError):
+            revision = 1
+        try:
+            reviewed_at = float(raw_checkpoint.get("reviewed_at") or 0.0)
+        except (TypeError, ValueError):
+            reviewed_at = 0.0
+
+        normalized[conversation_id] = {
+            "last_reviewed_message_id": str(message_id) if message_id else None,
+            "last_reviewed_revision": revision,
+            "last_reviewed_branch_fingerprint": (
+                str(branch_fingerprint) if branch_fingerprint else None
+            ),
+            "reviewed_at": reviewed_at,
+        }
+
+    return normalized
+
+
 def _new_message_id() -> str:
     return f"m_{uuid.uuid4().hex}"
 
@@ -375,6 +412,7 @@ class Session:
     root_conversation_id: str = ROOT_CONVERSATION_ID
     active_conversation_id: str = ROOT_CONVERSATION_ID
     conversation_revision: int = 1
+    auto_save_checkpoints: dict[str, dict[str, Any]] = field(default_factory=dict)
     active_loop_id: str | None = None
     """ID of the currently active interactive loop for this session, if any."""
     vault_path: Path | None = None
@@ -395,6 +433,9 @@ class Session:
         self.conversation_revision = max(1, int(self.conversation_revision or 1))
         if self.active_loop_id is not None:
             self.active_loop_id = validate_session_id(self.active_loop_id)
+        self.auto_save_checkpoints = _normalize_auto_save_checkpoints(
+            self.auto_save_checkpoints
+        )
         # Auto-set vault_path from global state if not already set.
         if self.vault_path is None:
             self.vault_path = _current_vault_path
@@ -464,6 +505,35 @@ class Session:
             }
         )
         self._touch_messages_changed()
+
+    def get_auto_save_checkpoint(
+        self,
+        conversation_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        target_conversation_id = validate_conversation_id(
+            conversation_id or self.active_conversation_id
+        )
+        checkpoint = self.auto_save_checkpoints.get(target_conversation_id)
+        return dict(checkpoint) if checkpoint is not None else None
+
+    def set_auto_save_checkpoint(
+        self,
+        conversation_id: str | None = None,
+        *,
+        message_id: str,
+        revision: int,
+        branch_fingerprint: str,
+        reviewed_at: float | None = None,
+    ) -> None:
+        target_conversation_id = validate_conversation_id(
+            conversation_id or self.active_conversation_id
+        )
+        self.auto_save_checkpoints[target_conversation_id] = {
+            "last_reviewed_message_id": str(message_id),
+            "last_reviewed_revision": max(1, int(revision or 1)),
+            "last_reviewed_branch_fingerprint": str(branch_fingerprint),
+            "reviewed_at": time.time() if reviewed_at is None else float(reviewed_at),
+        }
 
     def get_messages(
         self,
@@ -604,6 +674,7 @@ class Session:
             "persona_state": self.persona_state.model_dump(),
             "actual_usage_total": self.actual_usage_total,
             "conversation_revision": self.conversation_revision,
+            "auto_save_checkpoints": self.auto_save_checkpoints,
             "active_loop_id": self.active_loop_id,
             "vault_path": str(self.vault_path) if self.vault_path else None,
         }
@@ -623,6 +694,7 @@ class Session:
             "pending_notifications": self.pending_notifications,
             "persona_state": self.persona_state.model_dump(),
             "actual_usage_total": self.actual_usage_total,
+            "auto_save_checkpoints": self.auto_save_checkpoints,
             "active_loop_id": self.active_loop_id,
             "vault_path": str(self.vault_path) if self.vault_path else None,
             "conversations": {
@@ -681,6 +753,9 @@ class Session:
                 data.get("active_conversation_id") or ROOT_CONVERSATION_ID
             ),
             conversation_revision=int(data.get("conversation_revision") or 1),
+            auto_save_checkpoints=_normalize_auto_save_checkpoints(
+                data.get("auto_save_checkpoints")
+            ),
             active_loop_id=data.get("active_loop_id"),
             vault_path=resolved_vp,
         )
@@ -726,6 +801,9 @@ class Session:
             root_conversation_id=root_conversation_id,
             active_conversation_id=active_conversation_id,
             conversation_revision=conversation.revision,
+            auto_save_checkpoints=_normalize_auto_save_checkpoints(
+                manifest.get("auto_save_checkpoints")
+            ),
             conversation_index=conversation_index,
             active_loop_id=manifest.get("active_loop_id"),
             vault_path=resolved_vp,
@@ -995,8 +1073,49 @@ class SessionStore:
         session.conversation_revision = record.revision
         session.last_activity_at = now
         session.messages = parent_snapshot.messages[: fork_index + 1]
+        self._inherit_auto_save_checkpoint_for_fork(
+            session,
+            parent_conversation_id=safe_parent_id,
+            child_conversation_id=conversation_id,
+            parent_messages=parent_snapshot.messages,
+            fork_index=fork_index,
+            child_revision=record.revision,
+        )
         self._persist(session)
         return session, record
+
+    def _inherit_auto_save_checkpoint_for_fork(
+        self,
+        session: Session,
+        *,
+        parent_conversation_id: str,
+        child_conversation_id: str,
+        parent_messages: list[dict[str, Any]],
+        fork_index: int,
+        child_revision: int,
+    ) -> None:
+        parent_checkpoint = session.get_auto_save_checkpoint(parent_conversation_id)
+        if parent_checkpoint is None:
+            return
+
+        checkpoint_message_id = parent_checkpoint.get("last_reviewed_message_id")
+        if not checkpoint_message_id:
+            return
+
+        checkpoint_index = self._find_message_index(
+            parent_messages,
+            str(checkpoint_message_id),
+        )
+        if checkpoint_index is None or checkpoint_index > fork_index:
+            return
+
+        session.set_auto_save_checkpoint(
+            child_conversation_id,
+            message_id=str(checkpoint_message_id),
+            revision=child_revision,
+            branch_fingerprint=session.branch_fingerprint(child_conversation_id),
+            reviewed_at=parent_checkpoint.get("reviewed_at"),
+        )
 
     def get_active_branch_snapshot(self, session_id: str) -> BranchSnapshot | None:
         session = self.get(session_id)

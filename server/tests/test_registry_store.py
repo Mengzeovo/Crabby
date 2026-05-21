@@ -117,8 +117,6 @@ class TestAtomicWriteFailure:
         write_registry(path, original)
         original_content = path.read_text(encoding="utf-8")
 
-        from memory import registry_store
-
         def failing_replace(src, dst):
             raise OSError("simulated rename failure")
 

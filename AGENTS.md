@@ -125,7 +125,13 @@ Important backend files and folders:
   backend runtime `data/cron_jobs.json` persistence.
 - `server/memory/`: file-backed session manifest/conversation storage, legacy
   flat-session migration, active branch materialization/cache, ID validation,
-  actual usage snapshots, pending notifications, and auto-save support.
+  actual usage snapshots, pending notifications, per-conversation auto-save
+  checkpoints, and auto-save support.
+- `server/memory/auto_save.py`: cursor-based auto-save review daemon. It
+  snapshots the active conversation window at enqueue time, reviews only that
+  frozen window, advances per-conversation checkpoints only after successful
+  review, and restricts the background memory agent to `memory_search` /
+  `memory_write`.
 - `server/memory/layout.py`: creates the Vault-backed long-term memory layout
   under `<vault>/.crabby/memory/`, seeds `MEMORY.md`, `REGISTRY.md`, the
   `user/`, `feedback/`, `project/`, and `reference/` type directories, and the
@@ -278,9 +284,14 @@ npm run start
     stats, per-turn usage, cumulative session usage when available, and
     assistant/user message IDs. WebSocket `tool_result` events and REST
     `tool_calls` carry the full tool UI payload, not a shortened preview.
-14. Cron jobs run in isolated sessions through the shared non-streaming agent
+14. Auto-save queues frozen conversation review windows, uses
+    `auto_save_checkpoints` to continue from the last reviewed message for each
+    conversation, and writes only strict long-term value through
+    `memory_write`. Unresolved tool errors and max-iteration exhaustion do not
+    advance the checkpoint.
+15. Cron jobs run in isolated sessions through the shared non-streaming agent
     runner and push completion notifications back to source sessions.
-15. WebSocket `error` events are reserved for transport/protocol failures.
+16. WebSocket `error` events are reserved for transport/protocol failures.
     Backend-delivered business conditions should use `warning`/`done`.
 
 ## Session And Conversation Rules
@@ -289,6 +300,12 @@ npm run start
   hyphens, up to 128 chars.
 - Session storage uses `sessions/<session_id>/manifest.json` plus
   `sessions/<session_id>/conversations/<conversation_id>.json`.
+- Session manifests may include `auto_save_checkpoints`, keyed by
+  `conversation_id`, with the last reviewed message ID, revision, branch
+  fingerprint, and review timestamp.
+- Forked conversations inherit the parent auto-save checkpoint only when the
+  checkpointed message is at or before the fork point; parent checkpoints after
+  the fork point are not inherited.
 - Legacy flat sessions are loaded and rewritten into the new layout.
 - Active branch materialization excludes sibling branches.
 - Branch cache is process-local memory with 30-minute inactivity TTL, 64 MiB
@@ -427,6 +444,9 @@ Use the smallest relevant verification set:
 - Session-ID validation or session storage hardening:
   `cd server && uv run pytest tests/test_memory.py tests/test_sessions_api.py tests/test_chat_session_validation.py tests/test_websocket_notifications.py`,
   then full backend tests and ruff.
+- Auto-save, memory checkpoint, or memory provenance change:
+  `cd server && uv run pytest tests/test_auto_save.py tests/test_memory.py tests/test_memory_tools.py`,
+  then full backend tests and ruff.
 - Branch cache/session tree change: targeted tests for TTL, LRU,
   serialized-size accounting, global-budget eviction, warm hits, cold rebuilds,
   lineage, and sibling exclusion, then full backend tests.
@@ -511,6 +531,13 @@ Use the smallest relevant verification set:
   counts for UI restoration and non-git user visibility.
 - Non-streaming agent-runner tool results persist that same `ui` payload while
   `Session.get_messages()` strips it from model-bound messages.
+- Auto-save review jobs use enqueue-time snapshots, not live active
+  conversations at drain time. Empty/no-value batches still advance
+  per-conversation checkpoints after successful review; unresolved tool errors
+  block checkpoint advancement unless a later successful `memory_write` recovers
+  the chunk.
+- `memory_write` stores `session_id`, `conversation_id`, and
+  `branch_fingerprint` from tool context into memory frontmatter.
 - `obsidian-plugin/src/chat/chatStyles.ts` upserts the shared style tag on
   reload.
 - The backend system prompt dynamically injects runtime platform label,

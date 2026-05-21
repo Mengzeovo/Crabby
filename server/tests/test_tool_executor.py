@@ -370,6 +370,19 @@ def test_status_error_on_timeout():
     assert ui["is_error"] is True
 
 
+def test_status_error_on_metadata_error():
+    """metadata.error must result in status=error."""
+    ui = _build_ui_payload(
+        tool_name="memory_write",
+        output="validation failed",
+        tool_id="toolu_memory_write",
+        metadata={"error": True},
+        elapsed_ms=5,
+    )
+    assert ui["status"] == "error"
+    assert ui["is_error"] is True
+
+
 def test_status_warning_on_truncation():
     """is_truncated=True must result in status=warning (not error)."""
     ui = _build_ui_payload(

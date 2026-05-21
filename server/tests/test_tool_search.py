@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from typing import Any
 
 import pytest
 from pydantic import BaseModel
 
-from llm.tool_search_service import ScoredTool, ToolSearchService
+from llm.tool_search_service import ToolSearchService
 from tools.base import Context, Tool, ToolResult
 from tools.registry import ToolRegistry
 

@@ -196,6 +196,36 @@ def test_session_persists_manifest_and_root_conversation(tmp_path):
     assert reloaded.messages[0]["message_id"].startswith("m_")
 
 
+def test_session_persists_auto_save_checkpoints(tmp_path):
+    store = SessionStore(storage_dir=tmp_path)
+    session = store.create("checkpoint-session")
+    session.add_user_message("hello")
+    message_id = session.messages[-1]["message_id"]
+    fingerprint = session.branch_fingerprint()
+    session.set_auto_save_checkpoint(
+        "root",
+        message_id=message_id,
+        revision=session.conversation_revision,
+        branch_fingerprint=fingerprint,
+        reviewed_at=123.0,
+    )
+    store.persist(session)
+
+    manifest_path = tmp_path / "checkpoint-session" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    checkpoint = manifest["auto_save_checkpoints"]["root"]
+
+    assert checkpoint["last_reviewed_message_id"] == message_id
+    assert checkpoint["last_reviewed_revision"] == session.conversation_revision
+    assert checkpoint["last_reviewed_branch_fingerprint"] == fingerprint
+    assert checkpoint["reviewed_at"] == 123.0
+
+    reloaded = SessionStore(storage_dir=tmp_path).get("checkpoint-session")
+
+    assert reloaded is not None
+    assert reloaded.get_auto_save_checkpoint("root") == checkpoint
+
+
 def test_legacy_flat_session_is_migrated_to_manifest_layout(tmp_path):
     (tmp_path / "legacy.json").write_text(
         json.dumps(

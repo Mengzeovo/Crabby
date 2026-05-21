@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from tools.base import Context
 from tools.edit import EditInput, EditTool
 from tools.glob import GlobInput, GlobTool

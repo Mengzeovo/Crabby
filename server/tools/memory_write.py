@@ -91,6 +91,7 @@ class MemoryWriteTool(Tool):
                 derived_from=params.derived_from,
                 session_id=ctx.session_id,
                 conversation_id=ctx.conversation_id,
+                branch_fingerprint=ctx.branch_fingerprint,
             )
         except Exception as e:
             return ToolResult(output=f"验证失败: {e}", metadata={"error": True})

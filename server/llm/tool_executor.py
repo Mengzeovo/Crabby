@@ -42,6 +42,7 @@ def _tool_status(
 ) -> str:
     if (
         is_error
+        or bool(metadata.get("error"))
         or metadata.get("blocked") is True
         or metadata.get("timeout") is True
         or _has_nonzero_exit_code(metadata)
@@ -89,6 +90,7 @@ def _build_ui_payload(
 def build_default_context(
     session_id: str | None = None,
     conversation_id: str | None = None,
+    branch_fingerprint: str | None = None,
 ) -> Context:
     """Build a normal-permission Context from global settings."""
     return Context(
@@ -96,6 +98,7 @@ def build_default_context(
         permission_level="normal",
         session_id=session_id,
         conversation_id=conversation_id,
+        branch_fingerprint=branch_fingerprint,
         runtime_data_path=DATA_DIR,
     )
 

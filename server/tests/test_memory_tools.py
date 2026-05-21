@@ -8,7 +8,7 @@ import pytest
 
 from memory.layout import ensure_memory_layout
 from memory.registry_store import read_registry
-from tools.base import Context, ToolResult
+from tools.base import Context
 from tools.memory_search import MemorySearchInput, MemorySearchTool
 from tools.memory_write import MemoryWriteInput, MemoryWriteTool
 
@@ -21,7 +21,12 @@ def vault(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def ctx(vault: Path) -> Context:
-    return Context(vault_path=vault, session_id="test-session", conversation_id="test-conv")
+    return Context(
+        vault_path=vault,
+        session_id="test-session",
+        conversation_id="test-conv",
+        branch_fingerprint="sha256:test-branch",
+    )
 
 
 @pytest.fixture
@@ -57,6 +62,9 @@ class TestMemoryWrite:
         content = path.read_text(encoding="utf-8")
         assert "name: test-fact" in content
         assert "type: project" in content
+        assert "session_id: test-session" in content
+        assert "conversation_id: test-conv" in content
+        assert "branch_fingerprint: sha256:test-branch" in content
         assert "Crabby uses FastAPI" in content
 
     @pytest.mark.asyncio
