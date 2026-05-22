@@ -1,6 +1,6 @@
 # Agent Handoff
 
-Last rewritten: 2026-05-19
+Last rewritten: 2026-05-22
 
 This file is the fast entry point for agents and maintainers taking over the
 Crabby repository. It should reflect the current repo, not old plans or memory
@@ -77,6 +77,10 @@ Important backend files and folders:
 - `server/main.py`: FastAPI app entry, route assembly, MCP startup, cron
   startup, and background daemons.
 - `server/config.py`: environment-backed settings.
+- `server/diary_config.py`: Vault-root diary config loader/validator for
+  `<vault>/.crabby/config/diary.json`, with Vault-relative root/template path
+  normalization and defaults for daily, weekly, monthly, quarterly, and yearly
+  templates.
 - `server/runtime_config.py`: runtime config helpers for prompts, personas,
   and skills.
 - `server/mcp_config.py`: MCP config loading and environment interpolation.
@@ -85,8 +89,8 @@ Important backend files and folders:
 - `server/cron_daemon.py`: background cron scanner/queue/consumer.
 - `server/api/`: REST, WebSocket, attachments, sessions, client-tool bridge,
   and admin APIs.
-- `server/api/rest.py`: REST chat, context stats, persona, skill, capability,
-  and admin-facing routes with safe ID validation.
+- `server/api/rest.py`: REST chat, diary-write bridge, context stats, persona,
+  skill, capability, and admin-facing routes with safe ID validation.
 - `server/api/sessions.py`: session metadata and message-history APIs.
 - `server/api/websocket.py`: streaming chat WebSocket, tool-loop warnings, and
   safe conversation ID checks.
@@ -119,24 +123,35 @@ Important backend files and folders:
   preserves dominant newline style, rejects paths outside the Vault, and returns
   user-readable change summaries plus structured `metadata.file_changes` entries
   for successful writes.
+- `server/tools/base.py`: shared tool formatter and UI payload helper. LLM-visible
+  tool errors now treat `metadata.error` as an error prefix, not just blocked /
+  timeout / exit-code failures.
 - `server/tools/crabby_settings.py`: self-management tool that talks to the
   Obsidian bridge and backend admin profile APIs.
+- `server/tools/diary.py`: `diary_write` and `diary_read` tools for
+  Vault-facing diary, weekly, monthly, quarterly, and yearly records. Paths and
+  templates come from `diary.json`; writes create from the configured template
+  or append timestamped blocks without rewriting existing user text, with an
+  optional `entry_key` marker for idempotent generated entries.
 - `server/tools/cron.py`: cron create/list/delete tool and
   backend runtime `data/cron_jobs.json` persistence.
 - `server/memory/`: file-backed session manifest/conversation storage, legacy
   flat-session migration, active branch materialization/cache, ID validation,
   actual usage snapshots, pending notifications, per-conversation auto-save
   checkpoints, and auto-save support.
-- `server/memory/auto_save.py`: cursor-based auto-save review daemon. It
-  snapshots the active conversation window at enqueue time, reviews only that
-  frozen window, advances per-conversation checkpoints only after successful
-  review, and restricts the background memory agent to `memory_search` /
-  `memory_write`.
+- `server/memory/auto_save.py`: cursor-based memory auto-save review daemon.
+  It snapshots the active conversation window at enqueue time, rebases against
+  the latest checkpoint before processing, restricts the background memory
+  agent to `memory_search` / `memory_write`, rejects any non-memory tool use
+  before execution, and advances per-conversation checkpoints only after
+  successful review.
 - `server/memory/layout.py`: creates the Vault-backed long-term memory layout
   under `<vault>/.crabby/memory/`, seeds `MEMORY.md`, `REGISTRY.md`, the
-  `user/`, `feedback/`, `project/`, and `reference/` type directories, and the
-  editable diary template at
-  `<vault>/.crabby/templates/diary.md` without overwriting existing files.
+  `user/`, `feedback/`, `project/`, and `reference/` type directories, keeps the
+  legacy editable diary template at `<vault>/.crabby/templates/diary.md`, and
+  seeds `<vault>/.crabby/templates/diary/{daily,weekly,monthly,quarterly,yearly}.md`
+  without overwriting existing files. If the new daily template is missing and
+  legacy `diary.md` already exists, daily is initialized from the legacy file.
 - `server/tests/`: backend tests.
 - `server/data/mcp_servers.example.json`: example MCP config.
 - `server/data/mcp_servers.json`: local private MCP config when present.
@@ -161,14 +176,20 @@ Important plugin files and folders:
   controls, active-profile test button, runtime/MCP settings.
 - `obsidian-plugin/src/api/client.ts`: backend API client, WebSocket handling,
   transport/server error classification, admin reload/status calls, profile
-  calls, and active-profile test calls.
+  calls, active-profile test calls, and direct diary-write calls.
 - `obsidian-plugin/src/chat/`: chat view, transcript, context/token usage bar,
   composer, assistant rendering, personas, profiles, sessions, current-session
-  tree, fork actions, stylesheet injection, turn runner, and tool-block metadata
-  rendering including file-change counts from `metadata.file_changes`.
+  tree, fork actions, stylesheet injection, turn runner, inline loop-to-diary
+  prompts, and tool-block metadata rendering including file-change counts from
+  `metadata.file_changes`.
 - `obsidian-plugin/src/chat/ChatView.ts`: chat view shell. When no saved LLM
   profile exists, it shows a dismissing banner whose settings action opens the
   Obsidian settings modal and switches to the Crabby plugin tab.
+- `obsidian-plugin/src/chat/chatDiaryPrompt.ts`: inline prompt rendered above
+  the chat input after `loop_stop`, allowing the user to write the loop summary
+  into today's diary only for non-error loop completions with a `job_id`. It
+  checks both Obsidian's file cache and the Vault filesystem so default hidden
+  `.crabby/templates/diary/daily.md` templates can enable the write action.
 - `obsidian-plugin/src/chat/chatAssistantContent.ts`: assistant markdown and
   thought rendering helpers, including shared `Crabby` identity header.
 - `obsidian-plugin/src/clientTools/`: WebSocket client-tool bridge.
@@ -284,14 +305,22 @@ npm run start
     stats, per-turn usage, cumulative session usage when available, and
     assistant/user message IDs. WebSocket `tool_result` events and REST
     `tool_calls` carry the full tool UI payload, not a shortened preview.
-14. Auto-save queues frozen conversation review windows, uses
+14. When a chat turn completes with a successful `loop_stop` tool result, the
+    Obsidian chat view can show an inline prompt directly above the input box
+    to write the loop summary to today's diary through `/diary/write`. The
+    prompt requires a non-error loop result with `metadata.job_id`; stale or
+    missing loop jobs must not be treated as writable summaries. If the configured
+    daily template file is missing, the prompt offers settings/close actions and
+    does not show a write button.
+15. Auto-save queues frozen conversation review windows, uses
     `auto_save_checkpoints` to continue from the last reviewed message for each
     conversation, and writes only strict long-term value through
-    `memory_write`. Unresolved tool errors and max-iteration exhaustion do not
-    advance the checkpoint.
-15. Cron jobs run in isolated sessions through the shared non-streaming agent
+    `memory_write`. Diary entries are user-facing records created through the
+    diary skill or explicit inline user confirmation. Unresolved tool errors
+    and max-iteration exhaustion do not advance the checkpoint.
+16. Cron jobs run in isolated sessions through the shared non-streaming agent
     runner and push completion notifications back to source sessions.
-16. WebSocket `error` events are reserved for transport/protocol failures.
+17. WebSocket `error` events are reserved for transport/protocol failures.
     Backend-delivered business conditions should use `warning`/`done`.
 
 ## Session And Conversation Rules
@@ -343,6 +372,9 @@ npm run start
 - Manual and None override auto routing.
 - Skills are loaded from `skills/` or `SKILLS_DIR`; they are behavior guides,
   not executable tools.
+- The checked-in `diary` skill routes diary/journal/review requests to
+  `diary_read` and `diary_write`, forbids `edit`/`bash` for diary writes, and
+  treats weekly/monthly/quarterly/yearly records as explicit-request only.
 
 ## Configuration Notes
 
@@ -356,16 +388,36 @@ npm run start
   `reference/` type directories. Topic subdirectories are created by memory
   write code when a memory is actually written. Topic values may include
   Chinese / Unicode letters and digits plus non-edge hyphens, while memory
-  `name` values remain ASCII kebab-case file slugs. `MEMORY.md` is a read/load
-  rule entry point, not a full memory index.
+  `name` values remain ASCII kebab-case file slugs. `MEMORY.md` is a backend memory
+  policy/reference file, not a full memory index or main prompt payload.
+- The main chat prompt only carries a short memory hint. Relevant turns call
+  `memory_search` on demand, while `auto_save` remains a separate background,
+  checkpoint-driven task that does not block chat.
 - Planned memory frontmatter follows the facet model in
   `docs/记忆沉淀设计.md`: `type`, `topic`, `domain`, `kind`, `state`,
   `valid_from`, and `valid_to`. Timestamps, links, and provenance are
   frontmatter metadata but not facet fields. The facet model does not include
   `scope`, `confidence`, or `description`.
-- The default diary template lives at `<vault>/.crabby/templates/diary.md`.
-  Diary entries themselves are user-facing Vault notes outside
-  `.crabby/memory/`, with `Journal/` as the intended default setting.
+- Diary configuration lives at `<vault>/.crabby/config/diary.json`, with
+  `rootPath` defaulting to `Journal` and `templatePaths.daily`, `weekly`,
+  `monthly`, `quarterly`, and `yearly` pointing by default to
+  `.crabby/templates/diary/{period}.md`. Diary entries themselves are
+  user-facing Vault notes outside `.crabby/memory/`: daily entries use
+  `Journal/daily/YYYY/MM/YYYY-MM-DD.md`, weekly entries use ISO week-year
+  `Journal/weekly/YYYY/YYYY-Www.md`, and monthly/quarterly/yearly entries use
+  their corresponding period folders. The legacy
+  `<vault>/.crabby/templates/diary.md` file is kept for compatibility and can
+  seed the new daily template if needed.
+- `diary_write` is a Vault write and is blocked in restricted tool contexts,
+  while `diary_read` remains read-only. Diary template rendering only replaces
+  placeholders in the template text, so user content containing `{{...}}`
+  remains literal. Diary is separate from memory auto-save and is not generated
+  automatically in the current V1.
+- Memory auto-save only accepts `memory_search` / `memory_write`; any
+  non-memory tool call returned by the model is rejected before execution.
+- Tool errors should expose `metadata.error` so the LLM sees `[error]` instead
+  of a success prefix. Loop tools, including `loop_stop`, must mark missing jobs
+  as errors rather than successful textual results.
 - The plugin and backend derive vault paths from the `VAULT_PATH` environment
   variable set by the plugin at startup. The backend falls back to the repo root
   when `VAULT_PATH` is absent (e.g., bare `uv run python main.py` outside of
@@ -446,7 +498,12 @@ Use the smallest relevant verification set:
 - Session-ID validation or session storage hardening:
   `cd server && uv run pytest tests/test_memory.py tests/test_sessions_api.py tests/test_chat_session_validation.py tests/test_websocket_notifications.py`,
   then full backend tests and ruff.
-- Auto-save, memory checkpoint, or memory provenance change:
+- Diary tool/config/skill change:
+  `cd server && uv run pytest tests/test_diary_tool.py tests/test_diary_api.py tests/test_tool_executor.py tests/test_memory_layout.py tests/test_skills.py`,
+  `cd server && uv run ruff check .`.
+  Add `cd obsidian-plugin && npm run test:config && npx tsc --noEmit && npm run build`
+  when the diary settings sync path or plugin runtime layout changes.
+- Memory write/search, memory checkpoint, or memory provenance change:
   `cd server && uv run pytest tests/test_auto_save.py tests/test_memory.py tests/test_memory_tools.py`,
   then full backend tests and ruff.
 - Branch cache/session tree change: targeted tests for TTL, LRU,
@@ -536,8 +593,16 @@ Use the smallest relevant verification set:
 - Auto-save review jobs use enqueue-time snapshots, not live active
   conversations at drain time. Empty/no-value batches still advance
   per-conversation checkpoints after successful review; unresolved tool errors
-  block checkpoint advancement unless a later successful `memory_write` recovers
-  the chunk.
+  block checkpoint advancement unless a later successful `memory_write`
+  recovers the chunk.
+- `diary_write` stores `session_id`, `conversation_id`, and
+  `branch_fingerprint` from tool context in the appended source block and
+  returns `metadata.file_changes` for UI restoration. When `entry_key` is
+  supplied, it writes a hidden marker and skips later writes with the same key.
+- The Obsidian chat footer owns an inline loop-to-diary prompt above the input
+  area. Template-present prompts show write/skip only; missing-template prompts
+  show settings/close only. Completing an older in-flight diary write must not
+  hide a newer prompt.
 - `memory_write` stores `session_id`, `conversation_id`, and
   `branch_fingerprint` from tool context into memory frontmatter.
 - `obsidian-plugin/src/chat/chatStyles.ts` upserts the shared style tag on
