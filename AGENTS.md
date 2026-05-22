@@ -52,6 +52,9 @@ workflows. It is not a cloud multi-user SaaS.
   registry rules, write/search tool contract, diary relationship, and
   current implemented/pending status for local memory, Diary V1, MemPalace
   double-write, full-text search, and aggregation.
+- `docs/会话上下文折叠与展开设计.md`: future design note for compressing
+  tool-heavy session spans into reusable summaries and expanding them on
+  demand.
 - `docs/MEMPALACE_INTEGRATION.md`: MemPalace MCP service reference; treat
   MemPalace as a downstream semantic index and knowledge-graph layer, not the
   canonical memory store.
@@ -137,6 +140,14 @@ Important backend files and folders:
   templates come from `diary.json`; writes create from the configured template
   or append timestamped blocks without rewriting existing user text, with an
   optional `entry_key` marker for idempotent generated entries.
+- `server/tools/memory_search.py`: read-only long-term memory recall tool. It
+  exposes `list_registry`, structured `search`, and `full_text` modes so Crabby
+  can run a model-orchestrated flow: inspect registry topics/domains, choose
+  facet and created/updated time filters, judge structured candidates, then
+  fall back to local full-text snippets over file names/titles/body headings
+  before using external search. ISO datetime filters are compared in local
+  wall-clock time so timezone-aware inputs normalize against stored naive
+  timestamps.
 - `server/tools/cron.py`: cron create/list/delete tool and
   backend runtime `data/cron_jobs.json` persistence.
 - `server/memory/`: file-backed session manifest/conversation storage, legacy
@@ -396,7 +407,11 @@ npm run start
   policy/reference file, not a full memory index or main prompt payload.
 - The main chat prompt only carries a short memory hint. Relevant turns call
   `memory_search` on demand, while `auto_save` remains a separate background,
-  checkpoint-driven task that does not block chat.
+  checkpoint-driven task that does not block chat. The memory hint describes a
+  model-orchestrated recall flow: use `list_registry`, run structured `search`,
+  inspect/read candidates when needed, use `full_text` for local body snippets
+  when structured results are insufficient, then escalate to external search
+  only outside the memory tool if memory remains insufficient.
 - MemPalace is an optional downstream semantic index and knowledge-graph
   layer. Vault Markdown under `<vault>/.crabby/memory/` remains the canonical
   source of truth, and current code does not double-write to MemPalace yet.
@@ -405,6 +420,11 @@ npm run start
   `valid_from`, and `valid_to`. Timestamps, links, and provenance are
   frontmatter metadata but not facet fields. The facet model does not include
   `scope`, `confidence`, or `description`.
+- `memory_search` distinguishes fact validity from file recency:
+  `valid_at` filters `valid_from`/`valid_to`, while `created_after`,
+  `created_before`, `updated_after`, and `updated_before` filter memory
+  document timestamps. Timezone-aware ISO datetimes are normalized to the
+  local wall clock before comparison.
 - Diary configuration lives at `<vault>/.crabby/config/diary.json`, with
   `rootPath` defaulting to `Journal` and `templatePaths.daily`, `weekly`,
   `monthly`, `quarterly`, and `yearly` pointing by default to

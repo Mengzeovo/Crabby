@@ -39,6 +39,15 @@ def search_tool() -> MemorySearchTool:
     return MemorySearchTool()
 
 
+def _set_frontmatter_value(path: Path, key: str, value: str) -> None:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    rewritten = [
+        f"{key}: {value}" if line.startswith(f"{key}:") else line
+        for line in lines
+    ]
+    path.write_text("\n".join(rewritten) + "\n", encoding="utf-8", newline="\n")
+
+
 class TestMemoryWrite:
     @pytest.mark.asyncio
     async def test_create_new_memory(self, write_tool, ctx, vault):
@@ -495,6 +504,235 @@ class TestMemorySearch:
             ctx,
         )
         assert "temporal" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_search_filters_created_and_updated_times(
+        self, write_tool, search_tool, ctx, vault
+    ):
+        await write_tool.call(
+            MemoryWriteInput(
+                name="recent-update",
+                type="project",
+                topic="time-filter",
+                body="Recently updated memory.",
+            ),
+            ctx,
+        )
+        await write_tool.call(
+            MemoryWriteInput(
+                name="old-update",
+                type="project",
+                topic="time-filter",
+                body="Older memory.",
+            ),
+            ctx,
+        )
+
+        recent_path = (
+            vault / ".crabby" / "memory" / "project" / "time-filter" / "recent-update.md"
+        )
+        old_path = (
+            vault / ".crabby" / "memory" / "project" / "time-filter" / "old-update.md"
+        )
+        _set_frontmatter_value(recent_path, "created_at", "2026-05-20T09:00:00")
+        _set_frontmatter_value(recent_path, "updated_at", "2026-05-22T10:00:00")
+        _set_frontmatter_value(old_path, "created_at", "2026-05-19T09:00:00")
+        _set_frontmatter_value(old_path, "updated_at", "2026-05-20T10:00:00")
+
+        result = await search_tool.call(
+            MemorySearchInput(
+                mode="search",
+                topic="time-filter",
+                updated_after="2026-05-21",
+            ),
+            ctx,
+        )
+        assert "recent-update" in result.output
+        assert "old-update" not in result.output
+
+        result = await search_tool.call(
+            MemorySearchInput(
+                mode="search",
+                topic="time-filter",
+                created_after="2026-05-21",
+            ),
+            ctx,
+        )
+        assert "recent-update" not in result.output
+        assert result.metadata["results"] == []
+
+    @pytest.mark.asyncio
+    async def test_search_rejects_invalid_time_filter(self, search_tool, ctx):
+        result = await search_tool.call(
+            MemorySearchInput(mode="search", updated_after="not-a-date"),
+            ctx,
+        )
+        assert result.metadata["error"] is True
+        assert result.metadata["results"] == []
+
+    @pytest.mark.asyncio
+    async def test_search_limit_zero_returns_empty(self, write_tool, search_tool, ctx):
+        await write_tool.call(
+            MemoryWriteInput(
+                name="limit-zero",
+                type="project",
+                topic="limit-zero-topic",
+                body="Limit zero should not return results.",
+            ),
+            ctx,
+        )
+
+        search_result = await search_tool.call(
+            MemorySearchInput(
+                mode="search",
+                topic="limit-zero-topic",
+                limit=0,
+            ),
+            ctx,
+        )
+        full_text_result = await search_tool.call(
+            MemorySearchInput(
+                mode="full_text",
+                topic="limit-zero-topic",
+                query="limit-zero",
+                limit=0,
+            ),
+            ctx,
+        )
+
+        assert search_result.metadata["results"] == []
+        assert full_text_result.metadata["results"] == []
+
+    @pytest.mark.asyncio
+    async def test_full_text_requires_query(self, search_tool, ctx):
+        result = await search_tool.call(MemorySearchInput(mode="full_text"), ctx)
+
+        assert result.metadata["error"] is True
+        assert result.metadata["mode"] == "full_text"
+
+    @pytest.mark.asyncio
+    async def test_full_text_finds_body_heading_and_combines_filters(
+        self, write_tool, search_tool, ctx, vault
+    ):
+        await write_tool.call(
+            MemoryWriteInput(
+                name="branch-cache-note",
+                type="project",
+                topic="search-topic",
+                domain=["branch-cache"],
+                body="# Branch Cache\n\nBranch fingerprint avoids stale active branch cache.",
+            ),
+            ctx,
+        )
+        await write_tool.call(
+            MemoryWriteInput(
+                name="branch-cache-old",
+                type="project",
+                topic="other-topic",
+                domain=["branch-cache"],
+                body="# Branch Cache\n\nBranch fingerprint from another topic.",
+            ),
+            ctx,
+        )
+
+        hit_path = (
+            vault
+            / ".crabby"
+            / "memory"
+            / "project"
+            / "search-topic"
+            / "branch-cache-note.md"
+        )
+        old_path = (
+            vault
+            / ".crabby"
+            / "memory"
+            / "project"
+            / "other-topic"
+            / "branch-cache-old.md"
+        )
+        _set_frontmatter_value(hit_path, "updated_at", "2026-05-22T10:00:00")
+        _set_frontmatter_value(old_path, "updated_at", "2026-05-20T10:00:00")
+
+        result = await search_tool.call(
+            MemorySearchInput(
+                mode="full_text",
+                query="branch fingerprint",
+                topic="search-topic",
+                any_domain=["branch-cache"],
+                updated_after="2026-05-21",
+            ),
+            ctx,
+        )
+
+        assert "branch-cache-note" in result.output
+        assert "branch-cache-old" not in result.output
+        assert result.metadata["mode"] == "full_text"
+        assert result.metadata["results"][0]["source"] == "full_text"
+        assert "Branch fingerprint" in result.metadata["results"][0]["snippet"]
+
+    @pytest.mark.asyncio
+    async def test_full_text_matches_filename_even_with_heading(
+        self, write_tool, search_tool, ctx
+    ):
+        await write_tool.call(
+            MemoryWriteInput(
+                name="branch-cache-note",
+                type="project",
+                topic="search-topic",
+                body="# Branch Cache\n\nBranch fingerprint avoids stale active branch cache.",
+            ),
+            ctx,
+        )
+
+        result = await search_tool.call(
+            MemorySearchInput(
+                mode="full_text",
+                query="branch-cache-note",
+                topic="search-topic",
+            ),
+            ctx,
+        )
+
+        assert "branch-cache-note" in result.output
+        assert result.metadata["results"]
+        assert result.metadata["results"][0]["name"] == "branch-cache-note"
+
+    @pytest.mark.asyncio
+    async def test_search_handles_timezone_aware_bounds(
+        self, write_tool, search_tool, ctx, vault
+    ):
+        await write_tool.call(
+            MemoryWriteInput(
+                name="timezone-aware",
+                type="project",
+                topic="time-zone-filter",
+                body="Timezone-aware timestamps.",
+            ),
+            ctx,
+        )
+
+        target_path = (
+            vault
+            / ".crabby"
+            / "memory"
+            / "project"
+            / "time-zone-filter"
+            / "timezone-aware.md"
+        )
+        _set_frontmatter_value(target_path, "created_at", "2026-05-22T09:00:00+08:00")
+        _set_frontmatter_value(target_path, "updated_at", "2026-05-22T10:00:00+08:00")
+
+        result = await search_tool.call(
+            MemorySearchInput(
+                mode="search",
+                topic="time-zone-filter",
+                updated_after="2026-05-22T02:30:00Z",
+            ),
+            ctx,
+        )
+
+        assert result.metadata["results"] == []
 
 
 class TestMemoryWriteUrlRoundTrip:
