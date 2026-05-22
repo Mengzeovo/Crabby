@@ -50,7 +50,11 @@ workflows. It is not a cloud multi-user SaaS.
   active branch cache.
 - `docs/记忆沉淀设计.md`: long-term memory facet model, directory layout,
   registry rules, write/search tool contract, diary relationship, and
-  aggregation plan.
+  current implemented/pending status for local memory, Diary V1, MemPalace
+  double-write, full-text search, and aggregation.
+- `docs/MEMPALACE_INTEGRATION.md`: MemPalace MCP service reference; treat
+  MemPalace as a downstream semantic index and knowledge-graph layer, not the
+  canonical memory store.
 - `docs/execution-plan.md`: release roadmap.
 - `docs/claude-code-analysis.md`: design reference, not current implementation.
 - `prompts/`: repository default prompt fragments.
@@ -393,6 +397,9 @@ npm run start
 - The main chat prompt only carries a short memory hint. Relevant turns call
   `memory_search` on demand, while `auto_save` remains a separate background,
   checkpoint-driven task that does not block chat.
+- MemPalace is an optional downstream semantic index and knowledge-graph
+  layer. Vault Markdown under `<vault>/.crabby/memory/` remains the canonical
+  source of truth, and current code does not double-write to MemPalace yet.
 - Planned memory frontmatter follows the facet model in
   `docs/记忆沉淀设计.md`: `type`, `topic`, `domain`, `kind`, `state`,
   `valid_from`, and `valid_to`. Timestamps, links, and provenance are

@@ -1,6 +1,12 @@
 # MemPalace 集成指南
 
-MemPalace 是 Crabby 的长期记忆子系统，通过 MCP（Model Context Protocol）stdio 方式集成。它提供自动记忆保存、日记和知识图谱功能，所有数据存储在 Vault 内的 `.crabby/data/mempalace/` 目录下。
+MemPalace 是 Crabby 的可选语义记忆后端，通过 MCP（Model Context Protocol）stdio 方式集成。它擅长向量检索、知识图谱和重复检测；在当前 Crabby 设计里，Vault Markdown 才是长期记忆的 source of truth，MemPalace 只承担派生语义索引和探索性关联发现。它自己的运行数据仍存放在 Vault 内的 `.crabby/data/mempalace/` 目录下，但那是索引与运行态，不是 canonical memory。
+
+## 在 Crabby 里的定位
+
+- Vault Markdown 是 canonical memory。
+- MemPalace 是派生语义索引，不是唯一真相源。
+- 当前 auto-save 已切回 Vault 记忆工具；MemPalace 双写是后续能力，不是这份文档里的当前实现。
 
 ## 前置条件
 
@@ -25,6 +31,8 @@ Crabby 的 MCP 配置已经指向 MemPalace 的 `.venv`，所以不需要在 Cra
 ```
 
 ## Embedding 方案
+
+> 注：上面的架构图描述的是 MemPalace 作为独立 MCP 服务的接入方式，不表示它是记忆真相源。当前 Crabby 的写入先落 Vault，再由后续流程决定是否把同一份内容索引到 MemPalace。
 
 MemPalace 支持两种 embedding 后端，**自动检测**：
 
@@ -102,6 +110,8 @@ curl http://127.0.0.1:8000/admin/mcp/status
 
 ## 可用工具
 
+> 说明：下面列的是 MemPalace 服务本身暴露的能力。Crabby 当前的日记正式写入路径是内置 `diary` skill / `diary_write`，不依赖这组工具。
+
 MemPalace 通过 MCP 暴露以下工具（Crabby auto_save 使用加粗的四项）：
 
 | 工具 | 说明 |
@@ -121,9 +131,9 @@ MemPalace 通过 MCP 暴露以下工具（Crabby auto_save 使用加粗的四项
 <vault>/.crabby/
 └── data/
     └── mempalace/
-        ├── chroma.sqlite3        # 向量数据库
-        ├── knowledge_graph.sqlite3  # 知识图谱
-        └── drawers/              # drawer 数据
+        ├── chroma.sqlite3        # 向量索引/派生数据
+        ├── knowledge_graph.sqlite3  # 知识图谱/派生数据
+        └── drawers/              # drawer 导入与运行态数据
 ```
 
 ## 故障排除
