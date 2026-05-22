@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from memory.facets import parse_frontmatter
+from memory.facets import VALID_TYPES, is_safe_topic_component, parse_frontmatter
 from memory.registry_store import read_registry
 from tools.base import Context, Tool, ToolResult
 
@@ -86,6 +86,13 @@ class MemorySearchTool(Tool):
                 metadata={"error": True},
             )
 
+        filter_error = _validate_search_filters(params)
+        if filter_error:
+            return ToolResult(
+                output=filter_error,
+                metadata={"error": True, "results": []},
+            )
+
         # Search mode: scan memory files and filter by facets
         results = _scan_and_filter(memory_dir, params)
 
@@ -101,6 +108,17 @@ class MemorySearchTool(Tool):
             )
 
         return ToolResult(output="\n".join(lines), metadata={"results": results})
+
+
+def _validate_search_filters(params: MemorySearchInput) -> str | None:
+    if params.type and params.type not in VALID_TYPES:
+        return f"无效 type: {params.type}。支持: {', '.join(VALID_TYPES)}"
+    if params.topic and not is_safe_topic_component(params.topic):
+        return (
+            "无效 topic: 只能使用安全目录名"
+            "（中文/Unicode 字母数字、ASCII 小写、数字和非首尾连字符）。"
+        )
+    return None
 
 
 def _scan_and_filter(

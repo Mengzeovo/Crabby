@@ -354,8 +354,10 @@ npm run start
 - Long-term memory source files live under `<vault>/.crabby/memory/` as
   `MEMORY.md`, `REGISTRY.md`, and `user/`, `feedback/`, `project/`, and
   `reference/` type directories. Topic subdirectories are created by memory
-  write code when a memory is actually written. `MEMORY.md` is a read/load rule
-  entry point, not a full memory index.
+  write code when a memory is actually written. Topic values may include
+  Chinese / Unicode letters and digits plus non-edge hyphens, while memory
+  `name` values remain ASCII kebab-case file slugs. `MEMORY.md` is a read/load
+  rule entry point, not a full memory index.
 - Planned memory frontmatter follows the facet model in
   `docs/记忆沉淀设计.md`: `type`, `topic`, `domain`, `kind`, `state`,
   `valid_from`, and `valid_to`. Timestamps, links, and provenance are

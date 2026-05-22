@@ -19,6 +19,40 @@ VALID_KINDS = ("fact", "rule", "pattern", "mistake", "goal", "case", "reflection
 VALID_STATES = ("active", "archived", "invalidated")
 
 _NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9\-]*[a-z0-9]$|^[a-z0-9]$")
+_TOPIC_ERROR = (
+    "topic must be a safe path component (ASCII lowercase or Unicode "
+    "letters/digits, plus internal hyphens; no spaces or path separators)"
+)
+
+
+def is_safe_topic_component(value: str) -> bool:
+    """Return True when *value* is safe as a topic directory name.
+
+    Topic names are user-facing and may be Chinese, but still map directly to a
+    single path component under ``.crabby/memory/{type}/``. Keep ASCII topic
+    style lowercase while allowing non-ASCII alphanumeric characters.
+    """
+
+    if not value or value != value.strip():
+        return False
+    if value[0] == "-" or value[-1] == "-":
+        return False
+
+    for char in value:
+        if char == "-":
+            continue
+        if char in {"/", "\\", "\x00"} or char.isspace():
+            return False
+        if ord(char) < 32 or ord(char) == 127:
+            return False
+        if char.isascii():
+            if char.islower() or char.isdigit():
+                continue
+            return False
+        if not char.isalnum():
+            return False
+
+    return True
 
 
 class MemoryFacets(BaseModel):
@@ -42,10 +76,8 @@ class MemoryFacets(BaseModel):
     @field_validator("topic")
     @classmethod
     def _check_topic(cls, v: str) -> str:
-        if not v or not _NAME_PATTERN.match(v):
-            raise ValueError(
-                f"topic must be kebab-case (lowercase alphanumeric + hyphens), got {v!r}"
-            )
+        if not is_safe_topic_component(v):
+            raise ValueError(f"{_TOPIC_ERROR}, got {v!r}")
         return v
 
     @field_validator("kind")
@@ -114,10 +146,8 @@ class MemoryDocument(BaseModel):
     @field_validator("topic")
     @classmethod
     def _check_topic(cls, v: str) -> str:
-        if not v or not _NAME_PATTERN.match(v):
-            raise ValueError(
-                f"topic must be kebab-case (lowercase alphanumeric + hyphens), got {v!r}"
-            )
+        if not is_safe_topic_component(v):
+            raise ValueError(f"{_TOPIC_ERROR}, got {v!r}")
         return v
 
     @field_validator("kind")

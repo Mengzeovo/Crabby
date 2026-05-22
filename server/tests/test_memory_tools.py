@@ -236,6 +236,31 @@ class TestMemoryWrite:
         assert "验证失败" in result.output
 
     @pytest.mark.asyncio
+    async def test_chinese_topic_write_and_search(
+        self, write_tool, search_tool, ctx, vault
+    ):
+        topic = "健身计划"
+        result = await write_tool.call(
+            MemoryWriteInput(
+                name="cn-topic",
+                type="project",
+                topic=topic,
+                body="中文 topic 可以作为记忆目录名。",
+            ),
+            ctx,
+        )
+
+        assert "已创建记忆" in result.output
+        path = vault / ".crabby" / "memory" / "project" / topic / "cn-topic.md"
+        assert path.is_file()
+
+        search = await search_tool.call(
+            MemorySearchInput(mode="search", type="project", topic=topic),
+            ctx,
+        )
+        assert "cn-topic" in search.output
+
+    @pytest.mark.asyncio
     async def test_supersedes_uses_index(self, write_tool, ctx, vault):
         await write_tool.call(
             MemoryWriteInput(
@@ -297,6 +322,16 @@ class TestMemorySearch:
             ctx,
         )
         assert "未找到" in result.output
+
+    @pytest.mark.asyncio
+    async def test_search_rejects_unsafe_topic(self, search_tool, ctx):
+        result = await search_tool.call(
+            MemorySearchInput(mode="search", type="project", topic="../general"),
+            ctx,
+        )
+        assert "无效 topic" in result.output
+        assert result.metadata["error"] is True
+        assert result.metadata["results"] == []
 
     @pytest.mark.asyncio
     async def test_search_finds_written_memory(self, write_tool, search_tool, ctx):

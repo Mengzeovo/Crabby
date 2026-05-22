@@ -22,6 +22,10 @@ class TestMemoryFacets:
         assert f.domain == []
         assert f.state == "active"
 
+    def test_valid_chinese_topic(self):
+        f = MemoryFacets(type="project", topic="健身计划", kind="fact")
+        assert f.topic == "健身计划"
+
     def test_invalid_type_raises(self):
         with pytest.raises(ValueError, match="type must be one of"):
             MemoryFacets(type="invalid")
