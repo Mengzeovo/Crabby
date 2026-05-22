@@ -45,7 +45,8 @@ class MemorySearchTool(Tool):
 
     name = "memory_search"
     description = (
-        "搜索和列出长期记忆。支持按 facet 字段过滤（type/topic/domain/kind/state/valid_at），"
+        "搜索和列出长期记忆。遇到历史偏好、既有决定、相关笔记或重复问题时优先使用。"
+        "支持按 facet 字段过滤（type/topic/domain/kind/state/valid_at），"
         "也支持 list_topics / list_domains / list_registry 模式查看已有词表。"
         "写入新记忆前应先用 list_registry 模式查看已有 topic 和 domain。"
     )

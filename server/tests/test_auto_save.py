@@ -20,11 +20,23 @@ class MockSettings:
     ]
 
 
-def _memory_registry() -> MagicMock:
+def _memory_registry(extra_tools: list[dict[str, str]] | None = None) -> MagicMock:
+    mock = MagicMock()
+    tools = [
+        {"name": "memory_search", "description": "test"},
+        {"name": "memory_write", "description": "test"},
+    ]
+    if extra_tools:
+        tools.extend(extra_tools)
+    mock.to_anthropic_tools.return_value = tools
+    return mock
+
+
+def _registry_without_memory_write() -> MagicMock:
     mock = MagicMock()
     mock.to_anthropic_tools.return_value = [
         {"name": "memory_search", "description": "test"},
-        {"name": "memory_write", "description": "test"},
+        {"name": "diary_write", "description": "test"},
     ]
     return mock
 
@@ -329,7 +341,13 @@ class TestProcessAutoSave:
 
         async def fake_chat_completion(**kwargs: object) -> dict:
             messages = kwargs["messages"]
+            tools = kwargs["tools"]
             assert isinstance(messages, list)
+            assert isinstance(tools, list)
+            assert [tool["name"] for tool in tools] == [
+                "memory_search",
+                "memory_write",
+            ]
             captured_user_content.append(str(messages[0]["content"]))
             return {
                 "content": [{"type": "text", "text": "done"}],
@@ -338,11 +356,20 @@ class TestProcessAutoSave:
 
         monkeypatch.setattr("memory.auto_save.chat_completion", fake_chat_completion)
 
-        succeeded = await _process_auto_save(job, _memory_registry(), store)
+        succeeded = await _process_auto_save(
+            job,
+            _memory_registry([
+                {"name": "bash", "description": "test"},
+                {"name": "diary_write", "description": "test"},
+            ]),
+            store,
+        )
 
         assert succeeded is True
         assert "snapshot message" in captured_user_content[0]
         assert "live message after enqueue" not in captured_user_content[0]
+        assert "长期信息写入记忆" in captured_user_content[0]
+        assert job.branch_fingerprint in captured_user_content[0]
 
         reloaded = SessionStore(storage_dir=tmp_path / "sessions").get("snapshot-test")
         assert reloaded is not None
@@ -400,22 +427,241 @@ class TestProcessAutoSave:
         trigger_auto_save(session)
         job = _auto_save_queue.get_nowait()
 
-        registry = MagicMock()
-        registry.to_anthropic_tools.return_value = [
-            {"name": "memory_search", "description": "test"},
-        ]
-
         async def fake_chat_completion(**kwargs: object) -> dict:
             raise AssertionError("chat_completion should not run without memory_write")
 
         monkeypatch.setattr("memory.auto_save.chat_completion", fake_chat_completion)
 
-        succeeded = await _process_auto_save(job, registry, store)
+        succeeded = await _process_auto_save(
+            job,
+            _registry_without_memory_write(),
+            store,
+        )
 
         assert succeeded is False
         reloaded = SessionStore(storage_dir=tmp_path / "sessions").get("missing-write")
         assert reloaded is not None
         assert reloaded.get_auto_save_checkpoint("root") is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("tool_name", ["bash", "edit", "diary_read", "diary_write"])
+    async def test_non_memory_tool_is_rejected_before_execution(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        tool_name: str,
+    ) -> None:
+        from memory import SessionStore
+        from memory.auto_save import _auto_save_queue, _process_auto_save, trigger_auto_save
+
+        store = SessionStore(storage_dir=tmp_path / "sessions")
+        session = store.create(f"non-memory-{tool_name}")
+        session.add_user_message("important durable preference")
+        store.persist(session)
+        trigger_auto_save(session)
+        job = _auto_save_queue.get_nowait()
+
+        responses = iter(
+            [
+                {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": f"toolu_{tool_name}",
+                            "name": tool_name,
+                            "input": {"command": "should not execute"},
+                        }
+                    ],
+                    "stop_reason": "tool_use",
+                },
+                {"content": [{"type": "text", "text": "done"}], "stop_reason": "end_turn"},
+            ]
+        )
+
+        async def fake_chat_completion(**kwargs: object) -> dict:
+            return next(responses)
+
+        monkeypatch.setattr("memory.auto_save.chat_completion", fake_chat_completion)
+
+        execute_tool_call_mock = AsyncMock(
+            side_effect=AssertionError("execute_tool_call should not run for non-memory auto-save"),
+        )
+        with patch("memory.auto_save.execute_tool_call", execute_tool_call_mock):
+            succeeded = await _process_auto_save(job, _memory_registry(), store)
+
+        assert succeeded is False
+        execute_tool_call_mock.assert_not_awaited()
+        reloaded = SessionStore(storage_dir=tmp_path / "sessions").get(
+            f"non-memory-{tool_name}"
+        )
+        assert reloaded is not None
+        assert reloaded.get_auto_save_checkpoint("root") is None
+
+    @pytest.mark.asyncio
+    async def test_memory_write_after_non_memory_tool_rejection_advances_checkpoint(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from memory import SessionStore
+        from memory.auto_save import _auto_save_queue, _process_auto_save, trigger_auto_save
+
+        store = SessionStore(storage_dir=tmp_path / "sessions")
+        session = store.create("non-memory-recovered")
+        session.add_user_message("important durable preference")
+        store.persist(session)
+        trigger_auto_save(session)
+        job = _auto_save_queue.get_nowait()
+
+        responses = iter(
+            [
+                {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_bash",
+                            "name": "bash",
+                            "input": {"command": "should not execute"},
+                        }
+                    ],
+                    "stop_reason": "tool_use",
+                },
+                {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_good_write",
+                            "name": "memory_write",
+                            "input": {"name": "good"},
+                        }
+                    ],
+                    "stop_reason": "tool_use",
+                },
+                {"content": [{"type": "text", "text": "done"}], "stop_reason": "end_turn"},
+            ]
+        )
+
+        async def fake_chat_completion(**kwargs: object) -> dict:
+            return next(responses)
+
+        monkeypatch.setattr("memory.auto_save.chat_completion", fake_chat_completion)
+
+        execute_tool_call_mock = AsyncMock(
+            return_value=("written", {"status": "success", "is_error": False, "metadata": {}}),
+        )
+        with patch("memory.auto_save.execute_tool_call", execute_tool_call_mock):
+            succeeded = await _process_auto_save(job, _memory_registry(), store)
+
+        assert succeeded is True
+        execute_tool_call_mock.assert_awaited_once()
+        assert execute_tool_call_mock.await_args.args[1] == "memory_write"
+        reloaded = SessionStore(storage_dir=tmp_path / "sessions").get(
+            "non-memory-recovered"
+        )
+        assert reloaded is not None
+        checkpoint = reloaded.get_auto_save_checkpoint("root")
+        assert checkpoint is not None
+        assert checkpoint["last_reviewed_message_id"] == job.messages_to_review[-1][
+            "message_id"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_rebases_frozen_auto_save_window(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from memory import SessionStore
+        from memory.auto_save import _auto_save_queue, _process_auto_save, trigger_auto_save
+
+        store = SessionStore(storage_dir=tmp_path / "sessions")
+        session = store.create("rebase-test")
+        session.add_user_message("context message")
+        session.add_user_message("already reviewed marker")
+        session.add_user_message("new tail")
+        store.persist(session)
+        trigger_auto_save(session)
+        job = _auto_save_queue.get_nowait()
+
+        checkpoint_message_id = job.messages_to_review[1]["message_id"]
+        session = store.get("rebase-test")
+        assert session is not None
+        session.set_auto_save_checkpoint(
+            "root",
+            message_id=checkpoint_message_id,
+            revision=session.conversation_revision,
+            branch_fingerprint=session.branch_fingerprint("root"),
+            reviewed_at=1.0,
+        )
+        store.persist(session)
+
+        captured_user_content: list[str] = []
+
+        async def fake_chat_completion(**kwargs: object) -> dict:
+            messages = kwargs["messages"]
+            assert isinstance(messages, list)
+            captured_user_content.append(str(messages[0]["content"]))
+            return {
+                "content": [{"type": "text", "text": "done"}],
+                "stop_reason": "end_turn",
+            }
+
+        monkeypatch.setattr("memory.auto_save.chat_completion", fake_chat_completion)
+
+        succeeded = await _process_auto_save(job, _memory_registry(), store)
+
+        assert succeeded is True
+        review_section = captured_user_content[0].split("## 待审阅新增消息", 1)[1]
+        assert "already reviewed marker" not in review_section
+        assert "new tail" in review_section
+        reloaded = SessionStore(storage_dir=tmp_path / "sessions").get("rebase-test")
+        assert reloaded is not None
+        checkpoint = reloaded.get_auto_save_checkpoint("root")
+        assert checkpoint is not None
+        assert checkpoint["last_reviewed_message_id"] == job.messages_to_review[-1][
+            "message_id"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_stale_checkpoint_skips_frozen_auto_save_job(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from memory import SessionStore
+        from memory.auto_save import _auto_save_queue, _process_auto_save, trigger_auto_save
+
+        store = SessionStore(storage_dir=tmp_path / "sessions")
+        session = store.create("stale-checkpoint")
+        session.add_user_message("hello")
+        store.persist(session)
+        trigger_auto_save(session)
+        job = _auto_save_queue.get_nowait()
+
+        session = store.get("stale-checkpoint")
+        assert session is not None
+        session.set_auto_save_checkpoint(
+            "root",
+            message_id="missing-message",
+            revision=session.conversation_revision + 1,
+            branch_fingerprint=session.branch_fingerprint("root"),
+            reviewed_at=1.0,
+        )
+        store.persist(session)
+
+        async def fake_chat_completion(**kwargs: object) -> dict:
+            raise AssertionError("chat_completion should not run for a stale job")
+
+        monkeypatch.setattr("memory.auto_save.chat_completion", fake_chat_completion)
+
+        succeeded = await _process_auto_save(job, _memory_registry(), store)
+
+        assert succeeded is True
+        reloaded = SessionStore(storage_dir=tmp_path / "sessions").get("stale-checkpoint")
+        assert reloaded is not None
+        checkpoint = reloaded.get_auto_save_checkpoint("root")
+        assert checkpoint is not None
+        assert checkpoint["last_reviewed_message_id"] == "missing-message"
 
     @pytest.mark.asyncio
     async def test_tool_error_does_not_advance_checkpoint(

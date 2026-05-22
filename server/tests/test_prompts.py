@@ -161,6 +161,7 @@ def test_prompt_loader_uses_external_segments_in_fixed_order(monkeypatch, tmp_pa
     (tmp_path / "identity.md").write_text("IDENTITY FROM DISK", encoding="utf-8")
     (tmp_path / "safety.md").write_text("SAFETY FROM DISK", encoding="utf-8")
     (tmp_path / "tool_usage.md").write_text("TOOL USAGE FROM DISK", encoding="utf-8")
+    (tmp_path / "memory_hint.md").write_text("MEMORY HINT FROM DISK", encoding="utf-8")
     (tmp_path / "skill_intro.md").write_text("SKILL INTRO FROM DISK", encoding="utf-8")
     monkeypatch.setattr(settings, "prompts_dir", str(tmp_path))
 
@@ -169,7 +170,29 @@ def test_prompt_loader_uses_external_segments_in_fixed_order(monkeypatch, tmp_pa
     identity_idx = prompt.index("IDENTITY FROM DISK")
     safety_idx = prompt.index("SAFETY FROM DISK")
     tool_usage_idx = prompt.index("TOOL USAGE FROM DISK")
-    assert identity_idx < safety_idx < tool_usage_idx
+    memory_hint_idx = prompt.index("MEMORY HINT FROM DISK")
+    assert identity_idx < safety_idx < tool_usage_idx < memory_hint_idx
+
+
+def test_system_prompt_uses_memory_hint_but_not_memory_md(monkeypatch, tmp_path) -> None:
+    (tmp_path / "identity.md").write_text("IDENTITY FROM DISK", encoding="utf-8")
+    (tmp_path / "safety.md").write_text("SAFETY FROM DISK", encoding="utf-8")
+    (tmp_path / "tool_usage.md").write_text("TOOL USAGE FROM DISK", encoding="utf-8")
+    (tmp_path / "memory_hint.md").write_text("MEMORY HINT FROM DISK", encoding="utf-8")
+    (tmp_path / "skill_intro.md").write_text("SKILL INTRO FROM DISK", encoding="utf-8")
+
+    vault = tmp_path / "vault"
+    memory_dir = vault / ".crabby" / "memory"
+    memory_dir.mkdir(parents=True)
+    (memory_dir / "MEMORY.md").write_text("FULL MEMORY CORPUS", encoding="utf-8")
+
+    monkeypatch.setattr(settings, "prompts_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "vault_path", vault)
+
+    prompt = build_system_prompt()
+
+    assert "MEMORY HINT FROM DISK" in prompt
+    assert "FULL MEMORY CORPUS" not in prompt
 
 
 def test_prompt_loader_falls_back_for_missing_segments(tmp_path) -> None:
@@ -179,3 +202,4 @@ def test_prompt_loader_falls_back_for_missing_segments(tmp_path) -> None:
 
     assert segments["identity.md"] == "CUSTOM IDENTITY ONLY"
     assert "## 安全边界" in segments["safety.md"]
+    assert "memory_search" in segments["memory_hint.md"]

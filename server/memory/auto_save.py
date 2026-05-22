@@ -125,21 +125,26 @@ async def _process_auto_save(
         )
         return False
 
-    allowed_tools: list[str] = getattr(
-        settings,
-        "auto_save_allowed_tools",
-        DEFAULT_AUTO_SAVE_ALLOWED_TOOLS,
-    )
+    rebased_job = _rebase_auto_save_job(job, store)
+    if rebased_job is None:
+        logger.debug(
+            "Auto-save skipped for session %s conversation %s: checkpoint already covers frozen window.",
+            job.session_id,
+            job.conversation_id,
+        )
+        return True
+    job = rebased_job
+
     tools_schema = [
-        t for t in registry.to_anthropic_tools() if t["name"] in allowed_tools
+        t
+        for t in registry.to_anthropic_tools()
+        if t.get("name") in DEFAULT_AUTO_SAVE_ALLOWED_TOOLS
     ]
     available_tool_names = {str(t.get("name")) for t in tools_schema}
 
     if "memory_write" not in available_tool_names:
         logger.warning(
-            "Auto-save skipped: required memory_write tool is not registered "
-            "within allowed tools (%s).",
-            allowed_tools,
+            "Auto-save skipped: required memory_write tool is not registered.",
         )
         await _notify_visible_client(
             job.session_id,
@@ -199,7 +204,11 @@ async def _run_auto_save_chunk(
     agent_messages = [
         {
             "role": "user",
-            "content": _build_review_input(context_messages, review_messages),
+            "content": _build_review_input(
+                job,
+                context_messages,
+                review_messages,
+            ),
         }
     ]
 
@@ -245,6 +254,25 @@ async def _run_auto_save_chunk(
             tool_input = block["input"]
             tool_id = block["id"]
 
+            if tool_name not in DEFAULT_AUTO_SAVE_ALLOWED_TOOLS:
+                llm_text, ui_payload = _build_auto_save_rejection(
+                    tool_name=tool_name,
+                    tool_id=tool_id,
+                    message=(
+                        "auto-save 只允许使用 memory_search 或 memory_write，"
+                        f"当前收到的是 {tool_name!r}。"
+                    ),
+                    error_type="auto_save_tool",
+                )
+                if _tool_call_failed(ui_payload):
+                    unresolved_tool_error = True
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tool_id,
+                    "content": llm_text,
+                })
+                continue
+
             llm_text, ui_payload = await execute_tool_call(
                 registry,
                 tool_name,
@@ -279,6 +307,80 @@ def _tool_call_failed(ui_payload: dict[str, Any]) -> bool:
         ui_payload.get("is_error") is True
         or ui_payload.get("status") == "error"
         or (isinstance(metadata, dict) and bool(metadata.get("error")))
+    )
+
+
+def _build_auto_save_rejection(
+    *,
+    tool_name: str,
+    tool_id: str,
+    message: str,
+    error_type: str,
+) -> tuple[str, dict[str, Any]]:
+    return (
+        f"[error] {message}",
+        {
+            "id": tool_id,
+            "tool_use_id": tool_id,
+            "name": tool_name,
+            "tool": tool_name,
+            "output": message,
+            "metadata": {
+                "error": message,
+                "error_type": error_type,
+            },
+            "status": "error",
+            "is_error": True,
+            "is_truncated": False,
+            "cache_path": None,
+            "elapsed_ms": 0,
+        },
+    )
+
+
+def _rebase_auto_save_job(
+    job: AutoSaveJob,
+    store: SessionStore,
+) -> AutoSaveJob | None:
+    session = store.get(job.session_id)
+    if session is None:
+        return None
+
+    checkpoint = session.get_auto_save_checkpoint(job.conversation_id)
+    if not checkpoint:
+        return job
+
+    checkpoint_message_id = str(checkpoint.get("last_reviewed_message_id") or "")
+    if not checkpoint_message_id:
+        return job
+
+    if _find_message_index(job.context_messages, checkpoint_message_id) is not None:
+        return job
+
+    review_index = _find_message_index(job.messages_to_review, checkpoint_message_id)
+    if review_index is None:
+        checkpoint_revision = checkpoint.get("last_reviewed_revision")
+        if (
+            isinstance(checkpoint_revision, int)
+            and checkpoint_revision >= job.conversation_revision
+        ):
+            return None
+        return job
+
+    trimmed_context = copy.deepcopy(
+        job.context_messages + job.messages_to_review[: review_index + 1]
+    )
+    trimmed_review = copy.deepcopy(job.messages_to_review[review_index + 1 :])
+    if not trimmed_review:
+        return None
+
+    return AutoSaveJob(
+        session_id=job.session_id,
+        conversation_id=job.conversation_id,
+        branch_fingerprint=job.branch_fingerprint,
+        conversation_revision=job.conversation_revision,
+        messages_to_review=trimmed_review,
+        context_messages=trimmed_context,
     )
 
 
@@ -386,6 +488,7 @@ def _last_message_id(messages: list[dict[str, Any]]) -> str | None:
 
 
 def _build_review_input(
+    job: AutoSaveJob,
     context_messages: list[dict[str, Any]],
     review_messages: list[dict[str, Any]],
 ) -> str:
@@ -393,6 +496,14 @@ def _build_review_input(
     review_text = _render_messages(review_messages) or "（无）"
     return (
         "以下是 auto-save 需要审阅的对话片段。\n\n"
+        "## 任务\n"
+        "只允许使用 memory_search 和 memory_write。把未来会话确实会复用的长期信息写入记忆；"
+        "如果待审阅新增消息没有严格长期价值，直接结束，不要调用工具。\n\n"
+        "## 快照\n"
+        f"- session_id: {job.session_id}\n"
+        f"- conversation_id: {job.conversation_id}\n"
+        f"- branch_fingerprint: {job.branch_fingerprint}\n"
+        f"- conversation_revision: {job.conversation_revision}\n\n"
         "## 背景上下文\n"
         "只用于理解新增消息，不要仅凭这里写新记忆。\n\n"
         f"{context_text}\n\n"

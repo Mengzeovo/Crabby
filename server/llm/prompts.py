@@ -50,6 +50,12 @@ TOOL_USAGE = """\
 - 工具输出可能被截断；在看到截断提示时，不要假设自己已经拿到了完整结果。
 """
 
+MEMORY_HINT = """\
+## 记忆提示
+- 本地有长期记忆库。遇到历史偏好、既有决定、相关笔记或重复问题时，优先使用 `memory_search` 查找现成记忆，再回答。
+- 不要把整份记忆规则或全量记忆库塞进上下文。
+"""
+
 SKILL_INTRO = """\
 ## 技能系统
 技能是行为指南，不是可调用工具。
@@ -68,6 +74,7 @@ PROMPT_SEGMENTS: tuple[tuple[str, str], ...] = (
     ("identity.md", IDENTITY),
     ("safety.md", SAFETY),
     ("tool_usage.md", TOOL_USAGE),
+    ("memory_hint.md", MEMORY_HINT),
     ("skill_intro.md", SKILL_INTRO),
 )
 
@@ -204,6 +211,7 @@ def build_system_prompt(
         prompt_segments["identity.md"],
         prompt_segments["safety.md"],
         prompt_segments["tool_usage.md"],
+        prompt_segments["memory_hint.md"],
     ]
     dynamic = (
         "## 环境\n"
