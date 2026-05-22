@@ -526,6 +526,68 @@ async def test_loop_stop_tool_renders_summary(tmp_path: Path, runtime_data_path:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_class_name", "tool_input"),
+    [
+        ("LoopAskTool", {"job_id": "missing-loop"}),
+        ("LoopSubmitTool", {"job_id": "missing-loop", "user_input": "note"}),
+        ("LoopNextTool", {"job_id": "missing-loop"}),
+        ("LoopPauseTool", {"job_id": "missing-loop"}),
+        ("LoopStopTool", {"job_id": "missing-loop"}),
+    ],
+)
+async def test_interactive_loop_missing_jobs_are_errors(
+    tmp_path: Path,
+    runtime_data_path: Path,
+    tool_class_name: str,
+    tool_input: dict[str, str],
+):
+    """Interactive loop tools must not report missing jobs as successful text."""
+    import tools.loop_task as loop_tools
+
+    tool_cls = getattr(loop_tools, tool_class_name)
+    tool = tool_cls()
+    result = await tool.call(
+        tool_cls.input_schema(**tool_input),
+        Context(vault_path=tmp_path, runtime_data_path=runtime_data_path),
+    )
+
+    assert result.metadata["error_type"] == "not_found"
+    assert result.metadata["job_id"] == "missing-loop"
+    assert result.metadata["error"]
+
+
+@pytest.mark.asyncio
+async def test_loop_stop_missing_job_is_error(tmp_path: Path, runtime_data_path: Path):
+    """LoopStopTool must mark missing jobs as errors so UI prompts do not treat them as summaries."""
+    from llm.tool_executor import execute_tool_call
+    from tools.loop_task import LoopStopTool
+    from tools.registry import ToolRegistry
+
+    ctx = Context(vault_path=tmp_path, runtime_data_path=runtime_data_path)
+    tool = LoopStopTool()
+    result = await tool.call(LoopStopTool.input_schema(job_id="missing-loop"), ctx)
+
+    assert result.metadata["error_type"] == "not_found"
+    assert result.metadata["job_id"] == "missing-loop"
+
+    registry = ToolRegistry()
+    registry.register(LoopStopTool())
+    llm_text, ui = await execute_tool_call(
+        registry,
+        "loop_stop",
+        {"job_id": "missing-loop"},
+        ctx=ctx,
+        tool_id="toolu_missing_loop",
+    )
+
+    assert llm_text.startswith("[error]")
+    assert ui["status"] == "error"
+    assert ui["is_error"] is True
+    assert ui["metadata"]["error_type"] == "not_found"
+
+
+@pytest.mark.asyncio
 async def test_loop_pause_tool_updates_status(tmp_path: Path, runtime_data_path: Path):
     """LoopPauseTool must set status to PAUSED."""
     from memory import set_session_store

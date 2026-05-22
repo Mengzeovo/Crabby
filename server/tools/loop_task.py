@@ -40,6 +40,18 @@ from tools.base import Context, Tool, ToolResult
 logger = logging.getLogger(__name__)
 
 
+def _loop_job_error(job_id: str, message: str | None = None) -> ToolResult:
+    output = message or f"未找到 Loop 任务 [{job_id}]。"
+    return ToolResult(
+        output=output,
+        metadata={
+            "error": output,
+            "error_type": "not_found",
+            "job_id": job_id,
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Interactive Loop tools
 # ---------------------------------------------------------------------------
@@ -188,7 +200,7 @@ class LoopAskTool(Tool):
 
         job = loop_get(params.job_id, runtime_data_path=runtime_data_path)
         if job is None:
-            return ToolResult(output=f"未找到 Loop 任务 [{params.job_id}]。")
+            return _loop_job_error(params.job_id)
         if not job.interactive:
             return ToolResult(output="loop_ask 仅适用于交互式 loop 任务。")
 
@@ -253,7 +265,10 @@ class LoopSubmitTool(Tool):
         )
 
         if job is None:
-            return ToolResult(output=f"未找到或无法更新 Loop 任务 [{params.job_id}]。")
+            return _loop_job_error(
+                params.job_id,
+                f"未找到或无法更新 Loop 任务 [{params.job_id}]。",
+            )
 
         # Clear active_loop_id from session when the loop reaches DONE.
         if job.status == LoopStatus.DONE and job.source_session_id:
@@ -315,7 +330,7 @@ class LoopNextTool(Tool):
 
         job = loop_get(params.job_id, runtime_data_path=runtime_data_path)
         if job is None:
-            return ToolResult(output=f"未找到 Loop 任务 [{params.job_id}]。")
+            return _loop_job_error(params.job_id)
 
         updated = loop_update_round(
             params.job_id,
@@ -323,7 +338,10 @@ class LoopNextTool(Tool):
             runtime_data_path=runtime_data_path,
         )
         if updated is None:
-            return ToolResult(output=f"未找到或无法更新 Loop 任务 [{params.job_id}]。")
+            return _loop_job_error(
+                params.job_id,
+                f"未找到或无法更新 Loop 任务 [{params.job_id}]。",
+            )
 
         # Clear active_loop_id from session when the loop reaches DONE.
         if updated.status == LoopStatus.DONE and updated.source_session_id:
@@ -387,7 +405,7 @@ class LoopPauseTool(Tool):
 
         job = loop_get(params.job_id, runtime_data_path=runtime_data_path)
         if job is None:
-            return ToolResult(output=f"未找到 Loop 任务 [{params.job_id}]。")
+            return _loop_job_error(params.job_id)
 
         update_status(params.job_id, LoopStatus.PAUSED, runtime_data_path=runtime_data_path)
 
@@ -444,7 +462,7 @@ class LoopStopTool(Tool):
 
         job = loop_get(params.job_id, runtime_data_path=runtime_data_path)
         if job is None:
-            return ToolResult(output=f"未找到 Loop 任务 [{params.job_id}]。")
+            return _loop_job_error(params.job_id)
 
         complete_job(params.job_id, runtime_data_path=runtime_data_path)
 
