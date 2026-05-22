@@ -383,6 +383,14 @@ def test_status_error_on_metadata_error():
     assert ui["is_error"] is True
 
 
+def test_format_for_llm_marks_metadata_error_as_error():
+    """ToolResult.metadata.error must surface as an LLM-visible error prefix."""
+    tool = SimpleTool()
+    result = ToolResult(output="validation failed", metadata={"error": True})
+
+    assert tool.format_for_llm(result).startswith("[error]")
+
+
 def test_status_warning_on_truncation():
     """is_truncated=True must result in status=warning (not error)."""
     ui = _build_ui_payload(

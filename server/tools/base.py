@@ -139,6 +139,7 @@ class Tool(ABC):
         使 LLM 能可靠判断工具是否成功执行。
         """
         if (
+            result.metadata.get("error") or
             result.metadata.get("blocked")
             or result.metadata.get("timeout")
             or self._has_nonzero_exit(result.metadata)
