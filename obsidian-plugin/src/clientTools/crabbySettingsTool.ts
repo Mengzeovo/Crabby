@@ -8,6 +8,7 @@ import {
   fetchLlmProfilesFromBackend,
   saveLlmProfileToBackend,
 } from "../config/backendConfig";
+import { resolveDiaryConfigPath } from "../config/diaryConfig";
 import { normalizeLlmProviderId } from "../config/llmProviders";
 import { resolvePluginRuntimeLayout } from "../runtime/backendRuntime";
 import type CrabbyPlugin from "../main";
@@ -306,11 +307,14 @@ function buildSettingsSnapshot(plugin: CrabbyPlugin): Record<string, unknown> {
     backendEnvPath: plugin.settings.backendEnvPath,
     backendMcpConfigPath: plugin.settings.backendMcpConfigPath,
     runtimeManifestUrl: plugin.settings.runtimeManifestUrl,
+    diary: plugin.settings.diary,
+    diaryConfigPath: resolveDiaryConfigPath(plugin.getCurrentVaultPath()),
     activeProfileId: plugin.settings.activeProfileId,
     llmProfiles: plugin.settings.llmProfiles.map(sanitizeProfile),
     runtimeStatus,
     backendEnvPathExists: pathExists(plugin.settings.backendEnvPath),
     backendMcpConfigPathExists: pathExists(plugin.settings.backendMcpConfigPath),
+    diaryConfigPathExists: pathExists(resolveDiaryConfigPath(plugin.getCurrentVaultPath())),
   };
 }
 

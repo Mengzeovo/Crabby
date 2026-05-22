@@ -31,6 +31,7 @@ export interface UserMsgRef {
 export interface ChatElements {
   messagesEl: HTMLDivElement;
   minimapEl: HTMLDivElement;
+  diaryPromptEl: HTMLDivElement;
   inputAreaEl: HTMLDivElement;
   inputEl: HTMLTextAreaElement;
   sendBtn: HTMLButtonElement;
@@ -133,6 +134,16 @@ export interface ChatPersonaController {
   setPersonaState(nextState: PersonaState): void;
 }
 
+export interface DiaryPromptController {
+  showLoopStopResult(
+    payload: ToolCallPayload,
+    sessionId: string,
+    conversationId: string,
+  ): void;
+  hide(): void;
+  destroy(): void;
+}
+
 export interface ChatTurnRunnerController {
   handleSend(overrideText?: string): Promise<void>;
   handleStop(): void;
@@ -152,6 +163,7 @@ export interface TurnRunnerDeps extends ChatCommonDeps {
   transcript: ChatTranscriptController;
   sessions: ChatSessionsController;
   persona: ChatPersonaController;
+  diaryPrompt: DiaryPromptController;
 }
 
 export type ChatCleanup = () => void;

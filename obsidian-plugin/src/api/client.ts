@@ -93,6 +93,20 @@ export interface ChatResponse {
   persona_state: PersonaState;
 }
 
+export type DiaryPeriod = "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
+
+export interface DiaryWriteRequest {
+  session_id: string;
+  conversation_id: string;
+  period?: DiaryPeriod;
+  date?: string;
+  summary: string;
+  topics?: string[];
+  domains?: string[];
+  memory_links?: string[];
+  entry_key?: string;
+}
+
 export interface ActualTokenUsage {
   call_count: number;
   prompt_tokens: number;
@@ -564,6 +578,19 @@ export class AgentClient {
     const resp = await fetch(`${this.baseUrl}/capabilities`);
     if (!resp.ok) throw new Error(`Capabilities API error: ${resp.status}`);
     return (await resp.json()) as BackendCapabilities;
+  }
+
+  async writeDiaryEntry(payload: DiaryWriteRequest): Promise<ToolCallPayload> {
+    const resp = await fetch(`${this.baseUrl}/diary/write`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const detail = await readErrorDetail(resp);
+      throw new Error(detail || `Diary write API error: ${resp.status}`);
+    }
+    return (await resp.json()) as ToolCallPayload;
   }
 
   async deleteSession(sessionId: string): Promise<void> {

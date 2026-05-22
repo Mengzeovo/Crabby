@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from attachment_store import AttachmentStore
 from config import settings
@@ -181,6 +181,18 @@ class ChatRequest(BaseModel):
     manual_persona_id: str | None = None
 
 
+class DiaryWriteRequest(BaseModel):
+    session_id: str
+    conversation_id: str | None = None
+    period: str = "daily"
+    date: str | None = None
+    summary: str
+    topics: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    memory_links: list[str] = Field(default_factory=list)
+    entry_key: str | None = None
+
+
 class PersonaSummary(BaseModel):
     id: str
     title: str
@@ -334,6 +346,42 @@ async def list_skills() -> list[SkillSummary]:
 @router.get("/capabilities", response_model=CapabilitiesResponse)
 async def capabilities() -> CapabilitiesResponse:
     return CapabilitiesResponse(supports_vision=settings.llm_supports_vision)
+
+
+@router.post("/diary/write")
+async def write_diary(req: DiaryWriteRequest) -> dict[str, Any]:
+    """Write a diary entry through the existing diary_write tool."""
+    assert _registry is not None
+    assert _session_store is not None
+
+    session = _get_session_or_404(req.session_id)
+    conversation_id = req.conversation_id or session.active_conversation_id
+    safe_conversation_id = _require_safe_conversation_id(conversation_id)
+    if not _session_store.conversation_exists(session.id, safe_conversation_id):
+        raise HTTPException(404, f"Conversation {conversation_id} not found")
+
+    branch_fingerprint = session.branch_fingerprint(safe_conversation_id)
+    ctx = build_default_context(
+        session_id=session.id,
+        conversation_id=safe_conversation_id,
+        branch_fingerprint=branch_fingerprint,
+    )
+    tool_input = {
+        "period": req.period,
+        "date": req.date,
+        "summary": req.summary,
+        "topics": req.topics,
+        "domains": req.domains,
+        "memory_links": req.memory_links,
+        "entry_key": req.entry_key,
+    }
+    _llm_text, ui_payload = await execute_tool_call(
+        _registry,
+        "diary_write",
+        {key: value for key, value in tool_input.items() if value is not None},
+        ctx=ctx,
+    )
+    return ui_payload
 
 
 @router.get("/sessions/{session_id}/conversations/{conversation_id}/context-stats")

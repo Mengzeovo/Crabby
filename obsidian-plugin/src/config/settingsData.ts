@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import type { CrabbySettings, LlmProfile } from "../settings";
+import { normalizeDiarySettings } from "./diaryConfig";
 import { normalizeLlmProviderId } from "./llmProviders";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -106,6 +107,13 @@ export function hydrateSettings(
 ): CrabbySettings {
   const source = isRecord(loaded) ? loaded : {};
   const backendEnvPath = normalizeBackendEnvPath(source, defaults);
+  const diary = (() => {
+    try {
+      return normalizeDiarySettings(source.diary);
+    } catch {
+      return normalizeDiarySettings({});
+    }
+  })();
 
   return {
     ...defaults,
@@ -120,6 +128,7 @@ export function hydrateSettings(
       defaults.runtimeManifestUrl,
     ),
     backendPath: "",
+    diary,
     llmProfiles: Array.isArray(source.llmProfiles)
       ? source.llmProfiles
           .map((profile) => normalizeProfile(profile))

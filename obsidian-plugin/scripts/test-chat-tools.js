@@ -4,11 +4,11 @@ const os = require("node:os");
 const path = require("node:path");
 const esbuild = require("esbuild");
 
-async function loadChatTranscriptModule() {
+async function loadBundledChatModule(entryFile, outfileName) {
   const outdir = await fs.mkdtemp(path.join(os.tmpdir(), "chat-tools-test-"));
-  const outfile = path.join(outdir, "chatTranscript.cjs");
+  const outfile = path.join(outdir, outfileName);
   await esbuild.build({
-    entryPoints: [path.join(__dirname, "../src/chat/chatTranscript.ts")],
+    entryPoints: [path.join(__dirname, "../src/chat", entryFile)],
     bundle: true,
     format: "cjs",
     platform: "node",
@@ -23,7 +23,19 @@ async function loadChatTranscriptModule() {
           }));
           build.onLoad({ filter: /.*/, namespace: "obsidian-stub" }, () => ({
             contents:
-              "module.exports = { MarkdownRenderer: { render() {} }, setTooltip() {} };",
+              `
+class Notice {
+  static messages = [];
+  constructor(message) {
+    Notice.messages.push(String(message));
+  }
+}
+class TFile {}
+function normalizePath(value) {
+  return String(value).replace(/\\\\/g, "/").replace(/\\/+/g, "/").replace(/^\\//, "");
+}
+module.exports = { MarkdownRenderer: { render() {} }, Notice, TFile, normalizePath, setTooltip() {} };
+`,
             loader: "js",
           }));
         },
@@ -31,6 +43,14 @@ async function loadChatTranscriptModule() {
     ],
   });
   return require(outfile);
+}
+
+async function loadChatTranscriptModule() {
+  return loadBundledChatModule("chatTranscript.ts", "chatTranscript.cjs");
+}
+
+async function loadChatDiaryPromptModule() {
+  return loadBundledChatModule("chatDiaryPrompt.ts", "chatDiaryPrompt.cjs");
 }
 
 async function main() {
@@ -155,6 +175,9 @@ async function main() {
     historicalBlock.querySelector(".chat-tool-terminal").textContent,
     /historic partial/,
   );
+
+  const { createDiaryPrompt } = await loadChatDiaryPromptModule();
+  await testDiaryPrompt(createDiaryPrompt);
 }
 
 class ClassListStub {
@@ -326,6 +349,87 @@ function createTranscriptHarness(createChatTranscript) {
     },
   });
   return { transcript, messagesEl };
+}
+
+async function testDiaryPrompt(createDiaryPrompt) {
+  const vaultRoot = await fs.mkdtemp(path.join(os.tmpdir(), "chat-diary-test-"));
+  const templateDir = path.join(vaultRoot, ".crabby", "templates", "diary");
+  await fs.mkdir(templateDir, { recursive: true });
+  await fs.writeFile(path.join(templateDir, "daily.md"), "template", "utf8");
+
+  const rootEl = new ElementStub();
+  let resolveFirstWrite;
+  const firstWrite = new Promise((resolve) => {
+    resolveFirstWrite = resolve;
+  });
+  let writeCalls = 0;
+  const client = {
+    writeDiaryEntry: () => {
+      writeCalls += 1;
+      return firstWrite;
+    },
+  };
+  const plugin = {
+    settings: {
+      diary: {
+        templatePaths: {
+          daily: ".crabby/templates/diary/daily.md",
+        },
+      },
+    },
+    getCurrentVaultPath: () => vaultRoot,
+    ensureBackendVaultPathSynced: async () => ({
+      ok: true,
+      changed: false,
+      message: "ok",
+    }),
+  };
+  const controller = createDiaryPrompt({
+    app: { vault: { getAbstractFileByPath: () => null } },
+    client,
+    plugin,
+    rootEl,
+    openPluginSettings: () => true,
+  });
+
+  controller.showLoopStopResult(
+    { name: "loop_stop", output: "missing job", metadata: {} },
+    "session-1",
+    "conversation-1",
+  );
+  assert.equal(rootEl.children.length, 0);
+  assert.equal(rootEl.classList.contains("is-open"), false);
+
+  controller.showLoopStopResult(
+    { name: "loop_stop", output: "first summary", metadata: { job_id: "job-1" } },
+    "session-1",
+    "conversation-1",
+  );
+  assert.equal(rootEl.classList.contains("is-open"), true);
+  assert.match(
+    rootEl.querySelector(".chat-diary-prompt-preview").textContent,
+    /first summary/,
+  );
+
+  const writeButton = rootEl.querySelector(".chat-diary-prompt-btn.is-primary");
+  assert.ok(writeButton, "filesystem template fallback should show the write button");
+  writeButton.listeners.click();
+
+  controller.showLoopStopResult(
+    { name: "loop_stop", output: "second summary", metadata: { job_id: "job-2" } },
+    "session-1",
+    "conversation-1",
+  );
+  resolveFirstWrite({ status: "success", is_error: false, output: "ok", metadata: {} });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(writeCalls, 1);
+  assert.equal(rootEl.classList.contains("is-open"), true);
+  assert.match(
+    rootEl.querySelector(".chat-diary-prompt-preview").textContent,
+    /second summary/,
+  );
 }
 
 main().catch((err) => {

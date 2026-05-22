@@ -23,8 +23,17 @@ const AUTO_TRIGGER_MESSAGE =
 export function createChatTurnRunner(
   deps: TurnRunnerDeps,
 ): ChatTurnRunnerController {
-  const { client, composer, elements, state, transcript, sessions, persona, plugin } =
-    deps;
+  const {
+    client,
+    composer,
+    elements,
+    state,
+    transcript,
+    sessions,
+    persona,
+    plugin,
+    diaryPrompt,
+  } = deps;
 
   function setSendingUi(isSending: boolean): void {
     elements.inputEl.disabled = isSending;
@@ -60,6 +69,7 @@ export function createChatTurnRunner(
       resp.tool_calls?.forEach((toolCall) => {
         transcript.renderHistoricalTool(toolCall);
       });
+      const loopStopResult = findLoopStopResult(resp.tool_calls ?? []);
       transcript.appendMessage(
         "assistant",
         resp.reply,
@@ -71,6 +81,13 @@ export function createChatTurnRunner(
         transcript.updateContextBar(resp.context);
       }
       await sessions.syncCurrentSessionTitle(resp.session_id);
+      if (loopStopResult) {
+        diaryPrompt.showLoopStopResult(
+          loopStopResult,
+          resp.session_id,
+          resp.conversation_id,
+        );
+      }
     } catch (err) {
       typingEl.remove();
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -105,6 +122,7 @@ export function createChatTurnRunner(
     if (!payload || state.isSending) {
       return;
     }
+    diaryPrompt.hide();
     const backfillUserMessageId = !overrideText;
 
     const profileApply = await plugin.applyLlmProfile();
@@ -153,6 +171,7 @@ export function createChatTurnRunner(
     let fullAccumulated = "";
     let streamingRenderer: StreamingAssistantContentRenderer | null = null;
     let streamingRenderFrame: number | null = null;
+    let loopStopResult: ToolCallPayload | null = null;
 
     const buildCurrentAssistantContent = (): string =>
       buildAssistantContent(reasoningAccumulated, accumulated);
@@ -246,6 +265,9 @@ export function createChatTurnRunner(
 
         onToolResult: (payload: ToolCallPayload) => {
           transcript.completeTool(payload);
+          if (isLoopStopResult(payload)) {
+            loopStopResult = payload;
+          }
         },
 
         onWarning: (message: string) => {
@@ -254,7 +276,7 @@ export function createChatTurnRunner(
 
         onDone: async (
           sessionId,
-          _conversationId,
+          conversationId,
           assistantMessageId,
           userMessageId,
           context,
@@ -301,6 +323,14 @@ export function createChatTurnRunner(
             persona.setPersonaState(personaState);
           }
 
+          if (loopStopResult) {
+            diaryPrompt.showLoopStopResult(
+              loopStopResult,
+              sessionId,
+              conversationId,
+            );
+            loopStopResult = null;
+          }
           await sessions.syncCurrentSessionTitle(sessionId);
         },
 
@@ -427,4 +457,26 @@ function restoreThoughtBlockExpanded(
   if (chevron) {
     chevron.setText("v");
   }
+}
+
+function findLoopStopResult(payloads: ToolCallPayload[]): ToolCallPayload | null {
+  for (let index = payloads.length - 1; index >= 0; index -= 1) {
+    const payload = payloads[index];
+    if (isLoopStopResult(payload)) {
+      return payload;
+    }
+  }
+  return null;
+}
+
+function isLoopStopResult(payload: ToolCallPayload): boolean {
+  const name = payload.name || payload.tool || "";
+  const jobId = payload.metadata?.job_id;
+  return (
+    name === "loop_stop" &&
+    !payload.is_error &&
+    payload.status !== "error" &&
+    typeof jobId === "string" &&
+    jobId.trim().length > 0
+  );
 }

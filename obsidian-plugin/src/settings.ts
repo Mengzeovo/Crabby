@@ -27,6 +27,11 @@ import {
   saveMcpConfigLocally,
   validateMcpConfigText,
 } from "./config/mcpConfig";
+import {
+  DEFAULT_DIARY_SETTINGS,
+  normalizeDiarySettings,
+  type DiarySettings,
+} from "./config/diaryConfig";
 import type CrabbyPlugin from "./main";
 
 export interface LlmProfile {
@@ -51,6 +56,7 @@ export interface CrabbySettings {
   runtimeManifestUrl: string;
   /** Legacy fallback only. */
   backendPath: string;
+  diary: DiarySettings;
   llmProfiles: LlmProfile[];
   activeProfileId: string;
 }
@@ -106,6 +112,7 @@ export const DEFAULT_SETTINGS: CrabbySettings = {
   backendMcpConfigPath: "",
   runtimeManifestUrl: "",
   backendPath: "",
+  diary: DEFAULT_DIARY_SETTINGS,
   llmProfiles: [],
   activeProfileId: "",
 };
@@ -181,6 +188,7 @@ export class CrabbySettingTab extends PluginSettingTab {
     containerEl.createEl("h2", { text: "Crabby 设置" });
 
     this.renderRuntimeSection(containerEl);
+    this.renderDiarySection(containerEl);
     this.renderMcpSection(containerEl);
     this.renderLlmSection(containerEl);
   }
@@ -346,6 +354,99 @@ export class CrabbySettingTab extends PluginSettingTab {
       });
 
     void renderStatus();
+  }
+
+  private renderDiarySection(containerEl: HTMLElement): void {
+    containerEl.createEl("h3", { text: "Diary / Journal" });
+
+    const statusEl = containerEl.createDiv();
+    Object.assign(statusEl.style, {
+      fontSize: "12px",
+      color: "var(--text-muted)",
+      marginBottom: "10px",
+      whiteSpace: "pre-wrap",
+      lineHeight: "1.5",
+    });
+
+    const diaryDraft = {
+      rootPath: this.plugin.settings.diary.rootPath,
+      templatePaths: { ...this.plugin.settings.diary.templatePaths },
+    };
+
+    const syncDiaryConfig = async (): Promise<void> => {
+      let normalized: DiarySettings;
+      try {
+        normalized = normalizeDiarySettings(diaryDraft);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        statusEl.setText(`Diary 配置无效：${message}`);
+        new Notice(`Diary 配置无效：${message}`);
+        return;
+      }
+
+      this.plugin.settings.diary = normalized;
+      await this.plugin.saveSettings();
+      const syncResult = this.plugin.runtimeManager?.syncDiaryConfig();
+      if (!syncResult) {
+        statusEl.setText("Diary 配置已保存；后端运行时初始化后会同步。");
+        return;
+      }
+      if (syncResult.ok === false) {
+        statusEl.setText(`Diary 配置已保存，但同步失败：${syncResult.message}`);
+        return;
+      }
+      statusEl.setText("Diary 配置已保存，并同步到 .crabby/config/diary.json。");
+    };
+
+    const createDiaryRow = (
+      label: string,
+      value: string,
+      placeholder: string,
+      onChange: (value: string) => void,
+    ): void => {
+      new Setting(containerEl)
+        .setName(label)
+        .addText((text) => {
+          text.setPlaceholder(placeholder).setValue(value).onChange((next) => {
+            onChange(next.trim());
+          });
+          text.inputEl.style.width = "420px";
+        });
+    };
+
+    createDiaryRow("日记根目录", diaryDraft.rootPath, "Journal/", (value) => {
+      diaryDraft.rootPath = value || "Journal";
+    });
+    createDiaryRow("日记模板（日）", diaryDraft.templatePaths.daily, ".crabby/templates/diary/daily.md", (value) => {
+      diaryDraft.templatePaths.daily = value;
+    });
+    createDiaryRow("日记模板（周）", diaryDraft.templatePaths.weekly, ".crabby/templates/diary/weekly.md", (value) => {
+      diaryDraft.templatePaths.weekly = value;
+    });
+    createDiaryRow("日记模板（月）", diaryDraft.templatePaths.monthly, ".crabby/templates/diary/monthly.md", (value) => {
+      diaryDraft.templatePaths.monthly = value;
+    });
+    createDiaryRow("日记模板（季）", diaryDraft.templatePaths.quarterly, ".crabby/templates/diary/quarterly.md", (value) => {
+      diaryDraft.templatePaths.quarterly = value;
+    });
+    createDiaryRow("日记模板（年）", diaryDraft.templatePaths.yearly, ".crabby/templates/diary/yearly.md", (value) => {
+      diaryDraft.templatePaths.yearly = value;
+    });
+
+    new Setting(containerEl)
+      .setName("保存 Diary 配置")
+      .setDesc("把上面的根目录和模板路径写入 .crabby/config/diary.json。")
+      .addButton((button) => {
+        button.setButtonText("保存");
+        button.onClick(() => {
+          void syncDiaryConfig();
+        });
+      });
+
+    const configPath = this.plugin.runtimeManager?.getLayout().configDir
+      ? `${this.plugin.runtimeManager.getLayout().configDir}/diary.json`
+      : ".crabby/config/diary.json";
+    statusEl.setText(`配置文件：${configPath}`);
   }
 
   private renderMcpSection(containerEl: HTMLElement): void {

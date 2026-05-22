@@ -19,6 +19,12 @@ import { createHash, randomBytes } from "node:crypto";
 import { App, FileSystemAdapter, Platform } from "obsidian";
 
 import { AgentClient } from "../api/client";
+import {
+  DEFAULT_DIARY_SETTINGS,
+  DIARY_PERIODS,
+  normalizeDiarySettings,
+  writeDiarySettingsFile,
+} from "../config/diaryConfig";
 import type { CrabbySettings } from "../settings";
 import {
   ADMIN_RELOAD_HEADER,
@@ -74,7 +80,7 @@ const MEMORY_REGISTRY = `# Memory Registry
 ## Domains
 
 `;
-const DIARY_TEMPLATE = `---
+const LEGACY_DIARY_TEMPLATE = `---
 date: {{date}}
 ---
 
@@ -92,6 +98,75 @@ date: {{date}}
 
 (由 agent 在写入时填入相关 memory 文件链接)
 `;
+const DIARY_TEMPLATE_CONTENTS: Record<string, string> = {
+  daily: `---
+period: daily
+date: {{date}}
+---
+
+# {{date}} 日记
+
+## 今日要点
+
+{{summary}}
+
+## 涉及主题
+
+{{topics}}
+
+## 涉及领域
+
+{{domains}}
+
+## 关联记忆
+
+{{memory_links}}
+
+## 条目
+
+{{entries}}
+`,
+  weekly: `---
+period: weekly
+period_start: {{period_start}}
+period_end: {{period_end}}
+---
+
+# {{period_start}} ~ {{period_end}} 周记
+
+{{entries}}
+`,
+  monthly: `---
+period: monthly
+period_start: {{period_start}}
+period_end: {{period_end}}
+---
+
+# {{period_start}} ~ {{period_end}} 月记
+
+{{entries}}
+`,
+  quarterly: `---
+period: quarterly
+period_start: {{period_start}}
+period_end: {{period_end}}
+---
+
+# {{period_start}} ~ {{period_end}} 季度记录
+
+{{entries}}
+`,
+  yearly: `---
+period: yearly
+period_start: {{period_start}}
+period_end: {{period_end}}
+---
+
+# {{period_start}} ~ {{period_end}} 年记录
+
+{{entries}}
+`,
+};
 
 export interface RuntimeLayout {
   pluginDir: string;
@@ -252,6 +327,10 @@ export class BackendRuntimeManager {
       mkdirSync(path, { recursive: true });
     }
     this.ensureMemoryLayout();
+    const diarySync = this.syncDiaryConfig();
+    if (!diarySync.ok) {
+      this.appendRuntimeLog(`failed to sync diary config: ${diarySync.message}`);
+    }
 
     const token = this.ensureAdminToken();
     upsertEnvFile(this.layout.envPath, {
@@ -843,7 +922,41 @@ export class BackendRuntimeManager {
     }
     this.writeFileIfMissing(join(this.layout.memoryDir, "MEMORY.md"), MEMORY_OPERATING_RULES);
     this.writeFileIfMissing(join(this.layout.memoryDir, "REGISTRY.md"), MEMORY_REGISTRY);
-    this.writeFileIfMissing(join(this.layout.templatesDir, "diary.md"), DIARY_TEMPLATE);
+    this.ensureDiaryTemplates();
+  }
+
+  public syncDiaryConfig(): { ok: boolean; message: string } {
+    const diaryConfigPath = join(this.layout.configDir, "diary.json");
+    try {
+      const normalized = normalizeDiarySettings(
+        this.settings.diary ?? DEFAULT_DIARY_SETTINGS,
+      );
+      this.settings.diary = normalized;
+      writeDiarySettingsFile(diaryConfigPath, normalized);
+      return { ok: true, message: "Diary config synced." };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, message };
+    }
+  }
+
+  private ensureDiaryTemplates(): void {
+    const legacyDiaryTemplatePath = join(this.layout.templatesDir, "diary.md");
+    const diaryTemplatesDir = join(this.layout.templatesDir, "diary");
+    const legacyExistsBefore = existsSync(legacyDiaryTemplatePath);
+
+    this.writeFileIfMissing(legacyDiaryTemplatePath, LEGACY_DIARY_TEMPLATE);
+    mkdirSync(diaryTemplatesDir, { recursive: true });
+
+    for (const period of DIARY_PERIODS) {
+      const relativePath = join(diaryTemplatesDir, `${period}.md`);
+      if (period === "daily" && !existsSync(relativePath) && legacyExistsBefore) {
+        const legacyText = readFileSync(legacyDiaryTemplatePath, "utf8");
+        this.writeFileIfMissing(relativePath, legacyText);
+        continue;
+      }
+      this.writeFileIfMissing(relativePath, DIARY_TEMPLATE_CONTENTS[period]);
+    }
   }
 
   private writeFileIfMissing(path: string, content: string): void {

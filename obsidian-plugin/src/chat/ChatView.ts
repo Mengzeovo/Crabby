@@ -10,6 +10,7 @@ import { SETTINGS_UPDATED_EVENT } from "../config/settingsEvents";
 import type CrabbyPlugin from "../main";
 import { isDraftLlmProfile } from "../settings";
 import { createChatComposer } from "./chatComposer";
+import { createDiaryPrompt } from "./chatDiaryPrompt";
 import {
   ICON_ATTACH,
   ICON_HISTORY,
@@ -166,6 +167,7 @@ export class ChatView extends ItemView {
     const messagesEl = bodyArea.createDiv({ cls: "chat-messages" });
 
     const footerArea = container.createDiv({ cls: "chat-footer" });
+    const diaryPromptEl = footerArea.createDiv({ cls: "chat-diary-prompt" });
     const inputArea = footerArea.createDiv({ cls: "chat-input-area" });
     const composerPillsEl = inputArea.createDiv({ cls: "chat-composer-pills" });
     const suggestionListEl = inputArea.createDiv({ cls: "chat-suggestion-list" });
@@ -200,6 +202,7 @@ export class ChatView extends ItemView {
     this.elements = {
       messagesEl,
       minimapEl,
+      diaryPromptEl,
       inputAreaEl: inputArea,
       inputEl,
       sendBtn,
@@ -249,6 +252,14 @@ export class ChatView extends ItemView {
       transcript,
       persona,
     });
+    const diaryPrompt = createDiaryPrompt({
+      app: this.app,
+      client: this.client,
+      plugin: this.plugin,
+      rootEl: diaryPromptEl,
+      openPluginSettings: () => this.openPluginSettings(),
+    });
+    this.cleanupFns.push(() => diaryPrompt.destroy());
     const turnRunner = createChatTurnRunner({
       app: this.app,
       component: this,
@@ -260,6 +271,7 @@ export class ChatView extends ItemView {
       transcript,
       sessions,
       persona,
+      diaryPrompt,
     });
 
     this.cleanupFns.push(

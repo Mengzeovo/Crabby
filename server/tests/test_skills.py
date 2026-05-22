@@ -154,6 +154,15 @@ class TestParseSkillFile:
         assert "MemPalace" in skill.description
         assert "init" in skill.description
 
+    def test_checked_in_diary_skill_is_valid(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        skill = parse_skill_file(repo_root / "skills" / "diary" / "SKILL.md")
+        assert skill is not None
+        assert skill.name == "diary"
+        assert "diary_read" in skill.allowed_tools
+        assert "diary_write" in skill.allowed_tools
+        assert "memory_search" not in skill.allowed_tools
+
 
 # -- Matcher 测试 ------------------------------------------------------------
 

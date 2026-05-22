@@ -237,6 +237,7 @@ def create_default_registry() -> ToolRegistry:
     from tools.glob import GlobTool
     from tools.grep import GrepTool
     from tools.crabby_settings import CrabbySettingsTool
+    from tools.diary import DiaryReadTool, DiaryWriteTool
     from tools.obsidian_search import ObsidianSearchTool
     from tools.read import ReadTool
     from tools.task_query import TaskQueryTool
@@ -259,6 +260,8 @@ def create_default_registry() -> ToolRegistry:
     # Deferred tools (always_eager=False, the default)
     registry.register(ObsidianSearchTool())
     registry.register(CrabbySettingsTool())
+    registry.register(DiaryReadTool())
+    registry.register(DiaryWriteTool())
     registry.register(EditTool())
     registry.register(TaskQueryTool())
 

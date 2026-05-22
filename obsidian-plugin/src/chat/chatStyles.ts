@@ -986,6 +986,95 @@ const CHAT_STYLES = `
     flex-direction: column;
     align-items: center;
   }
+  .chat-diary-prompt {
+    display: none;
+    width: 100%;
+    margin-bottom: 8px;
+  }
+  .chat-diary-prompt.is-open {
+    display: block;
+  }
+  .chat-diary-prompt-panel {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-secondary);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  }
+  .chat-diary-prompt-text {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .chat-diary-prompt-title {
+    color: var(--text-normal);
+    font-size: 0.85em;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+  .chat-diary-prompt-body {
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: 0.8em;
+    line-height: 1.45;
+  }
+  .chat-diary-prompt-preview {
+    margin-top: 6px;
+    color: var(--text-faint);
+    font-size: 0.76em;
+    line-height: 1.45;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .chat-diary-prompt-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+  }
+  .chat-diary-prompt-btn {
+    min-height: 28px;
+    padding: 4px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 0.8em;
+    line-height: 1.2;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .chat-diary-prompt-btn:hover:not(:disabled) {
+    background: var(--background-modifier-hover);
+  }
+  .chat-diary-prompt-btn.is-primary {
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+  }
+  .chat-diary-prompt-btn:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+  @media (max-width: 520px) {
+    .chat-diary-prompt-panel {
+      flex-direction: column;
+    }
+    .chat-diary-prompt-preview {
+      white-space: normal;
+    }
+    .chat-diary-prompt-actions {
+      width: 100%;
+      flex-wrap: wrap;
+    }
+    .chat-diary-prompt-btn {
+      flex: 1 1 120px;
+    }
+  }
   .chat-model-area {
     position: relative;
     z-index: 51;

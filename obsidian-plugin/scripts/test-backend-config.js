@@ -480,6 +480,53 @@ async function testMcpConfig(mod) {
   assert.match(mod.formatMcpRuntimeStatus(statusResult.status), /alpha_tool/);
 }
 
+function testDiaryConfig(mod) {
+  const defaults = mod.DEFAULT_DIARY_SETTINGS;
+  assert.equal(defaults.rootPath, "Journal");
+  assert.equal(defaults.templatePaths.daily, ".crabby/templates/diary/daily.md");
+  assert.equal(defaults.templatePaths.weekly, ".crabby/templates/diary/weekly.md");
+
+  const normalized = mod.normalizeDiarySettings({
+    rootPath: "  Journal/  ",
+    templatePaths: {
+      daily: "  .crabby/templates/diary/daily.md  ",
+      weekly: ".crabby/templates/diary/weekly.md",
+      monthly: ".crabby/templates/diary/monthly.md",
+      quarterly: ".crabby/templates/diary/quarterly.md",
+      yearly: ".crabby/templates/diary/yearly.md",
+    },
+  });
+  assert.equal(normalized.rootPath, "Journal");
+  assert.equal(normalized.templatePaths.daily, ".crabby/templates/diary/daily.md");
+  assert.equal(mod.normalizeVaultRelativePath(".", "Journal", "rootPath"), "Journal");
+  assert.equal(
+    mod.normalizeVaultRelativePath("./Journal", "Journal", "rootPath"),
+    "Journal",
+  );
+  assert.equal(
+    mod.normalizeVaultRelativePath("Journal/./daily", "Journal", "rootPath"),
+    "Journal/daily",
+  );
+
+  assert.throws(
+    () =>
+      mod.normalizeDiarySettings({
+        rootPath: "/absolute/path",
+      }),
+    /Vault-relative/,
+  );
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "laa-diary-config-"));
+  const configPath = mod.resolveDiaryConfigPath(tempDir);
+  assert.equal(
+    configPath,
+    path.resolve(tempDir, ".crabby", "config", "diary.json"),
+  );
+
+  mod.writeDiarySettingsFile(configPath, normalized);
+  assert.deepEqual(mod.readDiarySettingsFile(configPath), normalized);
+}
+
 function testSettingsData(mod) {
   const defaults = {
     backendUrl: "http://127.0.0.1:8000",
@@ -537,6 +584,11 @@ function testSettingsData(mod) {
   assert.equal(hydrated.llmProfiles[0].thinkingEffort, "high");
   assert.equal(hydrated.llmProfiles[0].thinkingBudgetTokens, "2048");
   assert.equal(hydrated.llmProfiles[0].reasoningSplit, true);
+  assert.equal(hydrated.diary.rootPath, "Journal");
+  assert.equal(
+    hydrated.diary.templatePaths.daily,
+    ".crabby/templates/diary/daily.md",
+  );
 
   const unknownProvider = mod.hydrateSettings(defaults, {
     llmProfiles: [
@@ -999,6 +1051,7 @@ function testObsidianVaultResolution() {
 
 async function main() {
   const backendConfig = await loadModule("config/backendConfig.ts", "backend-config.cjs");
+  const diaryConfig = await loadModule("config/diaryConfig.ts", "diary-config.cjs");
   const llmProviders = await loadModule("config/llmProviders.ts", "llm-providers.cjs");
   const mcpConfig = await loadModule("config/mcpConfig.ts", "mcp-config.cjs");
   const settingsData = await loadModule("config/settingsData.ts", "settings-data.cjs");
@@ -1017,6 +1070,7 @@ async function main() {
   const searchEngine = await loadModule("search/searchEngine.ts", "search-engine.cjs");
 
   await testBackendConfig(backendConfig);
+  testDiaryConfig(diaryConfig);
   await testMcpConfig(mcpConfig);
   testSettingsData(settingsData);
   testLlmProviders(llmProviders);
@@ -1027,7 +1081,7 @@ async function main() {
   testObsidianVaultResolution();
 
   console.log(
-    "backendConfig, llmProviders, mcpConfig, settingsData, runtime state, runtime data migration, default template, and search tests passed",
+    "backendConfig, diaryConfig, llmProviders, mcpConfig, settingsData, runtime state, runtime data migration, default template, and search tests passed",
   );
 }
 
