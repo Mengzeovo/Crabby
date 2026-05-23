@@ -408,10 +408,12 @@ npm run start
 - The main chat prompt only carries a short memory hint. Relevant turns call
   `memory_search` on demand, while `auto_save` remains a separate background,
   checkpoint-driven task that does not block chat. The memory hint describes a
-  model-orchestrated recall flow: use `list_registry`, run structured `search`,
-  inspect/read candidates when needed, use `full_text` for local body snippets
-  when structured results are insufficient, then escalate to external search
-  only outside the memory tool if memory remains insufficient.
+  model-orchestrated recall flow: fuzzy, semantic, cross-topic, or exploratory
+  questions should prefer `mempalace_search` when available; exact facts,
+  decisions, preferences, and other state-sensitive lookups should prefer
+  `memory_search`, using `list_registry`, structured `search`, and `full_text`
+  as needed, then escalating to external search only outside the memory tool if
+  memory remains insufficient.
 - MemPalace is an optional downstream semantic index and knowledge-graph
   layer. Vault Markdown under `<vault>/.crabby/memory/` remains the canonical
   source of truth, and current code does not double-write to MemPalace yet.
@@ -484,6 +486,10 @@ npm run start
 
 - Use `obsidian_search` first for Obsidian-native lookup in `.md` and
   `.canvas` files.
+- Use `mempalace_search` first for fuzzy, semantic, cross-topic, or
+  exploratory memory lookups when the MemPalace MCP tool is available; use
+  `memory_search` first for exact facts, decisions, preferences, and current
+  state.
 - `obsidian_search` is hosted by the running plugin and reached through the
   `/client-tools/obsidian` bridge.
 - It supports common Obsidian Search DSL semantics: terms, phrases, OR,

@@ -203,6 +203,7 @@ def test_prompt_loader_falls_back_for_missing_segments(tmp_path) -> None:
     assert segments["identity.md"] == "CUSTOM IDENTITY ONLY"
     assert "## 安全边界" in segments["safety.md"]
     assert "memory_search" in segments["memory_hint.md"]
+    assert "mempalace_search" in segments["memory_hint.md"]
     assert 'mode="list_registry"' in segments["memory_hint.md"]
     assert 'mode="search"' in segments["memory_hint.md"]
     assert 'mode="full_text"' in segments["memory_hint.md"]

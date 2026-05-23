@@ -1,11 +1,11 @@
 # MemPalace 集成指南
 
-MemPalace 是 Crabby 的可选语义记忆后端，通过 MCP（Model Context Protocol）stdio 方式集成。它擅长向量检索、知识图谱和重复检测；在当前 Crabby 设计里，Vault Markdown 才是长期记忆的 source of truth，MemPalace 只承担派生语义索引和探索性关联发现。它自己的运行数据仍存放在 Vault 内的 `.crabby/data/mempalace/` 目录下，但那是索引与运行态，不是 canonical memory。
+MemPalace 是 Crabby 的可选语义记忆后端，通过 MCP（Model Context Protocol）stdio 方式集成。它擅长向量检索、知识图谱和重复检测；在当前 Crabby 设计里，Vault Markdown 才是长期记忆的 source of truth，Crabby 的 prompt 会在模糊/探索式问题上优先 MemPalace，在事实/决策/偏好问题上优先 `memory_search`。MemPalace 只承担派生语义索引和探索性关联发现。它自己的运行数据仍存放在 Vault 内的 `.crabby/data/mempalace/` 目录下，但那是索引与运行态，不是 canonical memory。
 
 ## 在 Crabby 里的定位
 
 - Vault Markdown 是 canonical memory。
-- MemPalace 是派生语义索引，不是唯一真相源。
+- MemPalace 是派生语义索引，不是唯一真相源；模糊/语义/跨主题探索可以先走它，但最终仍要回 Vault 复核。
 - 当前 auto-save 已切回 Vault 记忆工具；MemPalace 双写是后续能力，不是这份文档里的当前实现。
 
 ## 前置条件
