@@ -380,9 +380,25 @@ def create_default_registry() -> ToolRegistry:
         registry.register(CronDeleteTool())
 
     # Memory tools (deferred)
+    from tools.memory_inventory import MemoryInventoryTool
+    from tools.memory_read import MemoryReadTool
     from tools.memory_search import MemorySearchTool
     from tools.memory_write import MemoryWriteTool
 
+    registry.register(
+        MemoryInventoryTool(),
+        metadata={
+            TOOL_EXPOSURE_KEY: TOOL_EXPOSURE_MAINTENANCE,
+            "owner": "dream",
+        },
+    )
+    registry.register(
+        MemoryReadTool(),
+        metadata={
+            TOOL_EXPOSURE_KEY: TOOL_EXPOSURE_MAINTENANCE,
+            "owner": "dream",
+        },
+    )
     registry.register(MemorySearchTool())
     registry.register(MemoryWriteTool())
 

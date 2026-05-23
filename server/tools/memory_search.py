@@ -7,13 +7,16 @@ primary recall channel when MemPalace is offline.
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from memory.facets import VALID_TYPES, is_safe_topic_component, parse_frontmatter
+from memory.catalog import (
+    iter_memory_files,
+    read_matching_memory,
+    validate_memory_filters,
+)
 from memory.registry_store import read_registry
 from tools.base import Context, Tool, ToolResult
 
@@ -153,60 +156,7 @@ class MemorySearchTool(Tool):
 
 
 def _validate_search_filters(params: MemorySearchInput) -> str | None:
-    if params.type and params.type not in VALID_TYPES:
-        return f"无效 type: {params.type}。支持: {', '.join(VALID_TYPES)}"
-    if params.topic and not is_safe_topic_component(params.topic):
-        return (
-            "无效 topic: 只能使用安全目录名"
-            "（中文/Unicode 字母数字、ASCII 小写、数字和非首尾连字符）。"
-        )
-    try:
-        if params.valid_at:
-            date.fromisoformat(params.valid_at)
-        _parse_datetime_bound(params.created_after, end_of_day=False)
-        _parse_datetime_bound(params.created_before, end_of_day=True)
-        _parse_datetime_bound(params.updated_after, end_of_day=False)
-        _parse_datetime_bound(params.updated_before, end_of_day=True)
-    except ValueError as exc:
-        return f"无效时间过滤: {exc}"
-    return None
-
-
-def _iter_memory_files(
-    memory_dir: Path,
-    params: MemorySearchInput,
-) -> list[Path]:
-    if not memory_dir.is_dir():
-        return []
-
-    type_dirs: list[Path] = []
-    if params.type:
-        type_path = memory_dir / params.type
-        if type_path.is_dir():
-            type_dirs.append(type_path)
-    else:
-        for child in sorted(memory_dir.iterdir()):
-            if (
-                child.is_dir()
-                and not child.name.startswith(".")
-                and child.name not in ("__pycache__",)
-            ):
-                type_dirs.append(child)
-
-    files: list[Path] = []
-    for type_dir in type_dirs:
-        topic_dirs: list[Path] = []
-        if params.topic:
-            topic_path = type_dir / params.topic
-            if topic_path.is_dir():
-                topic_dirs.append(topic_path)
-        else:
-            topic_dirs.extend(child for child in sorted(type_dir.iterdir()) if child.is_dir())
-
-        for topic_dir in topic_dirs:
-            files.extend(sorted(topic_dir.glob("*.md")))
-
-    return files
+    return validate_memory_filters(params)
 
 
 def _scan_and_filter(
@@ -219,8 +169,8 @@ def _scan_and_filter(
 
     results: list[dict[str, Any]] = []
 
-    for md_file in _iter_memory_files(memory_dir, params):
-        checked = _read_matching_memory(md_file, params)
+    for md_file in iter_memory_files(memory_dir, params):
+        checked = read_matching_memory(memory_dir, md_file, params)
         if checked is not None:
             entry, _body = checked
             results.append(entry)
@@ -240,8 +190,8 @@ def _scan_full_text(
 
     results: list[dict[str, Any]] = []
 
-    for md_file in _iter_memory_files(memory_dir, params):
-        checked = _read_matching_memory(md_file, params)
+    for md_file in iter_memory_files(memory_dir, params):
+        checked = read_matching_memory(memory_dir, md_file, params)
         if checked is None:
             continue
         entry, body = checked
@@ -263,150 +213,6 @@ def _scan_full_text(
         reverse=True,
     )
     return results[: max(0, params.limit)]
-
-
-def _read_matching_memory(
-    path: Path,
-    params: MemorySearchInput,
-) -> tuple[dict[str, Any], str] | None:
-    """Read a memory file and check if it matches the filter criteria."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except Exception:
-        return None
-
-    fm, body = parse_frontmatter(text)
-    if not fm:
-        return None
-
-    name = fm.get("name", path.stem)
-
-    # Name prefix filter
-    if params.name_prefix and not name.startswith(params.name_prefix):
-        return None
-
-    # State filter
-    file_state = fm.get("state", "active")
-    if params.state and file_state != params.state:
-        return None
-
-    # Kind filter
-    if params.kind and fm.get("kind") != params.kind:
-        return None
-
-    # Domain AND filter
-    file_domains = fm.get("domain", [])
-    if isinstance(file_domains, str):
-        file_domains = [file_domains]
-    if params.domain:
-        if not all(d in file_domains for d in params.domain):
-            return None
-
-    # Domain OR filter (any_domain)
-    if params.any_domain:
-        if not any(d in file_domains for d in params.any_domain):
-            return None
-
-    # Validity date filter
-    if params.valid_at:
-        check_date = date.fromisoformat(params.valid_at)
-        vf = fm.get("valid_from")
-        vt = fm.get("valid_to")
-        if vf and vf != "null":
-            if date.fromisoformat(str(vf)) > check_date:
-                return None
-        if vt and vt != "null":
-            if date.fromisoformat(str(vt)) < check_date:
-                return None
-
-    if not _matches_datetime_filters(fm, params):
-        return None
-
-    return {
-        "name": name,
-        "type": fm.get("type", "unknown"),
-        "topic": fm.get("topic", "general"),
-        "domain": file_domains,
-        "kind": fm.get("kind", "fact"),
-        "state": file_state,
-        "created_at": fm.get("created_at", "unknown"),
-        "updated_at": fm.get("updated_at", "unknown"),
-        "path": str(path),
-        "source": "structured",
-    }, body
-
-
-def _matches_datetime_filters(
-    fm: dict[str, Any],
-    params: MemorySearchInput,
-) -> bool:
-    created_at = _parse_memory_datetime(fm.get("created_at"))
-    updated_at = _parse_memory_datetime(fm.get("updated_at"))
-
-    created_after = _parse_datetime_bound(params.created_after, end_of_day=False)
-    created_before = _parse_datetime_bound(params.created_before, end_of_day=True)
-    updated_after = _parse_datetime_bound(params.updated_after, end_of_day=False)
-    updated_before = _parse_datetime_bound(params.updated_before, end_of_day=True)
-
-    if created_after is not None and (
-        created_at is None or created_at < created_after
-    ):
-        return False
-    if created_before is not None and (
-        created_at is None or created_at > created_before
-    ):
-        return False
-    if updated_after is not None and (
-        updated_at is None or updated_at < updated_after
-    ):
-        return False
-    if updated_before is not None and (
-        updated_at is None or updated_at > updated_before
-    ):
-        return False
-    return True
-
-
-def _parse_datetime_bound(value: str | None, *, end_of_day: bool) -> datetime | None:
-    if not value:
-        return None
-    raw = value.strip()
-    if not raw:
-        return None
-    try:
-        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
-            parsed_date = date.fromisoformat(raw)
-            return datetime.combine(parsed_date, time.max if end_of_day else time.min)
-        return _normalize_datetime(datetime.fromisoformat(_normalize_iso_datetime(raw)))
-    except ValueError as exc:
-        raise ValueError(f"{value!r} 不是有效 ISO 日期或时间") from exc
-
-
-def _parse_memory_datetime(value: Any) -> datetime | None:
-    if value is None:
-        return None
-    raw = str(value).strip()
-    if not raw or raw == "null" or raw == "unknown":
-        return None
-    try:
-        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
-            return datetime.combine(date.fromisoformat(raw), time.min)
-        return _normalize_datetime(datetime.fromisoformat(_normalize_iso_datetime(raw)))
-    except ValueError:
-        return None
-
-
-def _normalize_iso_datetime(value: str) -> str:
-    if value.endswith("Z"):
-        return value[:-1] + "+00:00"
-    return value
-
-
-def _normalize_datetime(value: datetime) -> datetime:
-    if value.tzinfo is not None:
-        return value.astimezone().replace(tzinfo=None)
-    return value
-
 
 def _score_full_text(query: str, entry: dict[str, Any], body: str) -> int:
     query_norm = _normalize_text(query)

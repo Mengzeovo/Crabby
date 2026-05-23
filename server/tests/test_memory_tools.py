@@ -8,9 +8,13 @@ import pytest
 
 from memory.layout import ensure_memory_layout
 from memory.registry_store import read_registry
+from llm.tool_search_service import ToolSearchService
 from tools.base import Context
+from tools.memory_inventory import MemoryInventoryInput, MemoryInventoryTool
+from tools.memory_read import MemoryReadInput, MemoryReadTool
 from tools.memory_search import MemorySearchInput, MemorySearchTool
 from tools.memory_write import MemoryWriteInput, MemoryWriteTool
+from tools.registry import create_default_registry
 
 
 @pytest.fixture
@@ -37,6 +41,16 @@ def write_tool() -> MemoryWriteTool:
 @pytest.fixture
 def search_tool() -> MemorySearchTool:
     return MemorySearchTool()
+
+
+@pytest.fixture
+def inventory_tool() -> MemoryInventoryTool:
+    return MemoryInventoryTool()
+
+
+@pytest.fixture
+def memory_read_tool() -> MemoryReadTool:
+    return MemoryReadTool()
 
 
 def _set_frontmatter_value(path: Path, key: str, value: str) -> None:
@@ -733,6 +747,239 @@ class TestMemorySearch:
         )
 
         assert result.metadata["results"] == []
+
+
+class TestMemoryInventoryAndRead:
+    @pytest.mark.asyncio
+    async def test_inventory_defaults_to_all_states(
+        self, write_tool, inventory_tool, ctx
+    ):
+        await write_tool.call(
+            MemoryWriteInput(
+                name="active-one",
+                type="project",
+                topic="inventory",
+                body="Active memory body.",
+            ),
+            ctx,
+        )
+        await write_tool.call(
+            MemoryWriteInput(
+                name="archived-one",
+                type="project",
+                topic="inventory",
+                state="archived",
+                body="Archived memory body.",
+            ),
+            ctx,
+        )
+        await write_tool.call(
+            MemoryWriteInput(
+                name="invalidated-one",
+                type="project",
+                topic="inventory",
+                state="invalidated",
+                body="Invalidated memory body.",
+            ),
+            ctx,
+        )
+
+        result = await inventory_tool.call(
+            MemoryInventoryInput(topic="inventory"),
+            ctx,
+        )
+
+        names = {entry["name"] for entry in result.metadata["results"]}
+        assert names == {"active-one", "archived-one", "invalidated-one"}
+        assert result.metadata["total"] == 3
+
+    @pytest.mark.asyncio
+    async def test_inventory_filters_state_domain_and_paginates(
+        self, write_tool, inventory_tool, ctx
+    ):
+        for index in range(3):
+            await write_tool.call(
+                MemoryWriteInput(
+                    name=f"active-ops-{index}",
+                    type="project",
+                    topic="inventory-page",
+                    domain=["ops"],
+                    body=f"Active ops memory {index}.",
+                ),
+                ctx,
+            )
+        await write_tool.call(
+            MemoryWriteInput(
+                name="archived-design",
+                type="project",
+                topic="inventory-page",
+                domain=["design"],
+                state="archived",
+                body="Archived design memory.",
+            ),
+            ctx,
+        )
+
+        first_page = await inventory_tool.call(
+            MemoryInventoryInput(
+                topic="inventory-page",
+                state="active",
+                domain=["ops"],
+                limit=2,
+            ),
+            ctx,
+        )
+        assert first_page.metadata["total"] == 3
+        assert len(first_page.metadata["results"]) == 2
+        assert first_page.metadata["has_more"] is True
+        assert first_page.metadata["next_offset"] == 2
+
+        second_page = await inventory_tool.call(
+            MemoryInventoryInput(
+                topic="inventory-page",
+                state="active",
+                domain=["ops"],
+                offset=2,
+                limit=2,
+            ),
+            ctx,
+        )
+        assert second_page.metadata["total"] == 3
+        assert len(second_page.metadata["results"]) == 1
+        assert second_page.metadata["has_more"] is False
+
+    @pytest.mark.asyncio
+    async def test_inventory_result_can_be_read_by_memory_read(
+        self, write_tool, inventory_tool, memory_read_tool, ctx
+    ):
+        await write_tool.call(
+            MemoryWriteInput(
+                name="archived-readable",
+                type="reference",
+                topic="inventory-read",
+                state="archived",
+                related=["active-one"],
+                body="# Archived Reference\n\nBody worth preserving.",
+            ),
+            ctx,
+        )
+
+        inventory = await inventory_tool.call(
+            MemoryInventoryInput(topic="inventory-read", state="archived"),
+            ctx,
+        )
+        entry = inventory.metadata["results"][0]
+        read_result = await memory_read_tool.call(
+            MemoryReadInput(name=entry["name"]),
+            ctx,
+        )
+
+        assert "state: archived" in read_result.output
+        assert "Body worth preserving" in read_result.output
+        assert read_result.metadata["state"] == "archived"
+        assert read_result.metadata["path"] == entry["path"]
+        assert read_result.metadata["related"] == ["active-one"]
+
+    @pytest.mark.asyncio
+    async def test_memory_read_reads_invalidated_memory(
+        self, write_tool, memory_read_tool, ctx
+    ):
+        await write_tool.call(
+            MemoryWriteInput(
+                name="invalid-readable",
+                type="project",
+                topic="read-invalid",
+                state="invalidated",
+                body="Old fact kept for provenance.",
+            ),
+            ctx,
+        )
+
+        result = await memory_read_tool.call(
+            MemoryReadInput(name="invalid-readable"),
+            ctx,
+        )
+
+        assert "Old fact kept for provenance" in result.output
+        assert result.metadata["state"] == "invalidated"
+
+    @pytest.mark.asyncio
+    async def test_memory_read_missing_name_returns_error(
+        self, memory_read_tool, ctx
+    ):
+        result = await memory_read_tool.call(
+            MemoryReadInput(name="missing-memory"),
+            ctx,
+        )
+
+        assert result.metadata["error"] is True
+        assert "未找到记忆" in result.output
+
+    @pytest.mark.asyncio
+    async def test_memory_read_truncates_and_caches(
+        self, write_tool, memory_read_tool, ctx, vault
+    ):
+        memory_read_tool.max_result_chars = 40
+        await write_tool.call(
+            MemoryWriteInput(
+                name="long-memory",
+                type="project",
+                topic="read-long",
+                body="x" * 200,
+            ),
+            ctx,
+        )
+
+        result = await memory_read_tool.call(
+            MemoryReadInput(name="long-memory"),
+            ctx,
+        )
+
+        assert result.is_truncated is True
+        assert result.cache_path is not None
+        cache_path = Path(result.cache_path)
+        assert cache_path.is_file()
+        assert cache_path.is_relative_to(vault / ".crabby" / "data" / "cache")
+
+    def test_default_registry_registers_memory_inventory_and_read(self):
+        registry = create_default_registry()
+
+        assert registry.get("memory_inventory") is not None
+        assert registry.get("memory_read") is not None
+        assert registry.is_eager_tool("memory_inventory") is False
+        assert registry.is_eager_tool("memory_read") is False
+        assert registry.is_visible_tool("memory_inventory") is False
+        assert registry.is_visible_tool("memory_read") is False
+
+        catalog = registry.build_tool_catalog()
+        catalog_names = {
+            entry["name"]
+            for section in (
+                catalog["builtin"],
+                *catalog["mcp_by_server"].values(),
+                *catalog["other_by_source"].values(),
+            )
+            for entry in section
+        }
+        assert "memory_inventory" not in catalog_names
+        assert "memory_read" not in catalog_names
+
+        maintenance_catalog = registry.build_tool_catalog(include_maintenance=True)
+        maintenance_names = {
+            entry["name"]
+            for section in (
+                maintenance_catalog["builtin"],
+                *maintenance_catalog["mcp_by_server"].values(),
+                *maintenance_catalog["other_by_source"].values(),
+            )
+            for entry in section
+        }
+        assert "memory_inventory" in maintenance_names
+        assert "memory_read" in maintenance_names
+
+        search_service = ToolSearchService(registry)
+        assert search_service.search("inventory", session_id="test-session") == []
+        assert search_service.discover_by_name("memory_inventory", "test-session") is None
 
 
 class TestMemoryWriteUrlRoundTrip:
