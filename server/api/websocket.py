@@ -39,7 +39,7 @@ from notification_utils import (
 from personas import PersonaRegistry, PersonaRouter
 from personas.runtime import apply_persona_selection, resolve_active_persona
 from skills import SkillRegistry
-from tools.registry import ToolRegistry, get_search_service
+from tools.registry import TOOL_EXPOSURE_CHAT, ToolRegistry, get_search_service
 from user_turn import prepare_user_turn
 
 logger = logging.getLogger(__name__)
@@ -758,6 +758,7 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                             tool_input,
                             ctx=ctx,
                             tool_id=tool_id,
+                            allowed_exposures={TOOL_EXPOSURE_CHAT},
                         )
                         ui_for_storage = {k: v for k, v in ui_payload.items() if k != "output"}
                         tool_results.append(

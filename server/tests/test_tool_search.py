@@ -58,6 +58,16 @@ class CrabbySettingsFake(Tool):
         return ToolResult(output="ok")
 
 
+class MaintenanceTool(Tool):
+    name = "maintenance_tool"
+    description = "A maintenance-only tool for dream workflows."
+    always_eager = False
+    input_schema = EchoInput
+
+    async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
+        return ToolResult(output="ok")
+
+
 # --- ToolSearchService tests --------------------------------------------------
 
 class TestToolSearchServiceScoring:
@@ -99,6 +109,34 @@ class TestToolSearchServiceScoring:
         results = service.search("notes files", session_id="s1")
         assert len(results) == 1
         assert results[0].score > 0
+
+    def test_maintenance_tools_are_hidden_by_default(self) -> None:
+        registry = ToolRegistry()
+        registry.register(MaintenanceTool(), metadata={"exposure": "maintenance"})
+        service = ToolSearchService(registry)
+
+        assert service.search("maintenance", session_id="s1") == []
+        assert service.discover_by_name("maintenance_tool", "s1") is None
+
+    def test_maintenance_tools_can_be_included_explicitly(self) -> None:
+        registry = ToolRegistry()
+        registry.register(MaintenanceTool(), metadata={"exposure": "maintenance"})
+        service = ToolSearchService(registry)
+
+        results = service.search(
+            "maintenance",
+            session_id="s1",
+            include_maintenance=True,
+        )
+        assert [result.name for result in results] == ["maintenance_tool"]
+
+        discovered = service.discover_by_name(
+            "maintenance_tool",
+            "s1",
+            include_maintenance=True,
+        )
+        assert discovered is not None
+        assert discovered.name == "maintenance_tool"
 
     def test_empty_query_returns_nothing(self) -> None:
         registry = ToolRegistry()
@@ -259,6 +297,37 @@ class TestToolRegistryEagerDeferred:
         assert "deferred_tool_names" in catalog
         assert "fake_deferred" in catalog["deferred_tool_names"]
         assert "fake_eager" not in catalog["deferred_tool_names"]
+
+    def test_build_tool_catalog_hides_maintenance_by_default(self) -> None:
+        registry = ToolRegistry()
+        registry.register(FakeDeferredTool())
+        registry.register(MaintenanceTool(), metadata={"exposure": "maintenance"})
+
+        catalog = registry.build_tool_catalog()
+        all_names = {
+            entry["name"]
+            for section in (
+                catalog["builtin"],
+                *catalog["mcp_by_server"].values(),
+                *catalog["other_by_source"].values(),
+            )
+            for entry in section
+        }
+
+        assert "fake_deferred" in all_names
+        assert "maintenance_tool" not in all_names
+
+        maintenance_catalog = registry.build_tool_catalog(include_maintenance=True)
+        maintenance_names = {
+            entry["name"]
+            for section in (
+                maintenance_catalog["builtin"],
+                *maintenance_catalog["mcp_by_server"].values(),
+                *maintenance_catalog["other_by_source"].values(),
+            )
+            for entry in section
+        }
+        assert "maintenance_tool" in maintenance_names
 
 
 # --- ToolSearchTool integration tests ----------------------------------------

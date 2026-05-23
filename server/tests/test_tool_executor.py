@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from llm.tool_executor import _build_ui_payload, execute_tool_call
 from tools.base import Context, Tool, ToolResult
-from tools.registry import ToolRegistry
+from tools.registry import TOOL_EXPOSURE_CHAT, ToolRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +96,17 @@ class MetaTool(Tool):
         )
 
 
+class MaintenanceTool(Tool):
+    """A maintenance-only tool used to prove exposure gating."""
+
+    name = "maintenance_tool"
+    description = "Maintenance-only tool."
+    input_schema = SimpleInput
+
+    async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
+        return ToolResult(output="hidden")
+
+
 # ---------------------------------------------------------------------------
 # Tool not found
 # ---------------------------------------------------------------------------
@@ -122,6 +133,30 @@ async def test_tool_not_found_returns_error_payload(tmp_path: Path):
     assert ui["name"] == "nonexistent_tool"
     assert ui["elapsed_ms"] == 0
     assert ui["metadata"]["error_type"] == "unknown_tool"
+
+
+@pytest.mark.asyncio
+async def test_unavailable_tool_returns_error_payload(tmp_path: Path):
+    """A maintenance tool must be rejected in normal chat contexts."""
+    registry = ToolRegistry()
+    registry.register(MaintenanceTool(), metadata={"exposure": "maintenance"})
+    ctx = Context(vault_path=tmp_path)
+
+    llm_text, ui = await execute_tool_call(
+        registry,
+        "maintenance_tool",
+        {"value": "test"},
+        ctx=ctx,
+        tool_id="toolu_hidden",
+        allowed_exposures={TOOL_EXPOSURE_CHAT},
+    )
+
+    assert "not available" in llm_text.lower()
+    assert ui["status"] == "error"
+    assert ui["is_error"] is True
+    assert ui["id"] == "toolu_hidden"
+    assert ui["name"] == "maintenance_tool"
+    assert ui["metadata"]["error_type"] == "unavailable_tool"
 
 
 # ---------------------------------------------------------------------------

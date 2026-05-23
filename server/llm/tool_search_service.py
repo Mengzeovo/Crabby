@@ -45,6 +45,8 @@ class ToolSearchService:
         query: str,
         session_id: str,
         max_results: int = 5,
+        *,
+        include_maintenance: bool = False,
     ) -> list[ScoredTool]:
         """Search deferred tools by query, rank by score, mark all results as discovered.
 
@@ -53,7 +55,9 @@ class ToolSearchService:
         if not query or not query.strip():
             return []
 
-        deferred_tools = self._get_deferred_tools()
+        deferred_tools = self._get_deferred_tools(
+            include_maintenance=include_maintenance,
+        )
         scored: list[ScoredTool] = []
         for tool_name, tool_obj, source in deferred_tools:
             score = self._score(query, tool_name, tool_obj.description, source)
@@ -87,9 +91,17 @@ class ToolSearchService:
         )
         return results
 
-    def discover_by_name(self, name: str, session_id: str) -> ScoredTool | None:
+    def discover_by_name(
+        self,
+        name: str,
+        session_id: str,
+        *,
+        include_maintenance: bool = False,
+    ) -> ScoredTool | None:
         """Direct name-based discovery. Returns the tool's full ScoredTool if deferred."""
-        deferred_tools = self._get_deferred_tools()
+        deferred_tools = self._get_deferred_tools(
+            include_maintenance=include_maintenance,
+        )
         for tool_name, tool_obj, source in deferred_tools:
             if tool_name == name:
                 sid = session_id or ""
@@ -112,12 +124,20 @@ class ToolSearchService:
 
     def _get_deferred_tools(
         self,
+        *,
+        include_maintenance: bool = False,
     ) -> list[tuple[str, Any, str]]:
         """Return all non-eager tools as (name, tool_obj, source) tuples."""
         results: list[tuple[str, Any, str]] = []
         for name, tool_obj, source, _metadata in self._registry.snapshot():
-            if not self._registry.is_eager_tool(name):
-                results.append((name, tool_obj, source))
+            if self._registry.is_eager_tool(name):
+                continue
+            if not self._registry.is_visible_tool(
+                name,
+                include_maintenance=include_maintenance,
+            ):
+                continue
+            results.append((name, tool_obj, source))
         return results
 
     def _score(

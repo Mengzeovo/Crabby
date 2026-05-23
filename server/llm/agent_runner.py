@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from llm.client import chat_completion
 from llm.tool_executor import execute_tool_call
 from tools.base import Context
-from tools.registry import ToolRegistry
+from tools.registry import TOOL_EXPOSURE_CHAT, ToolRegistry
 
 if TYPE_CHECKING:
     from llm.tool_search_service import ToolSearchService
@@ -97,6 +97,7 @@ async def run_agent_turn(
                 tool_input,
                 ctx=ctx,
                 tool_id=tool_id,
+                allowed_exposures={TOOL_EXPOSURE_CHAT},
             )
             ui_for_storage = {k: v for k, v in ui_payload.items() if k != "output"}
             tool_results.append(

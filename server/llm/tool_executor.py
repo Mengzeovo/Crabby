@@ -8,7 +8,7 @@ from typing import Any
 
 from config import DATA_DIR, settings
 from tools.base import Context, ToolResult
-from tools.registry import ToolRegistry
+from tools.registry import TOOL_EXPOSURE_CHAT, ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,7 @@ async def execute_tool_call(
     tool_input: dict[str, Any],
     ctx: Context | None = None,
     tool_id: str | None = None,
+    allowed_exposures: set[str] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Run one tool call and return (llm_text, ui_payload).
 
@@ -122,6 +123,21 @@ async def execute_tool_call(
     """
     if ctx is None:
         ctx = build_default_context()
+
+    tool_exposure = registry.exposure_of(tool_name) or TOOL_EXPOSURE_CHAT
+    if (
+        allowed_exposures is not None
+        and tool_exposure not in allowed_exposures
+    ):
+        msg = f"Tool is not available in the current context: {tool_name}"
+        return msg, _build_ui_payload(
+            tool_name=tool_name,
+            output=msg,
+            tool_id=tool_id,
+            metadata={"error": msg, "error_type": "unavailable_tool"},
+            elapsed_ms=0,
+            is_error=True,
+        )
 
     # 1. Look up
     tool = registry.get(tool_name)

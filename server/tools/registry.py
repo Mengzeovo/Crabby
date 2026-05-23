@@ -12,6 +12,31 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+TOOL_EXPOSURE_CHAT = "chat"
+TOOL_EXPOSURE_MAINTENANCE = "maintenance"
+TOOL_EXPOSURE_KEY = "exposure"
+
+
+def _normalized_exposure(metadata: dict[str, Any]) -> str:
+    exposure = (
+        str(metadata.get(TOOL_EXPOSURE_KEY) or TOOL_EXPOSURE_CHAT)
+        .strip()
+        .lower()
+    )
+    if not exposure:
+        return TOOL_EXPOSURE_CHAT
+    return exposure
+
+
+def _is_visible_for_chat(
+    metadata: dict[str, Any],
+    *,
+    include_maintenance: bool,
+) -> bool:
+    if include_maintenance:
+        return True
+    return _normalized_exposure(metadata) != TOOL_EXPOSURE_MAINTENANCE
+
 
 class ToolRegistry:
     def __init__(self) -> None:
@@ -68,6 +93,12 @@ class ToolRegistry:
             return None
         return dict(metadata)
 
+    def exposure_of(self, name: str) -> str | None:
+        metadata = self._tool_metadata.get(name)
+        if metadata is None:
+            return None
+        return _normalized_exposure(metadata)
+
     def tool_names_by_source(self, source: str) -> list[str]:
         return [
             name
@@ -122,29 +153,64 @@ class ToolRegistry:
         self._tool_sources = next_sources
         self._tool_metadata = next_metadata
 
-    def to_anthropic_tools(self) -> list[dict[str, Any]]:
-        return [tool.to_anthropic_tool() for tool in self._tools.values()]
+    def to_anthropic_tools(
+        self,
+        allowed_names: set[str] | None = None,
+        *,
+        include_maintenance: bool = False,
+    ) -> list[dict[str, Any]]:
+        return [
+            tool.to_anthropic_tool()
+            for name, tool, _source, metadata in self.snapshot()
+            if (allowed_names is None or name in allowed_names)
+            and _is_visible_for_chat(
+                metadata,
+                include_maintenance=include_maintenance,
+            )
+        ]
 
     def is_eager_tool(self, name: str) -> bool:
         """Return True if the named tool has always_eager=True."""
         tool = self._tools.get(name)
         return getattr(tool, "always_eager", False)
 
+    def is_visible_tool(
+        self,
+        name: str,
+        *,
+        include_maintenance: bool = False,
+    ) -> bool:
+        metadata = self._tool_metadata.get(name)
+        if metadata is None:
+            return False
+        return _is_visible_for_chat(
+            metadata,
+            include_maintenance=include_maintenance,
+        )
+
     def get_eager_and_deferred(
-        self, allowed_names: set[str] | None = None
+        self,
+        allowed_names: set[str] | None = None,
+        *,
+        include_maintenance: bool = False,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Split all tools into eager and deferred lists, filtered by allowed_names.
 
         Returns (eager_schemas, deferred_schemas), each a list of
         Anthropic-format tool schema dicts.
         """
-        all_schemas = self.to_anthropic_tools()
         eager: list[dict[str, Any]] = []
         deferred: list[dict[str, Any]] = []
-        for schema in all_schemas:
-            if allowed_names is not None and schema["name"] not in allowed_names:
+        for name, tool, _source, metadata in self.snapshot():
+            if allowed_names is not None and name not in allowed_names:
                 continue
-            if self.is_eager_tool(schema["name"]):
+            if not _is_visible_for_chat(
+                metadata,
+                include_maintenance=include_maintenance,
+            ):
+                continue
+            schema = tool.to_anthropic_tool()
+            if self.is_eager_tool(name):
                 eager.append(schema)
             else:
                 deferred.append(schema)
@@ -153,6 +219,8 @@ class ToolRegistry:
     def build_tool_catalog(
         self,
         allowed_names: set[str] | None = None,
+        *,
+        include_maintenance: bool = False,
     ) -> dict[str, Any]:
         builtin: list[dict[str, str]] = []
         mcp_by_server: dict[str, list[dict[str, str]]] = {}
@@ -161,6 +229,11 @@ class ToolRegistry:
 
         for name, tool, source, metadata in self.snapshot():
             if allowed_names is not None and name not in allowed_names:
+                continue
+            if not _is_visible_for_chat(
+                metadata,
+                include_maintenance=include_maintenance,
+            ):
                 continue
 
             entry = {
