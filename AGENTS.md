@@ -122,7 +122,7 @@ Important backend files and folders:
   API models.
 - `server/tools/`: built-in tools such as `obsidian_search`,
   `crabby_settings`, `read`, `grep`, `glob`, `bash`, `edit`, `fetch`, `cron`,
-  and `task_query`.
+  `task_query`, and memory tools.
 - `server/tools/bash.py`: non-interactive cross-platform shell tool. On
   Windows it launches PowerShell without a profile, forces UTF-8 output, and
   translates top-level `&&` / `||` chains for PowerShell 5.x compatibility.
@@ -148,6 +148,18 @@ Important backend files and folders:
   before using external search. ISO datetime filters are compared in local
   wall-clock time so timezone-aware inputs normalize against stored naive
   timestamps.
+- `server/tools/memory_inventory.py`: maintenance inventory tool for all
+  long-term memory states. It defaults to `state=all`, supports facet/time/name
+  filters plus pagination, and returns compact metadata, link fields, Vault
+  relative paths, and snippets for dream/maintenance candidate selection. It is
+  hidden from the normal chat tool catalog and `tool_search`.
+- `server/tools/memory_read.py`: memory-scoped reader that resolves a global
+  memory `name` through `NAME_INDEX.md`, reads only files under
+  `<vault>/.crabby/memory/`, and returns full frontmatter/body with truncation
+  cache support for active, archived, and invalidated memories. It is also
+  hidden from the normal chat tool catalog and `tool_search`.
+- `server/memory/catalog.py`: shared scanner/filter helper for Vault-backed
+  memory documents, used by `memory_search` and `memory_inventory`.
 - `server/tools/cron.py`: cron create/list/delete tool and
   backend runtime `data/cron_jobs.json` persistence.
 - `server/memory/`: file-backed session manifest/conversation storage, legacy
@@ -422,6 +434,13 @@ npm run start
   `valid_from`, and `valid_to`. Timestamps, links, and provenance are
   frontmatter metadata but not facet fields. The facet model does not include
   `scope`, `confidence`, or `description`.
+- Memory lifecycle states are `active`, `archived`, and `invalidated`.
+  `memory_search` is the ordinary recall tool and defaults to `active`;
+  `memory_inventory` and `memory_read` are maintenance-oriented tools for
+  inspecting archived/invalidated provenance without making those states part of
+  default chat recall. They stay registered in the backend but are filtered out
+  of normal chat tool catalogs and `tool_search`. There is no hard-delete memory
+  tool in the current V1.
 - `memory_search` distinguishes fact validity from file recency:
   `valid_at` filters `valid_from`/`valid_to`, while `created_after`,
   `created_before`, `updated_after`, and `updated_before` filter memory
@@ -490,6 +509,11 @@ npm run start
   exploratory memory lookups when the MemPalace MCP tool is available; use
   `memory_search` first for exact facts, decisions, preferences, and current
   state.
+- Use `memory_inventory` and `memory_read` only for maintenance-style review,
+  dream preparation, or explicit full-state memory inspection; ordinary chat
+  recall should stay on `memory_search` so archived/invalidated memories do not
+  contaminate current answers. Normal chat contexts must not surface these two
+  tools in the prompt or `tool_search` results.
 - `obsidian_search` is hosted by the running plugin and reached through the
   `/client-tools/obsidian` bridge.
 - It supports common Obsidian Search DSL semantics: terms, phrases, OR,
@@ -536,7 +560,8 @@ Use the smallest relevant verification set:
   `cd server && uv run ruff check .`.
   Add `cd obsidian-plugin && npm run test:config && npx tsc --noEmit && npm run build`
   when the diary settings sync path or plugin runtime layout changes.
-- Memory write/search, memory checkpoint, or memory provenance change:
+- Memory write/search/inventory/read, memory checkpoint, or memory provenance
+  change:
   `cd server && uv run pytest tests/test_auto_save.py tests/test_memory.py tests/test_memory_tools.py`,
   then full backend tests and ruff.
 - Branch cache/session tree change: targeted tests for TTL, LRU,
