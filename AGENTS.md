@@ -245,6 +245,11 @@ Important plugin files and folders:
 - `obsidian-plugin/scripts/`: repo-local verification scripts.
 - `obsidian-plugin/scripts/test-chat-tools.js`: verifies tool-result payload
   normalization and chat transcript tool-block rendering behavior.
+- `obsidian-plugin/scripts/test-backend-config.js`: platform-neutral config
+  regression coverage for backend config, runtime state, search engine, and
+  Obsidian vault resolution. It uses OS-specific Obsidian metadata locations
+  and vault path literals so `npm run test:config` passes on Windows, macOS,
+  and Linux.
 - `obsidian-plugin/manifest.json`: plugin manifest.
 - `obsidian-plugin/main.js`: built plugin bundle.
 

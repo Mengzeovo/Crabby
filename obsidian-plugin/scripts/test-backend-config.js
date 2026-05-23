@@ -993,8 +993,17 @@ function testSearchEngine(mod) {
 
 function testObsidianVaultResolution() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "laa-obsidian-meta-"));
-  const configDir = path.join(tempDir, "obsidian");
+  const isWindows = process.platform === "win32";
+  const isDarwin = process.platform === "darwin";
+  const configDir = isWindows
+    ? path.join(tempDir, "obsidian")
+    : isDarwin
+      ? path.join(tempDir, "Library", "Application Support", "obsidian")
+      : path.join(tempDir, ".config", "obsidian");
   const configPath = path.join(configDir, "obsidian.json");
+  const recentVaultPath = isWindows ? "D:\\Vault-A" : "/vault-a";
+  const openVaultPath = isWindows ? "E:\\Vault-B" : "/vault-b";
+  const explicitVaultPath = isWindows ? "F:\\ManualVault" : "/manual-vault";
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(
     configPath,
@@ -1002,12 +1011,12 @@ function testObsidianVaultResolution() {
       {
         vaults: {
           alpha: {
-            path: "D:\\Vault-A",
+            path: recentVaultPath,
             ts: 100,
             open: false,
           },
           beta: {
-            path: "E:\\Vault-B",
+            path: openVaultPath,
             ts: 200,
             open: true,
           },
@@ -1020,32 +1029,59 @@ function testObsidianVaultResolution() {
   );
 
   const previousAppData = process.env.APPDATA;
+  const previousHome = process.env.HOME;
+  const previousXdgConfigHome = process.env.XDG_CONFIG_HOME;
   const previousVaultPath = process.env.VAULT_PATH;
 
-  process.env.APPDATA = tempDir;
-  delete process.env.VAULT_PATH;
+  try {
+    if (isWindows) {
+      process.env.APPDATA = tempDir;
+      delete process.env.HOME;
+      delete process.env.XDG_CONFIG_HOME;
+    } else if (isDarwin) {
+      process.env.HOME = tempDir;
+      delete process.env.APPDATA;
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = path.join(tempDir, ".config");
+      delete process.env.APPDATA;
+    }
 
-  const expectedOpenVaultPath = path.resolve("E:\\Vault-B");
-  const fromObsidian = obsidianVault.resolveVaultForDeploy();
-  assert.equal(fromObsidian.vaultPath, expectedOpenVaultPath);
-  assert.equal(fromObsidian.source, "obsidian-open");
-
-  const explicitVaultPath = "F:\\ManualVault";
-  process.env.VAULT_PATH = explicitVaultPath;
-  const fromEnv = obsidianVault.resolveVaultForDeploy();
-  assert.equal(fromEnv.vaultPath, path.resolve(explicitVaultPath));
-  assert.equal(fromEnv.source, "env");
-
-  if (previousAppData === undefined) {
-    delete process.env.APPDATA;
-  } else {
-    process.env.APPDATA = previousAppData;
-  }
-
-  if (previousVaultPath === undefined) {
     delete process.env.VAULT_PATH;
-  } else {
-    process.env.VAULT_PATH = previousVaultPath;
+
+    const expectedOpenVaultPath = path.resolve(openVaultPath);
+    const fromObsidian = obsidianVault.resolveVaultForDeploy();
+    assert.equal(fromObsidian.vaultPath, expectedOpenVaultPath);
+    assert.equal(fromObsidian.source, "obsidian-open");
+
+    process.env.VAULT_PATH = explicitVaultPath;
+    const fromEnv = obsidianVault.resolveVaultForDeploy();
+    assert.equal(fromEnv.vaultPath, path.resolve(explicitVaultPath));
+    assert.equal(fromEnv.source, "env");
+  } finally {
+    if (previousAppData === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = previousAppData;
+    }
+
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+
+    if (previousXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = previousXdgConfigHome;
+    }
+
+    if (previousVaultPath === undefined) {
+      delete process.env.VAULT_PATH;
+    } else {
+      process.env.VAULT_PATH = previousVaultPath;
+    }
   }
 }
 
