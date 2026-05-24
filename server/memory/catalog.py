@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from memory.facets import (
+    VALID_KINDS,
     VALID_STATES,
     VALID_TYPES,
     is_safe_topic_component,
@@ -133,6 +134,10 @@ def validate_memory_filters(
             "无效 topic: 只能使用安全目录名"
             "（中文/Unicode 字母数字、ASCII 小写、数字和非首尾连字符）。"
         )
+
+    kind = getattr(params, "kind", None)
+    if kind and kind not in VALID_KINDS:
+        return f"无效 kind: {kind}。支持: {', '.join(VALID_KINDS)}"
 
     state = getattr(params, "state", None)
     if state:

@@ -357,6 +357,17 @@ class TestMemorySearch:
         assert result.metadata["results"] == []
 
     @pytest.mark.asyncio
+    async def test_search_rejects_invalid_kind(self, search_tool, ctx):
+        result = await search_tool.call(
+            MemorySearchInput(mode="search", kind="decision"),
+            ctx,
+        )
+        assert "无效 kind" in result.output
+        assert "decision" in result.output
+        assert result.metadata["error"] is True
+        assert result.metadata["results"] == []
+
+    @pytest.mark.asyncio
     async def test_search_finds_written_memory(self, write_tool, search_tool, ctx):
         await write_tool.call(
             MemoryWriteInput(
@@ -750,6 +761,18 @@ class TestMemorySearch:
 
 
 class TestMemoryInventoryAndRead:
+    @pytest.mark.asyncio
+    async def test_inventory_rejects_invalid_kind(self, inventory_tool, ctx):
+        result = await inventory_tool.call(
+            MemoryInventoryInput(kind="decision"),
+            ctx,
+        )
+        assert "无效 kind" in result.output
+        assert "decision" in result.output
+        assert result.metadata["error"] is True
+        assert result.metadata["results"] == []
+        assert result.metadata["total"] == 0
+
     @pytest.mark.asyncio
     async def test_inventory_defaults_to_all_states(
         self, write_tool, inventory_tool, ctx

@@ -147,12 +147,15 @@ Important backend files and folders:
   fall back to local full-text snippets over file names/titles/body headings
   before using external search. ISO datetime filters are compared in local
   wall-clock time so timezone-aware inputs normalize against stored naive
-  timestamps.
+  timestamps. Common filter validation rejects invalid `kind` values instead of
+  treating unknown kinds as empty search results.
 - `server/tools/memory_inventory.py`: maintenance inventory tool for all
   long-term memory states. It defaults to `state=all`, supports facet/time/name
   filters plus pagination, and returns compact metadata, link fields, Vault
-  relative paths, and snippets for dream/maintenance candidate selection. It is
-  hidden from the normal chat tool catalog and `tool_search`.
+  relative paths, and snippets for dream/maintenance candidate selection. It
+  uses the same common facet filter validation as `memory_search`, including
+  `kind` validation. It is hidden from the normal chat tool catalog and
+  `tool_search`.
 - `server/tools/memory_read.py`: memory-scoped reader that resolves a global
   memory `name` through `NAME_INDEX.md`, reads only files under
   `<vault>/.crabby/memory/`, and returns full frontmatter/body with truncation
