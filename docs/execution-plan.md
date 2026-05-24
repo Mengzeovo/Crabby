@@ -62,24 +62,30 @@ Crabby 当前已经具备发布给早期用户试用的主干能力：
 - bash enable/disable。
 - settings/profile key redaction。
 
-## Release 0.3 目标：长会话体验
+## Release 0.3 目标：记忆能力底座
 
-目标：让长主题和分支使用更自然。
+目标：把 Crabby 的长期记忆从设计草案推进为可运行的本地优先能力，并把本轮版本定位为记忆相关发布。
 
 优先项：
 
-- 改善 current-session tree UI。
-- 优化 fork action 的可见性和消息定位。
-- 显示 active branch 与 sibling branch 的关系。
-- 增加 branch cache 观测和调试信息。
-- 引入明确的长会话摘要或 pruning 设计。
+- Vault Markdown 成为长期记忆 canonical store，MemPalace 降级为可选派生语义索引。
+- 落地 memory facet 模型、`REGISTRY.md`、`NAME_INDEX.md` 和 `.crabby/memory/` 目录布局。
+- `memory_write` / `memory_search` 支持写入、结构化召回、registry 检查、全文 fallback、时间过滤和 provenance。
+- `memory_inventory` / `memory_read` 作为维护工具读取 active / archived / invalidated 全状态记忆，但不进入普通聊天工具目录。
+- Auto-save 改为 checkpoint 驱动的记忆审阅，只允许 `memory_search` / `memory_write`。
+- Dream 后台维护 agent 低频聚合碎片记忆，写入 summary、归档来源，并在用户开始聊天时中断。
+- Diary V1 与长期记忆分离，用户显式请求才写入日 / 周 / 月 / 季 / 年记录。
 
 测试重点：
 
-- REST/WS message ID propagation。
-- branch switch 后 context-stats 正确。
-- fork 后 sibling branch 不进入 LLM context。
-- branch cache TTL/LRU/fingerprint。
+- `tests/test_memory_tools.py`
+- `tests/test_auto_save.py`
+- `tests/test_memory_dream.py`
+- `tests/test_dream_daemon.py`
+- `tests/test_diary_tool.py`
+- `tests/test_diary_api.py`
+
+发布说明：`docs/release-notes-0.3.0.md`
 
 ## Release 0.4 目标：MCP 和 Provider 稳定性
 
@@ -122,19 +128,19 @@ Crabby 当前已经具备发布给早期用户试用的主干能力：
 - WebSocket `sys_notify`
 - Desktop Pet typecheck/test/build
 
-## Release 0.6+ 方向：长期记忆和知识工作流
+## Release 0.6+ 方向：知识工作流和成长反馈
 
 目标：把 Crabby 从“会话内 assistant”扩展成更长期的个人知识伙伴。
 
 候选方向：
 
 - Long-session summarization。
-- 用户可编辑的长期偏好和项目状态。
 - Vault-aware review workflows。
 - 更强的 task/project dashboard。
 - Skill allowed-tools。
 - Persona/Skill UI 编辑。
 - 可审计的自动化历史。
+- `/learn`、学习档案、错题本聚合和间隔重复提醒。
 
 原则：
 

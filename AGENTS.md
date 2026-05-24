@@ -1,6 +1,6 @@
 # Agent Handoff
 
-Last rewritten: 2026-05-22
+Last rewritten: 2026-05-24
 
 This file is the fast entry point for agents and maintainers taking over the
 Crabby repository. It should reflect the current repo, not old plans or memory
@@ -59,6 +59,13 @@ workflows. It is not a cloud multi-user SaaS.
   MemPalace as a downstream semantic index and knowledge-graph layer, not the
   canonical memory store.
 - `docs/execution-plan.md`: release roadmap.
+- `docs/release-notes-0.3.0.md`: Release 0.3.0 memory-focused feature summary,
+  operational notes, and remaining memory roadmap items.
+- `docs/growth-vision.md`: product vision and phased growth plan. Current
+  growth-feedback direction is user-initiated: `/learn` is the preferred entry
+  for learning/review feedback, ordinary chat only deposits durable learning
+  signals, and cron-style reminders should stay low-interruption rather than
+  automatically starting lessons or evaluations.
 - `docs/claude-code-analysis.md`: design reference, not current implementation.
 - `prompts/`: repository default prompt fragments.
 - `personas/`: checked-in runtime personas.
@@ -209,7 +216,7 @@ uv sync --dev
 uv run python main.py
 uv run pytest
 uv run ruff check .
-uv run --with pyinstaller python ../scripts/build-backend-runtime.py --version 0.2.0
+uv run --with pyinstaller python ../scripts/build-backend-runtime.py --version 0.3.0
 ```
 
 ## Obsidian Plugin Map

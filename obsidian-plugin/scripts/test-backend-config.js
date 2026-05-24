@@ -804,7 +804,7 @@ function testRuntimeStatePaths(mod) {
   const executablePath = path.join(
     runtimeDir,
     "backend",
-    "0.2.0",
+    "0.3.0",
     "darwin",
     "crabby-backend",
   );
@@ -815,7 +815,7 @@ function testRuntimeStatePaths(mod) {
   );
   assert.equal(
     statePath,
-    path.join("backend", "0.2.0", "darwin", "crabby-backend"),
+    path.join("backend", "0.3.0", "darwin", "crabby-backend"),
   );
   assert.equal(
     mod.resolveRuntimeExecutablePath(runtimeDir, statePath),

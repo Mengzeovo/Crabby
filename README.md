@@ -78,7 +78,7 @@ Build the backend runtime on the target platform:
 ```bash
 cd server
 uv sync --dev
-uv run --with pyinstaller python ../scripts/build-backend-runtime.py --version 0.2.0
+uv run --with pyinstaller python ../scripts/build-backend-runtime.py --version 0.3.0
 cd ..
 ```
 
@@ -95,7 +95,7 @@ python scripts/package-obsidian-release.py --platform darwin --arch arm64
 Expected output:
 
 ```text
-dist/obsidian-plugin/crabby-0.2.0-darwin-arm64.zip
+dist/obsidian-plugin/crabby-0.3.0-darwin-arm64.zip
 ```
 
 Install by extracting the zip to:
@@ -111,7 +111,7 @@ folder can be replaced during upgrades without deleting user data.
 Then restart Obsidian, open `Settings -> Community plugins`, disable Restricted Mode if needed, and enable **Crabby**. On macOS or Linux, make the backend executable if your unzip tool did not preserve permissions:
 
 ```bash
-chmod +x "<YourVault>/.obsidian/plugins/crabby/runtime/backend/0.2.0/darwin/crabby-backend"
+chmod +x "<YourVault>/.obsidian/plugins/crabby/runtime/backend/0.3.0/darwin/crabby-backend"
 ```
 
 ### First Run
@@ -158,6 +158,7 @@ Do not commit real API keys or private MCP configuration.
 - [docs/会话设计.md](docs/会话设计.md): session and branch design
 - [docs/llm-provider-matrix.md](docs/llm-provider-matrix.md): provider presets
 - [docs/execution-plan.md](docs/execution-plan.md): roadmap
+- [docs/release-notes-0.3.0.md](docs/release-notes-0.3.0.md): Release 0.3.0 memory feature summary
 - [AGENTS.md](AGENTS.md): maintainer and agent handoff
 
 ### Safety Notes
@@ -244,7 +245,7 @@ npm run build
 ```bash
 cd server
 uv sync --dev
-uv run --with pyinstaller python ../scripts/build-backend-runtime.py --version 0.2.0
+uv run --with pyinstaller python ../scripts/build-backend-runtime.py --version 0.3.0
 cd ..
 ```
 
@@ -261,7 +262,7 @@ python scripts/package-obsidian-release.py --platform darwin --arch arm64
 预期输出：
 
 ```text
-dist/obsidian-plugin/crabby-0.2.0-darwin-arm64.zip
+dist/obsidian-plugin/crabby-0.3.0-darwin-arm64.zip
 ```
 
 安装时把 zip 解压到：
@@ -273,7 +274,7 @@ dist/obsidian-plugin/crabby-0.2.0-darwin-arm64.zip
 然后重启 Obsidian，打开 `Settings -> Community plugins`，必要时关闭 Restricted Mode，并启用 **Crabby**。macOS 或 Linux 下，如果解压工具没有保留执行权限，运行：
 
 ```bash
-chmod +x "<YourVault>/.obsidian/plugins/crabby/runtime/backend/0.2.0/darwin/crabby-backend"
+chmod +x "<YourVault>/.obsidian/plugins/crabby/runtime/backend/0.3.0/darwin/crabby-backend"
 ```
 
 ### 首次运行
