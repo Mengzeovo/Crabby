@@ -55,6 +55,10 @@ workflows. It is not a cloud multi-user SaaS.
 - `docs/会话上下文折叠与展开设计.md`: future design note for compressing
   tool-heavy session spans into reusable summaries and expanding them on
   demand.
+- `docs/Vault搜索索引与语义召回设计.md`: future design note for adding a
+  rebuildable Vault search index, MemPalace-backed semantic recall, stable
+  source references back to Vault originals, result verification, and separate
+  MemPalace wings for long-term memory versus ordinary Vault document search.
 - `docs/MEMPALACE_INTEGRATION.md`: MemPalace MCP service reference; treat
   MemPalace as a downstream semantic index and knowledge-graph layer, not the
   canonical memory store.
@@ -263,6 +267,9 @@ Important plugin files and folders:
 - `obsidian-plugin/src/clientTools/`: WebSocket client-tool bridge.
 - `obsidian-plugin/src/clientTools/obsidianClientTools.ts`: routes backend RPC
   requests to plugin-hosted tools.
+- `obsidian-plugin/src/clientTools/searchInput.ts`: normalizes
+  `obsidian_search` bridge input and intentionally strips internal
+  `debug_score_details` from backend-visible tool requests.
 - `obsidian-plugin/src/clientTools/crabbySettingsTool.ts`: plugin-hosted
   self-management tool for settings and backend-owned profiles.
 - `obsidian-plugin/src/config/`: backend, profile sync, provider presets, and
@@ -282,7 +289,12 @@ Important plugin files and folders:
   executable paths relative to the installed plugin runtime directory and
   resolves relative/legacy absolute paths at launch.
 - `obsidian-plugin/src/search/`: Obsidian-search-compatible DSL parsing and
-  `.md` / `.canvas` search implementation.
+  `.md` / `.canvas` search implementation. Ranking is field-aware: filename,
+  title, aliases, headings, tags/properties, path, tasks, body BM25-lite,
+  query-term coverage, phrase hits, and a small recency boost contribute to the
+  final score. Internal `debug_score_details` is available to tests/local
+  diagnostics but is not accepted through the client bridge or shown in normal
+  tool output.
 - `obsidian-plugin/scripts/`: repo-local verification scripts.
 - `obsidian-plugin/scripts/test-chat-tools.js`: verifies tool-result payload
   normalization and chat transcript tool-block rendering behavior.
@@ -590,7 +602,9 @@ npm run start
   `/client-tools/obsidian` bridge.
 - It supports common Obsidian Search DSL semantics: terms, phrases, OR,
   negation, regex, file/path/content/tag/line/block/section/task operators,
-  and property queries.
+  and property queries. Default result ordering uses field-aware relevance
+  scoring with BM25-lite body normalization, query coverage, phrase boosts, and
+  only a small recency tie-break boost.
 - Use `crabby_settings` for plugin runtime/profile/settings state.
 - Use `grep`, `glob`, and `read` for non-Obsidian files, raw text/code/logs, or
   when the bridge is disconnected.

@@ -991,6 +991,243 @@ function testSearchEngine(mod) {
   assert.deepEqual(paths("file:canvas"), ["Boards/Sleep.canvas"]);
 }
 
+function testSearchRanking(mod) {
+  const docs = [
+    {
+      path: "Health/Sleep Protocol.md",
+      name: "Sleep Protocol.md",
+      ext: "md",
+      title: "Sleep Protocol",
+      content: "# Sleep Protocol\nCaffeine timing, rest planning, and sleep quality notes.",
+      mtime: 100,
+      tags: ["#health"],
+      aliases: ["Rest Blueprint"],
+      properties: { status: "active", type: "guide" },
+      headings: [{ text: "Sleep Protocol", line: 1 }],
+      sections: [{ text: "# Sleep Protocol\nCaffeine timing, rest planning, and sleep quality notes.", line: 1 }],
+      blocks: [{ text: "Caffeine timing, rest planning, and sleep quality notes.", line: 2 }],
+      tasks: [],
+    },
+    {
+      path: "Archive/Recovery Mentions.md",
+      name: "Recovery Mentions.md",
+      ext: "md",
+      title: "Recovery Mentions",
+      content: "rest rest rest rest rest rest rest rest",
+      mtime: 980,
+      tags: ["#archive"],
+      aliases: [],
+      properties: {},
+      headings: [],
+      sections: [],
+      blocks: [],
+      tasks: [],
+    },
+    {
+      path: "Archive/Long Caffeine Mentions.md",
+      name: "Long Caffeine Mentions.md",
+      ext: "md",
+      title: "Long Caffeine Mentions",
+      content: [
+        "# Notes",
+        "sleep appears once in this archive note.",
+        "caffeine caffeine caffeine caffeine caffeine caffeine caffeine caffeine",
+        "caffeine caffeine caffeine caffeine caffeine caffeine caffeine caffeine",
+      ].join("\n"),
+      mtime: 900,
+      tags: ["#archive"],
+      aliases: [],
+      properties: { status: "archive" },
+      headings: [{ text: "Notes", line: 1 }],
+      sections: [],
+      blocks: [],
+      tasks: [],
+    },
+    {
+      path: "Archive/Repeated Sleep.md",
+      name: "Repeated Sleep.md",
+      ext: "md",
+      title: "Repeated Sleep",
+      content: "sleep sleep sleep sleep sleep sleep sleep sleep sleep sleep",
+      mtime: 950,
+      tags: ["#archive"],
+      aliases: [],
+      properties: { status: "archive" },
+      headings: [],
+      sections: [],
+      blocks: [],
+      tasks: [],
+    },
+    {
+      path: "Research/Recovery.md",
+      name: "Recovery.md",
+      ext: "md",
+      title: "Recovery",
+      content: "# Recovery\n## Caffeine Sleep Experiment\nREM changed after late coffee.",
+      mtime: 200,
+      tags: ["#research"],
+      aliases: [],
+      properties: { status: "active" },
+      headings: [
+        { text: "Recovery", line: 1 },
+        { text: "Caffeine Sleep Experiment", line: 2 },
+      ],
+      sections: [{ text: "## Caffeine Sleep Experiment\nREM changed after late coffee.", line: 2 }],
+      blocks: [],
+      tasks: [],
+    },
+    {
+      path: "Research/Heading Only.md",
+      name: "Heading Only.md",
+      ext: "md",
+      title: "Heading Only",
+      content: "# Heading Only\n## Sleep and Caffeine Notes",
+      mtime: 250,
+      tags: [],
+      aliases: [],
+      properties: {},
+      headings: [
+        { text: "Heading Only", line: 1 },
+        { text: "Sleep and Caffeine Notes", line: 2 },
+      ],
+      sections: [{ text: "## Sleep and Caffeine Notes", line: 2 }],
+      blocks: [],
+      tasks: [],
+    },
+    {
+      path: "Daily/2026-05-24.md",
+      name: "2026-05-24.md",
+      ext: "md",
+      title: "Daily",
+      content: "# Daily\nSleep sleep sleep sleep sleep. Finish review.",
+      mtime: 1000,
+      tags: ["#daily"],
+      aliases: [],
+      properties: { status: "draft" },
+      headings: [{ text: "Daily", line: 1 }],
+      sections: [],
+      blocks: [],
+      tasks: [{ text: "- [ ] Finish review", line: 2, status: "todo" }],
+    },
+    {
+      path: "Health/Chinese.md",
+      name: "Chinese.md",
+      ext: "md",
+      title: "Sleep in Chinese",
+      content: "# Sleep in Chinese\n咖啡因会影响睡眠质量。",
+      mtime: 300,
+      tags: [],
+      aliases: [],
+      properties: {},
+      headings: [{ text: "Sleep in Chinese", line: 1 }],
+      sections: [],
+      blocks: [],
+      tasks: [],
+    },
+    {
+      path: "Boards/Sleep.canvas",
+      name: "Sleep.canvas",
+      ext: "canvas",
+      title: "Sleep",
+      content: "Canvas planning for sleep experiments",
+      mtime: 400,
+      tags: [],
+      aliases: [],
+      properties: { type: "canvas" },
+      headings: [],
+      sections: [{ text: "Canvas planning for sleep experiments" }],
+      blocks: [{ text: "Canvas planning for sleep experiments" }],
+      tasks: [],
+    },
+    {
+      path: "Meta/Review.md",
+      name: "Review.md",
+      ext: "md",
+      title: "Review",
+      content: "body only",
+      mtime: 1100,
+      tags: [],
+      aliases: [],
+      properties: { review_state: "queued" },
+      headings: [],
+      sections: [],
+      blocks: [],
+      tasks: [],
+    },
+    {
+      path: "Meta/BodyMatch.md",
+      name: "BodyMatch.md",
+      ext: "md",
+      title: "BodyMatch",
+      content: "queued appears in body",
+      mtime: 100,
+      tags: [],
+      aliases: [],
+      properties: {},
+      headings: [],
+      sections: [],
+      blocks: [],
+      tasks: [],
+    },
+  ];
+
+  const results = (query, extra = {}) =>
+    mod.searchDocuments(docs, {
+      query,
+      max_results: 10,
+      debug_score_details: true,
+      ...extra,
+    }).results;
+  const paths = (query, extra = {}) => results(query, extra).map((item) => item.path);
+
+  assert.equal(paths("Sleep Protocol")[0], "Health/Sleep Protocol.md");
+  assert.ok(
+    paths("Caffeine Sleep").indexOf("Research/Heading Only.md") <
+      paths("Caffeine Sleep").indexOf("Archive/Long Caffeine Mentions.md"),
+  );
+  assert.ok(
+    paths("Caffeine Sleep").indexOf("Research/Recovery.md") <
+      paths("Caffeine Sleep").indexOf("Archive/Long Caffeine Mentions.md"),
+  );
+  assert.ok(
+    paths("sleep OR caffeine").indexOf("Research/Recovery.md") <
+      paths("sleep OR caffeine").indexOf("Archive/Repeated Sleep.md"),
+  );
+  assert.equal(paths('"Caffeine Sleep Experiment"')[0], "Research/Recovery.md");
+  assert.equal(paths("rest")[0], "Health/Sleep Protocol.md");
+  assert.deepEqual(paths("queued"), ["Meta/BodyMatch.md"]);
+  assert.deepEqual(paths("tag:#health"), ["Health/Sleep Protocol.md"]);
+  assert.deepEqual(paths("[type:canvas]"), ["Boards/Sleep.canvas"]);
+  assert.deepEqual(paths("[review_state:queued]"), ["Meta/Review.md"]);
+  assert.equal(paths("Sleep Protocol")[0], "Health/Sleep Protocol.md");
+  assert.equal(paths("睡眠 咖啡因")[0], "Health/Chinese.md");
+  assert.equal(paths("canvas sleep")[0], "Boards/Sleep.canvas");
+
+  const debug = results("sleep caffeine")[0].score_details;
+  assert.ok(debug);
+  assert.ok(debug.matched_terms.includes("sleep"));
+  assert.ok(debug.field_score > 0);
+  assert.ok(debug.coverage_score > 0);
+}
+
+function testSearchInputNormalization(mod) {
+  const normalized = mod.normalizeSearchInput({
+    query: "sleep",
+    max_results: 3,
+    context_chars: 50,
+    sort: "score",
+    debug_score_details: true,
+  });
+
+  assert.deepEqual(normalized, {
+    query: "sleep",
+    max_results: 3,
+    context_chars: 50,
+    sort: "score",
+  });
+  assert.equal(Object.hasOwn(normalized, "debug_score_details"), false);
+}
+
 function testObsidianVaultResolution() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "laa-obsidian-meta-"));
   const isWindows = process.platform === "win32";
@@ -1104,6 +1341,7 @@ async function main() {
     "runtime-data-migration.cjs",
   );
   const searchEngine = await loadModule("search/searchEngine.ts", "search-engine.cjs");
+  const searchInput = await loadModule("clientTools/searchInput.ts", "search-input.cjs");
 
   await testBackendConfig(backendConfig);
   testDiaryConfig(diaryConfig);
@@ -1114,6 +1352,8 @@ async function main() {
   testRuntimeStatePaths(runtimeState);
   testRuntimeDataMigration(runtimeDataMigration);
   testSearchEngine(searchEngine);
+  testSearchRanking(searchEngine);
+  testSearchInputNormalization(searchInput);
   testObsidianVaultResolution();
 
   console.log(

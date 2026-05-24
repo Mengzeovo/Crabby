@@ -379,7 +379,9 @@ Important areas:
 - `src/api/client.ts`: REST/WebSocket client, admin APIs, profile APIs, profile test, error classification.
 - `src/runtime/`: backend runtime management, host heartbeat, managed backend reuse/shutdown, runtime state, default config templates.
 - `src/clientTools/`: plugin-hosted tools.
-- `src/search/`: Obsidian-compatible search DSL and `.md` / `.canvas` implementation.
+- `src/search/`: Obsidian-compatible search DSL and `.md` / `.canvas`
+  implementation with field-aware ranking, BM25-lite body normalization,
+  query-term coverage, phrase boosts, and a small recency tie-break boost.
 - `src/config/`: provider presets, backend config, MCP config, profile sync.
 - `src/settings.ts`: settings UI.
 

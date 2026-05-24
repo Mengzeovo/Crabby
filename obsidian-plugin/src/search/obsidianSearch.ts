@@ -67,6 +67,7 @@ function buildMarkdownDocument(
   const properties = { ...(cache?.frontmatter ?? {}) };
   const aliases = parseAliases(properties.aliases);
   const tags = collectTags(cache, properties);
+  const headings = buildHeadings(cache);
   if (aliases.length > 0) {
     properties.aliases = aliases;
   }
@@ -78,12 +79,14 @@ function buildMarkdownDocument(
     path: file.path,
     name: file.name,
     ext: getExt(file),
+    title: titleFromCache(file, cache),
     content,
     mtime: file.stat.mtime,
     ctime: file.stat.ctime,
     tags,
     aliases,
     properties,
+    headings,
     sections: buildSections(content, cache),
     blocks: buildBlocks(content, cache),
     tasks: buildTasks(content, cache),
@@ -96,6 +99,7 @@ function buildCanvasDocument(file: TFile, content: string): SearchDocument {
     path: file.path,
     name: file.name,
     ext: getExt(file),
+    title: basename(file.name),
     content: extracted.content,
     mtime: file.stat.mtime,
     ctime: file.stat.ctime,
@@ -104,6 +108,7 @@ function buildCanvasDocument(file: TFile, content: string): SearchDocument {
     properties: {
       type: "canvas",
     },
+    headings: [],
     sections: extracted.blocks,
     blocks: extracted.blocks,
     tasks: [],
@@ -172,6 +177,13 @@ function buildSections(
       line: startLine + 1,
     };
   });
+}
+
+function buildHeadings(cache: CachedMetadata | null): SearchTextPart[] {
+  return (cache?.headings ?? []).map((heading) => ({
+    text: heading.heading,
+    line: heading.position.start.line + 1,
+  }));
 }
 
 function buildBlocks(
@@ -260,6 +272,15 @@ function parseTags(value: unknown): string[] {
 
 function getExt(file: TFile): string {
   return file.extension || file.path.split(".").pop()?.toLowerCase() || "";
+}
+
+function basename(name: string): string {
+  return name.replace(/\.[^.]+$/, "");
+}
+
+function titleFromCache(file: TFile, cache: CachedMetadata | null): string {
+  const h1 = (cache?.headings ?? []).find((heading) => heading.level === 1);
+  return h1?.heading.trim() || basename(file.name);
 }
 
 function isBlockedPath(path: string): boolean {
