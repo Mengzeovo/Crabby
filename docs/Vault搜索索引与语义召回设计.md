@@ -116,28 +116,53 @@ MemPalace 只承担“从语义上找候选”的职责，候选命中后必须�
 
 ## MemPalace Wing 划分
 
-可以，也应该用不同 wing 区分“长期记忆”和“普通 Vault 文档”。推荐：
+Wing 切分应该贴合用户在 Vault 里的知识组织结构，而不是按数据来源种类切。
+也就是说：**Vault 不是一个 wing，Vault 中的文件夹才是 wing**。理由：
+
+- 用户的语义边界本来就落在文件夹（`Projects/`、`Diary/`、`Reading/`、
+  `Inbox/` 等是完全不同的语义空间）。
+- 查询时 scope 可以直接用用户可读的目录列表，模型更容易决定查哪里。
+- 文件夹整体重组时只需重建对应 wing，影响局部。
+- 单一巨型 `vault_docs` wing 会让 projects 类问题召回到 diary 片段，
+  污染候选。
+
+推荐 wing 模型：
 
 | Wing | 内容 | 来源 | 语义 |
 | --- | --- | --- | --- |
 | `crabby_memory` | `<vault>/.crabby/memory/` 的长期记忆 Markdown | `memory_write` / dream maintenance | 长期理解、偏好、决策、学习线索 |
-| `vault_docs` | 普通 Vault `.md` / `.canvas` 切片 | 搜索索引同步器 | 文档语义检索候选 |
-| `vault_diary` 可选 | 日记/周记/月记等用户记录 | diary 工具或 Vault 文件 | 用户记录检索，默认可并入 `vault_docs` |
+| `vault:<folder>` | Vault 中某个文件夹下的 `.md` / `.canvas` 切片 | 搜索索引同步器 | 该知识区的文档语义检索候选 |
+| `vault_default` | 未归类到任何 wing 的 Vault 文件兜底 | 搜索索引同步器 | 兜底召回，避免文件无家可归 |
+
+`vault:<folder>` 的映射规则：
+
+- 默认：Vault 顶层每个文件夹各成一个 wing，例如 `vault:Projects`、
+  `vault:Diary`、`vault:Reading`。
+- 允许在 `<vault>/.crabby/config` 里覆盖默认，声明更细或更粗的 wing
+  边界，例如把 `Projects/*` 的每个子目录各自拆成一个 wing，或把若干
+  小文件夹合并成一个 wing。
+- 根目录散落的 `.md`、以及未在配置中声明归属的文件，进入 `vault_default`。
+- `<vault>/.crabby/` 下的内容除 `crabby_memory` 外不进入任何 vault wing。
 
 关键边界：
 
-- `crabby_memory` 的写入仍由 `memory_write` 或维护流程控制。
-- `vault_docs` 的写入是索引同步，不代表 Crabby 形成长期理解。
-- 两个 wing 可以共享 MemPalace embedding 和存储服务，但查询默认不能混用。
-- 混合查询必须显式声明范围，例如 `scope = "vault_docs"` 或
-  `scope = "memory"`。
+- `crabby_memory` 的写入仍由 `memory_write` 或维护流程控制，**不与任何
+  `vault:<folder>` wing 混用**——它的 canonical source 在
+  `<vault>/.crabby/memory/`，不在用户笔记里，边界性质不同。
+- `vault:<folder>` 的写入是索引同步，不代表 Crabby 形成长期理解。
+- 所有 wing 可以共享 MemPalace embedding 和存储服务，但查询默认不能混用。
+- 混合查询必须显式声明范围，例如
+  `scope = ["vault:Projects", "vault:Reading"]` 或 `scope = "memory"`。
+- 跨 wing 文件移动（如 `mv Inbox/foo.md Projects/Crabby/`）必须在旧 wing
+  失效 + 新 wing 写入，不能只更新 metadata；`content_sha256` 的迁移兜底
+  需要跨 wing 查找。
 
-这样设计后，MemPalace 中确实有两类内容，但语义不同：
+这样设计后，MemPalace 中存在两类语义不同的内容：
 
 - memory wing 是 Crabby 的长期记忆派生索引。
-- vault wing 是 Vault 文件的搜索派生索引。
+- vault wing 是 Vault 文件夹的搜索派生索引，按用户知识结构分片。
 
-二者都不是 canonical source；memory 的 canonical source 是
+两类都不是 canonical source；memory 的 canonical source 是
 `<vault>/.crabby/memory/`，Vault 文档的 canonical source 是用户原始笔记。
 
 ## 稳定指回 Vault 原文
@@ -152,10 +177,10 @@ MemPalace 只承担“从语义上找候选”的职责，候选命中后必须�
 ```json
 {
   "source_kind": "vault_markdown",
-  "source_scope": "vault_docs",
+  "wing": "vault:Projects",
   "vault_rel_path": "Projects/Crabby/Search.md",
   "ext": "md",
-  "chunk_id": "vault-docs:sha256...",
+  "chunk_id": "vault:Projects:sha256...",
   "chunk_kind": "section",
   "heading_path": ["Search", "Semantic recall"],
   "start_line": 42,
@@ -215,9 +240,9 @@ final_score =
   "score": 8.73,
   "match_source": "hybrid",
   "source_ref": {
-    "source_scope": "vault_docs",
+    "wing": "vault:Projects",
     "vault_rel_path": "Projects/Crabby/Search.md",
-    "chunk_id": "vault-docs:sha256...",
+    "chunk_id": "vault:Projects:sha256...",
     "content_sha256": "sha256..."
   },
   "verified": true,
@@ -245,14 +270,21 @@ final_score =
 ### Phase 2：Source Ref
 
 - 给机械索引的 section/block/task 生成稳定 `chunk_id`。
+  - Wing 接线（Phase 3）之前，词法搜索实际发出的 chunk_id 形如
+    `vault:<file_sha256>:<chunk_kind>:<start_line>`，不带 wing 前缀；
+    Phase 3 把 wing 接到搜索/同步路径后再改成
+    `vault:<wing>:<file_sha256>:<chunk_kind>:<start_line>`。
 - 搜索结果返回 `source_ref`、`match_source`、`verified/stale`。
 - 增加 source resolver：按 path、line、heading、hash 回 Vault 原文核验。
 
 ### Phase 3：MemPalace Vault Wing 同步
 
 - 新增 Vault 文档到 MemPalace 的同步器。
-- 使用 `vault_docs` wing，写入 chunk text 和 source metadata。
-- 文件删除/修改/重命名时同步失效或更新旧 chunk。
+- 按 wing 映射规则（顶层文件夹 + `.crabby/config` 覆盖）确定每个 chunk
+  写入哪个 `vault:<folder>` wing；未归类文件进入 `vault_default`。
+- 每个 chunk 写入 chunk text 和 source metadata（含 `wing` 字段）。
+- 文件删除/修改/重命名时同步失效或更新旧 chunk；跨 wing 移动时旧 wing
+  失效 + 新 wing 写入，不能只改 metadata。
 - MemPalace 不可用时不影响 lexical search。
 
 ### Phase 4：Hybrid Search
@@ -267,7 +299,7 @@ final_score =
 - 删除 `.crabby/data/search-index/` 后，搜索可自动重建。
 - 修改、删除、重命名笔记后，搜索结果不返回明显过期原文。
 - MemPalace 停止运行时，`obsidian_search` 的词法搜索仍可用。
-- `vault_docs` wing 写入不会触发 `memory_write`，也不会改变
+- `vault:<folder>` wing 写入不会触发 `memory_write`，也不会改变
   `<vault>/.crabby/memory/`。
 - 模糊问题可以通过 MemPalace 找到未包含同义词的相关笔记。
 - 所有语义结果在回答前都能回 Vault 当前文件复核；复核失败时标记 stale。

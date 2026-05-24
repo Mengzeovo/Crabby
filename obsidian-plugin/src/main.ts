@@ -25,11 +25,15 @@ import {
   isDraftLlmProfile,
 } from "./settings";
 import { BackendRuntimeManager } from "./runtime/backendRuntime";
+import { SearchIndex } from "./search/searchIndex";
+
+const PLUGIN_VERSION = "0.3.0";
 
 export default class CrabbyPlugin extends Plugin {
   settings: CrabbySettings = hydrateSettings(DEFAULT_SETTINGS, null);
   runtimeManager: BackendRuntimeManager | null = null;
   clientToolBridge: ObsidianClientToolBridge | null = null;
+  searchIndex: SearchIndex | null = null;
   private unloaded = false;
 
   async onload(): Promise<void> {
@@ -41,6 +45,13 @@ export default class CrabbyPlugin extends Plugin {
       () => this.settings.backendUrl,
     );
     this.clientToolBridge.start();
+
+    this.searchIndex = new SearchIndex(this.app, {
+      pluginVersion: PLUGIN_VERSION,
+    });
+    this.app.workspace.onLayoutReady(() => {
+      void this.initializeSearchIndex();
+    });
 
     this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
     this.addSettingTab(new CrabbySettingTab(this.app, this));
@@ -65,9 +76,29 @@ export default class CrabbyPlugin extends Plugin {
       this.clientToolBridge.stop();
       this.clientToolBridge = null;
     }
+    if (this.searchIndex) {
+      await this.searchIndex.shutdown();
+      this.searchIndex = null;
+    }
     if (this.runtimeManager) {
       await this.runtimeManager.stop();
       this.runtimeManager = null;
+    }
+  }
+
+  private async initializeSearchIndex(): Promise<void> {
+    const index = this.searchIndex;
+    if (!index || this.unloaded) {
+      return;
+    }
+    index.attachVaultEvents();
+    try {
+      await index.initialize();
+      if (this.unloaded || this.searchIndex !== index) {
+        return;
+      }
+    } catch (error) {
+      console.warn("[Crabby] SearchIndex initialization failed", error);
     }
   }
 

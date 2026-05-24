@@ -9,7 +9,10 @@
     "test:chat-content": "node scripts/test-chat-assistant-content.js",
     "test:chat-tools": "node scripts/test-chat-tools.js",
     "test:chat-styles": "node scripts/test-chat-styles.js",
-    "test:config": "node scripts/test-backend-config.js"
+    "test:config": "node scripts/test-backend-config.js",
+    "test:search-index": "node scripts/test-search-index.js",
+    "test:wing-mapping": "node scripts/test-wing-mapping.js",
+    "test:source-resolver": "node scripts/test-source-resolver.js"
   },
   "devDependencies": {
     "@types/node": "^20",

@@ -23,6 +23,7 @@ export interface SearchDocument {
   sections?: SearchTextPart[];
   blocks?: SearchTextPart[];
   tasks?: SearchTaskPart[];
+  content_sha256?: string;
 }
 
 export interface SearchTextPart {
@@ -52,6 +53,15 @@ export interface SearchScoreDetails {
   field_breakdown: Record<string, number>;
 }
 
+export interface SearchSourceRef {
+  vault_rel_path: string;
+  chunk_id: string;
+  chunk_kind: "file" | "section" | "block" | "task" | "heading";
+  start_line?: number;
+  end_line?: number;
+  content_sha256: string;
+}
+
 export interface SearchResultItem {
   path: string;
   ext: string;
@@ -65,6 +75,10 @@ export interface SearchResultItem {
   mtime: number;
   truncated: boolean;
   score_details?: SearchScoreDetails;
+  source_ref?: SearchSourceRef;
+  match_source?: "lexical" | "semantic" | "hybrid";
+  verified?: boolean;
+  stale?: boolean;
 }
 
 export interface SearchResponse {
@@ -224,6 +238,8 @@ export function searchDocuments(
       score_details: input.debug_score_details
         ? finalizeScoreDetails(details, matchedTerms)
         : undefined,
+      source_ref: buildSourceRef(doc, firstMatch),
+      match_source: "lexical",
     });
   }
 
@@ -1564,4 +1580,58 @@ function clampInt(value: number, min: number, max: number): number {
     return min;
   }
   return Math.max(min, Math.min(max, Math.trunc(value)));
+}
+
+function buildSourceRef(
+  doc: SearchDocument,
+  firstMatch: SearchMatch,
+): SearchSourceRef | undefined {
+  const fileHash = doc.content_sha256;
+  if (!fileHash) {
+    return undefined;
+  }
+  const chunkKind = mapFieldToChunkKind(firstMatch.field);
+  const span = locateSpan(doc, firstMatch, chunkKind);
+  return {
+    vault_rel_path: doc.path,
+    chunk_id: `vault:${fileHash}:${chunkKind}:${span.start_line ?? 0}`,
+    chunk_kind: chunkKind,
+    start_line: span.start_line,
+    end_line: span.end_line,
+    content_sha256: fileHash,
+  };
+}
+
+function mapFieldToChunkKind(
+  field: string,
+): SearchSourceRef["chunk_kind"] {
+  if (field === "heading") return "heading";
+  if (field === "section") return "section";
+  if (field === "block" || field === "line") return "block";
+  if (field === "task" || field === "task-todo" || field === "task-done") return "task";
+  return "file";
+}
+
+function locateSpan(
+  doc: SearchDocument,
+  match: SearchMatch,
+  kind: SearchSourceRef["chunk_kind"],
+): { start_line?: number; end_line?: number } {
+  const line = match.line;
+  if (kind === "file" || line === undefined) {
+    return { start_line: 1, end_line: doc.content.split(/\r?\n/).length };
+  }
+  if (kind === "section") {
+    const sections = doc.sections ?? [];
+    for (let i = 0; i < sections.length; i++) {
+      const section = sections[i];
+      const start = section.line ?? 1;
+      const next = sections[i + 1]?.line;
+      const end = next ? next - 1 : doc.content.split(/\r?\n/).length;
+      if (line >= start && line <= end) {
+        return { start_line: start, end_line: end };
+      }
+    }
+  }
+  return { start_line: line, end_line: line };
 }

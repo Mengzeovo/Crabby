@@ -97,6 +97,7 @@ export class ObsidianClientToolBridge {
         result = await performObsidianSearch(
           this.plugin.app,
           normalizeSearchInput(request.input),
+          this.plugin.searchIndex,
         );
       } else if (request.tool === "crabby_settings") {
         result = await performCrabbySettingsAction(
