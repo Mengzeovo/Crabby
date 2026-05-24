@@ -121,17 +121,26 @@ class GrepTool(Tool):
 
         # 安全检查：禁止路径逃逸（用 relative_to，不要 startswith）
         if not is_within_path(search_root, vault):
-            return ToolResult(output="错误：路径不能超出 Vault 根目录")
+            return ToolResult(
+                output="错误：路径不能超出 Vault 根目录",
+                metadata={"error": True, "error_type": "path_escape", "path": params.path},
+            )
 
         # 目录存在性检查
         if not search_root.is_dir():
-            return ToolResult(output=f"目录不存在: {params.path}")
+            return ToolResult(
+                output=f"目录不存在: {params.path}",
+                metadata={"error": True, "error_type": "directory_not_found", "path": params.path},
+            )
 
         # 编译正则表达式，无效模式返回错误
         try:
             regex = re.compile(params.pattern, re.IGNORECASE if params.ignore_case else 0)
         except re.error as e:
-            return ToolResult(output=f"正则表达式错误: {e}")
+            return ToolResult(
+                output=f"正则表达式错误: {e}",
+                metadata={"error": True, "error_type": "invalid_regex", "pattern": params.pattern},
+            )
 
         matches: list[str] = []   # 匹配行列表
         files_searched = 0        # 已搜索文件计数

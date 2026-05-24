@@ -131,11 +131,17 @@ class ReadTool(Tool):
         # 二次防御：即使有人绕过 check_permission 直接调 call，
         # 也不能读到 vault 之外的内容。
         if not is_within_path(full_path, vault):
-            return ToolResult(output="错误：路径不能超出 Vault 根目录")
+            return ToolResult(
+                output="错误：路径不能超出 Vault 根目录",
+                metadata={"error": True, "error_type": "path_escape", "file_path": params.file_path},
+            )
 
         # 文件存在性检查
         if not full_path.is_file():
-            return ToolResult(output=f"文件不存在: {params.file_path}")
+            return ToolResult(
+                output=f"文件不存在: {params.file_path}",
+                metadata={"error": True, "error_type": "file_not_found", "file_path": params.file_path},
+            )
 
         # 读取文件全部内容
         text = full_path.read_text(encoding="utf-8")

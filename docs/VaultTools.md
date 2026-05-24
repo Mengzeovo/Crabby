@@ -76,10 +76,16 @@ def register(registry: "ToolRegistry") -> None:
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `output` | `str` | 返回给 LLM 的文本内容 |
+| `output` | `str` | 工具完整文本结果。Crabby 会从它派生紧凑 LLM 回执和前端工具卡片；长原文不应被假定会完整进入后续 LLM 上下文。 |
 | `metadata` | `dict` | 附加元数据（如匹配数、文件数） |
 | `is_truncated` | `bool` | 输出是否被截断 |
 | `cache_path` | `str \| None` | 完整内容的缓存文件路径 |
+
+新工具约定：
+
+- 尽量把可恢复、可展示的信息放进 `metadata`，不要只拼在自然语言 `output` 中。
+- 失败必须设置 `metadata.error` 和 `metadata.error_type`，这样 LLM 和 UI 都能识别为错误。
+- 长结果可以放在 `output` 中给 UI 卡片展开；执行层会生成摘要、预览和 `detail_ref`，模型需要更多细节时再使用 `tool_result_read`。
 
 ## 安全边界
 

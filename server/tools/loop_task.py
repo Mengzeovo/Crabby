@@ -547,8 +547,9 @@ class CronCreateTool(Tool):
 
     name = "cron_create"
     description = (
-        "为系统设定一个定时的预约任务或循环检查计划。"
-        "通过设置标准 Cron 表达式，系统会在满足触发时间时唤醒并执行任务。"
+        "创建非交互式定时任务；支持 5 字段分钟级 cron 和 6 字段 seconds-first cron"
+        "（秒在前，例如 */10 * * * * *）。"
+        "系统会按秒级轮询满足触发时间的任务，并在会话空闲时执行。"
         "适用于定期归档、检查更新或日志汇报等不需要用户参与的任务。"
     )
     input_schema = CronCreateInput

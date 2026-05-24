@@ -136,7 +136,10 @@ class FetchTool(Tool):
                 for _ in range(MAX_REDIRECTS + 1):
                     err = _validate_url_target(current_url)
                     if err:
-                        return ToolResult(output=f"抓取失败: {err}")
+                        return ToolResult(
+                            output=f"抓取失败: {err}",
+                            metadata={"error": True, "error_type": "url_validation", "url": current_url},
+                        )
 
                     response = await client.get(current_url, headers=headers)
                     if response.is_redirect:
@@ -148,10 +151,16 @@ class FetchTool(Tool):
                         continue
                     break
                 else:
-                    return ToolResult(output=f"抓取失败: 超过最大跳转次数 ({MAX_REDIRECTS})")
+                    return ToolResult(
+                        output=f"抓取失败: 超过最大跳转次数 ({MAX_REDIRECTS})",
+                        metadata={"error": True, "error_type": "too_many_redirects", "url": params.url},
+                    )
 
                 if response is None:
-                    return ToolResult(output="抓取失败: 未收到响应。")
+                    return ToolResult(
+                        output="抓取失败: 未收到响应。",
+                        metadata={"error": True, "error_type": "empty_response", "url": params.url},
+                    )
                 response.raise_for_status()
 
                 content_type = response.headers.get("content-type", "")
@@ -169,7 +178,15 @@ class FetchTool(Tool):
                     html_content = str(soup)
                     text = markdownify(html_content, heading_style="ATX")
                 else:
-                    return ToolResult(output=f"抓取失败: 不支持的 Content-Type ({content_type})，仅支持提取文本或 HTML 内容。")
+                    return ToolResult(
+                        output=f"抓取失败: 不支持的 Content-Type ({content_type})，仅支持提取文本或 HTML 内容。",
+                        metadata={
+                            "error": True,
+                            "error_type": "unsupported_content_type",
+                            "content_type": content_type,
+                            "url": current_url,
+                        },
+                    )
 
                 # 清洗换行
                 lines = [line.strip() for line in text.split("\n") if line.strip()]
@@ -187,8 +204,22 @@ class FetchTool(Tool):
                 )
 
         except httpx.HTTPStatusError as e:
-            return ToolResult(output=f"HTTP 请求失败：状态码 {e.response.status_code}")
+            return ToolResult(
+                output=f"HTTP 请求失败：状态码 {e.response.status_code}",
+                metadata={
+                    "error": True,
+                    "error_type": "http_status",
+                    "status_code": e.response.status_code,
+                    "url": str(e.request.url),
+                },
+            )
         except httpx.RequestError as e:
-            return ToolResult(output=f"请求 URL 失败: {str(e)}")
+            return ToolResult(
+                output=f"请求 URL 失败: {str(e)}",
+                metadata={"error": True, "error_type": "request", "url": params.url},
+            )
         except Exception as e:
-            return ToolResult(output=f"执行 Fetch 时出现未知错误: {str(e)}")
+            return ToolResult(
+                output=f"执行 Fetch 时出现未知错误: {str(e)}",
+                metadata={"error": True, "error_type": "unexpected", "url": params.url},
+            )

@@ -71,7 +71,7 @@ The release zip installs into:
 
 The plugin reads `runtime/state.json`, resolves the backend executable relative to `runtime/`, starts it in the background, writes a host heartbeat, and reuses an existing managed backend only after checking:
 
-- `GET /health`
+- `GET /health` returns `status` and backend `version`.
 - authenticated `GET /admin/mcp/status`
 - authenticated `GET /admin/profiles`
 
@@ -188,7 +188,7 @@ Client sends user turn
   -> call LLM provider
   -> normalize text/reasoning/tool output
   -> execute tool calls through ToolRegistry/MCP/client bridge
-  -> append tool results to history
+  -> append compact tool receipts plus UI-only tool cards to history
   -> continue until final assistant output or iteration ceiling
   -> persist assistant message, usage, context stats, message IDs
 ```
@@ -291,11 +291,17 @@ LLM tool call
   -> Pydantic input validation
   -> permission/context checks
   -> async execution
-  -> LLM/UI result formatting
-  -> append tool_result to conversation
+  -> compact LLM receipt + UI card formatting
+  -> append compact tool_result.content and UI-only card payload to conversation
 ```
 
 `obsidian_search` and `crabby_settings` are hosted by the Obsidian plugin and reached through the `/client-tools/obsidian` WebSocket bridge. Raw file tools remain available for non-Obsidian files, logs, code, or bridge-disconnected fallback.
+
+Tool card payloads keep full UI output, summaries, previews, metadata, status,
+and detail refs in the persisted `ui` field. `Session.get_messages()` strips
+that UI-only payload before provider requests, so only compact receipts are
+resent to the LLM by default. The `tool_result_read` tool can expand a previous
+tool card by `detail_ref` or `tool_use_id` with offset/limit/query controls.
 
 `bash` is non-interactive. On Windows it launches PowerShell without a profile, forces UTF-8 output, and translates top-level `&&` / `||` chains for PowerShell 5.x compatibility.
 

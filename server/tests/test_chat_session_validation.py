@@ -196,4 +196,4 @@ def test_chat_tool_iteration_limit_returns_user_message_id(
     persisted_ui = session.messages[2]["content"][0]["ui"]
     assert persisted_ui["status"] == "success"
     assert persisted_ui["is_error"] is False
-    assert "output" not in persisted_ui
+    assert persisted_ui["output"] == "echo: hello"

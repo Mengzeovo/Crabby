@@ -66,12 +66,22 @@ export interface ChatRequestPayload {
 
 export type ToolCallStatus = "success" | "warning" | "error" | string;
 
+export interface HealthStatus {
+  ok: boolean;
+  version?: string;
+}
+
 export interface ToolCallPayload {
   id?: string | null;
   tool_use_id?: string | null;
   name?: string;
   tool?: string;
   output?: string;
+  summary?: string;
+  input_summary?: string;
+  output_preview?: string;
+  detail_ref?: string | null;
+  detail_available?: boolean;
   metadata?: Record<string, unknown>;
   status?: ToolCallStatus;
   is_error?: boolean;
@@ -906,11 +916,25 @@ export class AgentClient {
   }
 
   async health(): Promise<boolean> {
+    const status = await this.getHealthStatus();
+    return status.ok;
+  }
+
+  async getHealthStatus(): Promise<HealthStatus> {
     try {
       const resp = await fetch(`${this.baseUrl}/health`);
-      return resp.ok;
+      if (!resp.ok) {
+        return { ok: false };
+      }
+      const data = (await resp.json().catch(() => null)) as
+        | { version?: unknown }
+        | null;
+      return {
+        ok: true,
+        version: typeof data?.version === "string" ? data.version : undefined,
+      };
     } catch {
-      return false;
+      return { ok: false };
     }
   }
 

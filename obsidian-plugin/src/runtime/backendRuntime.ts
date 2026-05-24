@@ -219,6 +219,7 @@ export interface RuntimeState {
 
 export interface RuntimeStatus {
   mode: "dev" | "production";
+  version: string;
   installed: boolean;
   running: boolean;
   backendUrl: string;
@@ -251,7 +252,7 @@ interface ExistingBackend {
 
 export function resolvePluginRuntimeLayout(app: App): RuntimeLayout {
   if (!Platform.isDesktopApp) {
-    throw new Error("Crabby 后端运行时需要 Obsidian 桌面版。");
+    throw new Error("Crabby 本地后端程序需要 Obsidian 桌面版。");
   }
 
   const adapter = app.vault.adapter;
@@ -295,7 +296,7 @@ export class BackendRuntimeManager {
   private externalBackend: ExistingBackend | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private layout: RuntimeLayout;
-  private statusDetail = "后端运行时尚未启动。";
+  private statusDetail = "本地后端程序尚未启动。";
 
   constructor(
     private app: App,
@@ -398,7 +399,7 @@ export class BackendRuntimeManager {
 
     const launch = this.resolveLaunchConfig();
     if (!launch) {
-      this.statusDetail = "生产模式后端运行时尚未安装。";
+      this.statusDetail = "生产模式本地后端程序尚未安装。";
       this.appendRuntimeLog("start aborted: no launch config");
       return this.getStatus();
     }
@@ -528,7 +529,7 @@ export class BackendRuntimeManager {
     }
 
     this.child = null;
-    this.statusDetail = "后端运行时已停止。";
+    this.statusDetail = "本地后端程序已停止。";
     return this.getStatus();
   }
 
@@ -541,27 +542,27 @@ export class BackendRuntimeManager {
     await this.ensureRuntimeLayout();
     const normalizedUrl = manifestUrl.trim();
     if (!normalizedUrl) {
-      throw new Error("尚未配置运行时清单 URL。");
+      throw new Error("尚未配置后端程序下载清单 URL。");
     }
 
     const manifestResp = await fetch(normalizedUrl);
     if (!manifestResp.ok) {
-      throw new Error(`运行时清单下载失败：HTTP ${manifestResp.status}`);
+      throw new Error(`后端程序下载清单获取失败：HTTP ${manifestResp.status}`);
     }
     const manifest = (await manifestResp.json()) as RuntimeManifest;
     const asset = manifest.platforms?.[process.platform];
     if (!asset) {
-      throw new Error(`当前平台没有可用的后端运行时：${process.platform}。`);
+      throw new Error(`当前平台没有可用的本地后端程序：${process.platform}。`);
     }
 
     const assetResp = await fetch(asset.url);
     if (!assetResp.ok) {
-      throw new Error(`后端运行时下载失败：HTTP ${assetResp.status}`);
+      throw new Error(`本地后端程序下载失败：HTTP ${assetResp.status}`);
     }
     const bytes = Buffer.from(await assetResp.arrayBuffer());
     const actualHash = createHash("sha256").update(bytes).digest("hex");
     if (actualHash.toLowerCase() !== asset.sha256.toLowerCase()) {
-      throw new Error("后端运行时 SHA256 校验失败。");
+      throw new Error("本地后端程序 SHA256 校验失败。");
     }
 
     const executableName =
@@ -585,7 +586,7 @@ export class BackendRuntimeManager {
       platform: process.platform,
       executablePath,
     });
-    this.statusDetail = `已安装后端运行时 ${manifest.version}。`;
+    this.statusDetail = `已安装本地后端程序 ${manifest.version}。`;
     return this.getStatus();
   }
 
@@ -600,8 +601,11 @@ export class BackendRuntimeManager {
       null;
     const running =
       Boolean(this.child && !this.child.killed) || Boolean(this.externalBackend);
+    const version =
+      mode === "dev" ? (state?.version?.trim() || "dev") : (state?.version?.trim() || "-");
     return {
       mode,
+      version,
       installed: Boolean(devConfig || state?.executablePath),
       running,
       backendUrl:
@@ -699,7 +703,7 @@ export class BackendRuntimeManager {
       this.externalBackend ?? (await this.findExistingManagedBackend(token));
     if (!existingBackend) {
       this.externalBackend = null;
-      this.statusDetail = "后端运行时当前未运行。";
+      this.statusDetail = "本地后端程序当前未运行。";
       return this.getStatus();
     }
 
@@ -725,7 +729,7 @@ export class BackendRuntimeManager {
     }
 
     this.externalBackend = null;
-    this.statusDetail = "后端运行时已停止。";
+    this.statusDetail = "本地后端程序已停止。";
     return this.getStatus();
   }
 

@@ -1103,12 +1103,12 @@ const CHAT_STYLES = `
   }
   .context-meter-label,
   .context-separator,
-  .context-bill-label {
+  .context-usage-label {
     color: var(--text-muted);
   }
   .context-meter-label,
   .context-percent-label,
-  .context-bill-label {
+  .context-usage-label {
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
@@ -1130,13 +1130,13 @@ const CHAT_STYLES = `
     border-radius: 50%;
     background: var(--background-primary);
   }
-  .context-bill-label {
+  .context-usage-label {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .life-context-tooltip {
-    max-width: 360px;
+    max-width: 420px;
     white-space: pre-line;
     text-align: left;
   }

@@ -100,7 +100,7 @@ export function resolveBackendEnvPath(
         derivedFromLegacyPath: true,
         message:
           "遗留配置文件不完整（缺少 CRABBY_ADMIN_TOKEN）。" +
-          "请重新在「后端运行时」区域安装并启动后端，或手动清空" +
+          "请重新在「本地后端程序」区域安装并启动后端，或手动清空" +
           "后端 .env 路径设置后重新初始化。",
       };
     }
@@ -116,7 +116,7 @@ export function resolveBackendEnvPath(
     ok: false,
     derivedFromLegacyPath: false,
     message:
-      "后端尚未初始化。请先在「后端运行时」区域安装并启动后端，" +
+      "后端尚未初始化。请先在「本地后端程序」区域安装并启动后端，" +
       "完成后 .env 路径将自动配置完毕，无需手动填写。",
   };
 }

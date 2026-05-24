@@ -58,6 +58,8 @@ async function main() {
     createChatTranscript,
     formatToolMeta,
     formatToolOutput,
+    formatToolCardDetail,
+    formatToolPreview,
     getToolPayloadId,
     getToolPayloadName,
     normalizeToolPayload,
@@ -84,6 +86,22 @@ async function main() {
   assert.equal(toolStatusLabel("error"), "failed");
   assert.equal(formatToolMeta(failingPayload), "exit 7 · 12ms");
   assert.equal(formatToolOutput(failingPayload), "failure detail");
+
+  const cardPayload = normalizeToolPayload({
+    id: "toolu_card",
+    name: "bash",
+    output: "full output line one\nfull output line two",
+    summary: "short summary",
+    input_summary: "{\"command\":\"echo hi\"}",
+    output_preview: "preview line",
+    detail_ref: "tool-result://bash/toolu_card",
+    detail_available: true,
+  });
+  assert.equal(formatToolPreview(cardPayload), "preview line");
+  assert.match(formatToolCardDetail(cardPayload), /Input: \{"command":"echo hi"\}/);
+  assert.match(formatToolCardDetail(cardPayload), /Summary: short summary/);
+  assert.match(formatToolCardDetail(cardPayload), /full output line two/);
+  assert.match(formatToolCardDetail(cardPayload), /tool-result:\/\/bash\/toolu_card/);
 
   const truncatedPayload = normalizeToolPayload({
     name: "read",
@@ -128,7 +146,8 @@ async function main() {
   assert.equal(legacyPayload.output, "old output");
   assert.equal(toolStatus(legacyPayload), "success");
 
-  const { transcript, messagesEl } = createTranscriptHarness(createChatTranscript);
+  const { transcript, messagesEl, contextBarEl } =
+    createTranscriptHarness(createChatTranscript);
   transcript.beginTool("bash", "toolu_first");
   transcript.beginTool("bash", "toolu_second");
   transcript.completeTool({
@@ -160,6 +179,74 @@ async function main() {
   });
   assert.equal(toolBlocks[1].classList.contains("done"), true);
   assert.equal(toolBlocks[1].classList.contains("success"), true);
+
+  transcript.updateContextBar({
+    total_tokens: 35540,
+    system_tokens: 1608,
+    schema_tokens: 1187,
+    user_tokens: 39,
+    assistant_tokens: 8440,
+    tool_result_tokens: 24266,
+    message_count: 26,
+    user_message_count: 1,
+    assistant_message_count: 4,
+    tool_result_count: 3,
+    context_limit: 200000,
+    usage_percent: 17.77,
+    actual_usage: {
+      call_count: 4,
+      prompt_tokens: 85415,
+      completion_tokens: 2658,
+      total_tokens: 88073,
+      reasoning_tokens: 833,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      prompt_cache_hit_tokens: 6500,
+      prompt_cache_miss_tokens: 78915,
+      prompt_cached_tokens: 0,
+    },
+    cumulative_usage: {
+      call_count: 13,
+      prompt_tokens: 145287,
+      completion_tokens: 9232,
+      total_tokens: 154519,
+      reasoning_tokens: 5221,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      prompt_cache_hit_tokens: 118144,
+      prompt_cache_miss_tokens: 27143,
+      prompt_cached_tokens: 0,
+    },
+  });
+  assert.match(
+    contextBarEl.attributes["aria-label"],
+    /当前上下文窗口\n占用：35,540 \/ 200,000 tokens/,
+  );
+  assert.match(contextBarEl.attributes["aria-label"], /服务商用量（usage）/);
+  assert.match(
+    contextBarEl.attributes["aria-label"],
+    /本轮：88,073 tokens，4 次模型调用。/,
+  );
+  assert.match(
+    contextBarEl.attributes["aria-label"],
+    /输出：2,658（含推理 833）。/,
+  );
+  assert.match(
+    contextBarEl.attributes["aria-label"],
+    /输入缓存：命中 6,500，未命中 78,915。/,
+  );
+  assert.match(
+    contextBarEl.attributes["aria-label"],
+    /会话累计：154,519 tokens，13 次模型调用。/,
+  );
+  assert.equal(
+    contextBarEl.querySelector(".context-usage-label").textContent,
+    "用量 154.5k",
+  );
+  assert.equal(
+    contextBarEl.querySelector(".context-percent-label").textContent,
+    "18%",
+  );
 
   transcript.renderHistoricalTool({
     id: "toolu_history",
@@ -348,7 +435,7 @@ function createTranscriptHarness(createChatTranscript) {
       },
     },
   });
-  return { transcript, messagesEl };
+  return { transcript, messagesEl, contextBarEl: elements.contextBarEl };
 }
 
 async function testDiaryPrompt(createDiaryPrompt) {

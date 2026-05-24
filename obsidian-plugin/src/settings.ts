@@ -1,4 +1,13 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import {
+  AbstractInputSuggest,
+  App,
+  Notice,
+  PluginSettingTab,
+  Setting,
+  TFile,
+  TFolder,
+  type TAbstractFile,
+} from "obsidian";
 
 import { AgentClient, type MCPRuntimeStatus } from "./api/client";
 import {
@@ -117,6 +126,248 @@ export const DEFAULT_SETTINGS: CrabbySettings = {
   activeProfileId: "",
 };
 
+type VaultPathSuggestMode = "folder" | "markdownFile";
+
+interface VaultPathSuggestion {
+  kind: "folder" | "file";
+  path: string;
+}
+
+class VaultPathSuggest extends AbstractInputSuggest<VaultPathSuggestion> {
+  private readonly mode: VaultPathSuggestMode;
+  private readonly onChoose: (path: string) => void;
+
+  constructor(
+    app: App,
+    inputEl: HTMLInputElement,
+    options: {
+      mode: VaultPathSuggestMode;
+      onChoose: (path: string) => void;
+    },
+  ) {
+    super(app, inputEl);
+    this.mode = options.mode;
+    this.onChoose = options.onChoose;
+    this.limit = 12;
+  }
+
+  protected async getSuggestions(query: string): Promise<VaultPathSuggestion[]> {
+    return getVaultPathSuggestions(this.app, query, this.mode);
+  }
+
+  renderSuggestion(value: VaultPathSuggestion, el: HTMLElement): void {
+    const displayPath =
+      value.kind === "folder" && !value.path.endsWith("/")
+        ? `${value.path}/`
+        : value.path;
+    el.createDiv({ text: displayPath });
+    el.createDiv({
+      cls: "setting-item-description",
+      text: value.kind === "folder" ? "Vault 文件夹" : "Markdown 文件",
+    });
+  }
+
+  selectSuggestion(
+    value: VaultPathSuggestion,
+    _evt: MouseEvent | KeyboardEvent,
+  ): void {
+    const selectedPath =
+      this.mode === "markdownFile" && value.kind === "folder"
+        ? `${value.path}/`
+        : value.path;
+    this.setValue(selectedPath);
+    this.onChoose(selectedPath);
+    this.close();
+  }
+}
+
+async function getVaultPathSuggestions(
+  app: App,
+  query: string,
+  mode: VaultPathSuggestMode,
+): Promise<VaultPathSuggestion[]> {
+  const candidates = new Map<string, VaultPathSuggestion>();
+  const addCandidate = (suggestion: VaultPathSuggestion): void => {
+    const normalized = normalizeSuggestPath(suggestion.path);
+    if (!normalized || !isSafeVaultRelativeSuggestPath(normalized)) {
+      return;
+    }
+    if (suggestion.kind === "file" && mode === "folder") {
+      return;
+    }
+    if (suggestion.kind === "file" && !normalized.toLowerCase().endsWith(".md")) {
+      return;
+    }
+    candidates.set(`${suggestion.kind}:${normalized}`, {
+      ...suggestion,
+      path: normalized,
+    });
+  };
+
+  for (const file of app.vault.getAllLoadedFiles()) {
+    addLoadedVaultFile(file, mode, addCandidate);
+  }
+
+  addDefaultDiaryCandidates(mode, addCandidate);
+
+  for (const path of await collectAdapterPaths(app, query)) {
+    addCandidate(path);
+  }
+
+  const normalizedQuery = normalizeSuggestPath(query).toLowerCase();
+  return Array.from(candidates.values())
+    .map((candidate) => ({
+      candidate,
+      score: scoreVaultPathSuggestion(candidate, normalizedQuery),
+    }))
+    .filter((entry) => entry.score > 0 || normalizedQuery.length === 0)
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        compareSuggestionKind(a.candidate, b.candidate) ||
+        a.candidate.path.localeCompare(b.candidate.path),
+    )
+    .slice(0, 12)
+    .map((entry) => entry.candidate);
+}
+
+function addLoadedVaultFile(
+  file: TAbstractFile,
+  mode: VaultPathSuggestMode,
+  addCandidate: (suggestion: VaultPathSuggestion) => void,
+): void {
+  if (file instanceof TFolder) {
+    if (file.path && file.path !== "/") {
+      addCandidate({ kind: "folder", path: file.path });
+    }
+    return;
+  }
+
+  if (mode === "markdownFile" && file instanceof TFile && file.extension === "md") {
+    addCandidate({ kind: "file", path: file.path });
+  }
+}
+
+function addDefaultDiaryCandidates(
+  mode: VaultPathSuggestMode,
+  addCandidate: (suggestion: VaultPathSuggestion) => void,
+): void {
+  addCandidate({ kind: "folder", path: DEFAULT_DIARY_SETTINGS.rootPath });
+  if (mode !== "markdownFile") {
+    return;
+  }
+  for (const path of Object.values(DEFAULT_DIARY_SETTINGS.templatePaths)) {
+    addCandidate({ kind: "file", path });
+    const parentPath = getParentPath(path);
+    if (parentPath) {
+      addCandidate({ kind: "folder", path: parentPath });
+    }
+  }
+}
+
+async function collectAdapterPaths(
+  app: App,
+  query: string,
+): Promise<VaultPathSuggestion[]> {
+  const foldersToList = new Set([
+    "",
+    ".crabby",
+    ".crabby/templates",
+    ".crabby/templates/diary",
+  ]);
+  const queryParentPath = getParentPath(query);
+  if (queryParentPath && isSafeVaultRelativeSuggestPath(queryParentPath)) {
+    foldersToList.add(queryParentPath);
+  }
+
+  const suggestions: VaultPathSuggestion[] = [];
+  for (const folder of foldersToList) {
+    if (folder && !isSafeVaultRelativeSuggestPath(folder)) {
+      continue;
+    }
+    try {
+      const listed = await app.vault.adapter.list(folder);
+      for (const path of listed.folders) {
+        suggestions.push({ kind: "folder", path });
+      }
+      for (const path of listed.files) {
+        suggestions.push({ kind: "file", path });
+      }
+    } catch {
+      // Missing folders are normal while users are typing partial paths.
+    }
+  }
+  return suggestions;
+}
+
+function scoreVaultPathSuggestion(
+  suggestion: VaultPathSuggestion,
+  normalizedQuery: string,
+): number {
+  if (!normalizedQuery) {
+    return suggestion.kind === "folder" ? 20 : 10;
+  }
+
+  const path = suggestion.path.toLowerCase();
+  const baseName = path.split("/").pop() ?? path;
+  if (path === normalizedQuery) {
+    return 1000;
+  }
+  if (path.startsWith(normalizedQuery)) {
+    return 900;
+  }
+  if (baseName.startsWith(normalizedQuery)) {
+    return 800;
+  }
+  if (path.includes(`/${normalizedQuery}`)) {
+    return 700;
+  }
+  if (path.includes(normalizedQuery)) {
+    return 500;
+  }
+  return 0;
+}
+
+function compareSuggestionKind(
+  left: VaultPathSuggestion,
+  right: VaultPathSuggestion,
+): number {
+  if (left.kind === right.kind) {
+    return 0;
+  }
+  return left.kind === "file" ? -1 : 1;
+}
+
+function getParentPath(path: string): string {
+  const normalized = normalizeSuggestPath(path);
+  const slashIndex = normalized.lastIndexOf("/");
+  if (slashIndex < 0) {
+    return "";
+  }
+  return normalized.slice(0, slashIndex);
+}
+
+function normalizeSuggestPath(path: string): string {
+  return path
+    .replace(/\\/g, "/")
+    .trim()
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter((segment) => segment && segment !== ".")
+    .join("/");
+}
+
+function isSafeVaultRelativeSuggestPath(path: string): boolean {
+  const normalized = path.replace(/\\/g, "/").trim();
+  return (
+    normalized.length > 0 &&
+    !normalized.startsWith("/") &&
+    !normalized.startsWith("~") &&
+    !/^[A-Za-z]:/.test(normalized) &&
+    !normalized.split("/").some((segment) => segment === "..")
+  );
+}
+
 function createCollapsibleSection(
   containerEl: HTMLElement,
   summaryText: string,
@@ -194,11 +445,11 @@ export class CrabbySettingTab extends PluginSettingTab {
   }
 
   private renderRuntimeSection(containerEl: HTMLElement): void {
-    containerEl.createEl("h3", { text: "后端运行时" });
+    containerEl.createEl("h3", { text: "本地后端程序" });
 
     const manager = this.plugin.runtimeManager;
     if (!manager) {
-      containerEl.createDiv().setText("后端运行时管理器不可用。");
+      containerEl.createDiv().setText("本地后端程序管理器不可用。");
       return;
     }
 
@@ -218,11 +469,13 @@ export class CrabbySettingTab extends PluginSettingTab {
     const renderStatus = async () => {
       const requestId = ++renderStatusRequestId;
       const status = manager.getStatus();
-      const setStatusText = (healthText: string) => {
+      const setStatusText = (healthText: string, backendVersion?: string) => {
+        const versionLabel = backendVersion?.trim() || status.version;
         statusEl.setText(
           [
             `模式：${status.mode === "dev" ? "开发模式" : "生产模式"}`,
-            `运行时已安装：${status.installed ? "是" : "否"}`,
+            `后端版本：${versionLabel}`,
+            `后端程序已安装：${status.installed ? "是" : "否"}`,
             `后端进程：${status.running ? "运行中" : "未运行"}`,
             `连接状态：${healthText}`,
             `后端地址：${status.backendUrl}`,
@@ -241,9 +494,12 @@ export class CrabbySettingTab extends PluginSettingTab {
       setStatusText("正在检查...");
       const client = new AgentClient(status.backendUrl);
       try {
-        const isHealthy = await client.health();
+        const health = await client.getHealthStatus();
         if (requestId === renderStatusRequestId) {
-          setStatusText(isHealthy ? "可访问（/health 正常）" : "不可访问");
+          setStatusText(
+            health.ok ? "可访问（/health 正常）" : "不可访问",
+            health.version,
+          );
         }
       } catch (error) {
         if (requestId === renderStatusRequestId) {
@@ -254,8 +510,8 @@ export class CrabbySettingTab extends PluginSettingTab {
     };
 
     new Setting(containerEl)
-      .setName("运行时清单 URL")
-      .setDesc("生产模式用于下载后端运行时。开发模式会优先使用 .dev-runtime.json。")
+      .setName("后端程序下载清单 URL")
+      .setDesc("用于在线安装或更新本地后端程序。手动安装包通常已内置，无需填写；开发模式会优先使用 .dev-runtime.json。")
       .addText((text) => {
         text
           .setPlaceholder("https://example.com/life-assistant/runtime-manifest.json")
@@ -270,13 +526,13 @@ export class CrabbySettingTab extends PluginSettingTab {
         button.onClick(async () => {
           this.plugin.settings.runtimeManifestUrl = manifestUrlDraft;
           await this.plugin.saveSettings();
-          new Notice("运行时清单 URL 已保存。");
+          new Notice("后端程序下载清单 URL 已保存。");
         });
       });
 
     new Setting(containerEl)
-      .setName("安装后端运行时")
-      .setDesc("下载并校验当前平台对应的后端运行时。")
+      .setName("安装/更新本地后端程序")
+      .setDesc("从上面的清单 URL 下载并校验适合当前平台的后端程序。手动安装包已内置时不需要点击。")
       .addButton((button) => {
         button.setButtonText("安装");
         button.onClick(async () => {
@@ -285,10 +541,10 @@ export class CrabbySettingTab extends PluginSettingTab {
             this.plugin.settings.runtimeManifestUrl = manifestUrlDraft;
             await this.plugin.saveSettings();
             await manager.installRuntime(manifestUrlDraft);
-            new Notice("后端运行时已安装。");
+            new Notice("本地后端程序已安装。");
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            new Notice(`运行时安装失败：${message}`);
+            new Notice(`本地后端程序安装失败：${message}`);
           } finally {
             button.setDisabled(false);
             await renderStatus();
@@ -388,7 +644,7 @@ export class CrabbySettingTab extends PluginSettingTab {
       await this.plugin.saveSettings();
       const syncResult = this.plugin.runtimeManager?.syncDiaryConfig();
       if (!syncResult) {
-        statusEl.setText("Diary 配置已保存；后端运行时初始化后会同步。");
+        statusEl.setText("Diary 配置已保存；本地后端程序初始化后会同步。");
         return;
       }
       if (syncResult.ok === false) {
@@ -402,6 +658,7 @@ export class CrabbySettingTab extends PluginSettingTab {
       label: string,
       value: string,
       placeholder: string,
+      suggestMode: VaultPathSuggestMode,
       onChange: (value: string) => void,
     ): void => {
       new Setting(containerEl)
@@ -411,27 +668,69 @@ export class CrabbySettingTab extends PluginSettingTab {
             onChange(next.trim());
           });
           text.inputEl.style.width = "420px";
+          new VaultPathSuggest(this.app, text.inputEl, {
+            mode: suggestMode,
+            onChoose: (selectedPath) => {
+              onChange(selectedPath.trim());
+            },
+          });
         });
     };
 
-    createDiaryRow("日记根目录", diaryDraft.rootPath, "Journal/", (value) => {
-      diaryDraft.rootPath = value || "Journal";
-    });
-    createDiaryRow("日记模板（日）", diaryDraft.templatePaths.daily, ".crabby/templates/diary/daily.md", (value) => {
-      diaryDraft.templatePaths.daily = value;
-    });
-    createDiaryRow("日记模板（周）", diaryDraft.templatePaths.weekly, ".crabby/templates/diary/weekly.md", (value) => {
-      diaryDraft.templatePaths.weekly = value;
-    });
-    createDiaryRow("日记模板（月）", diaryDraft.templatePaths.monthly, ".crabby/templates/diary/monthly.md", (value) => {
-      diaryDraft.templatePaths.monthly = value;
-    });
-    createDiaryRow("日记模板（季）", diaryDraft.templatePaths.quarterly, ".crabby/templates/diary/quarterly.md", (value) => {
-      diaryDraft.templatePaths.quarterly = value;
-    });
-    createDiaryRow("日记模板（年）", diaryDraft.templatePaths.yearly, ".crabby/templates/diary/yearly.md", (value) => {
-      diaryDraft.templatePaths.yearly = value;
-    });
+    createDiaryRow(
+      "日记根目录",
+      diaryDraft.rootPath,
+      "Journal/",
+      "folder",
+      (value) => {
+        diaryDraft.rootPath = value || "Journal";
+      },
+    );
+    createDiaryRow(
+      "日记模板（日）",
+      diaryDraft.templatePaths.daily,
+      ".crabby/templates/diary/daily.md",
+      "markdownFile",
+      (value) => {
+        diaryDraft.templatePaths.daily = value;
+      },
+    );
+    createDiaryRow(
+      "日记模板（周）",
+      diaryDraft.templatePaths.weekly,
+      ".crabby/templates/diary/weekly.md",
+      "markdownFile",
+      (value) => {
+        diaryDraft.templatePaths.weekly = value;
+      },
+    );
+    createDiaryRow(
+      "日记模板（月）",
+      diaryDraft.templatePaths.monthly,
+      ".crabby/templates/diary/monthly.md",
+      "markdownFile",
+      (value) => {
+        diaryDraft.templatePaths.monthly = value;
+      },
+    );
+    createDiaryRow(
+      "日记模板（季）",
+      diaryDraft.templatePaths.quarterly,
+      ".crabby/templates/diary/quarterly.md",
+      "markdownFile",
+      (value) => {
+        diaryDraft.templatePaths.quarterly = value;
+      },
+    );
+    createDiaryRow(
+      "日记模板（年）",
+      diaryDraft.templatePaths.yearly,
+      ".crabby/templates/diary/yearly.md",
+      "markdownFile",
+      (value) => {
+        diaryDraft.templatePaths.yearly = value;
+      },
+    );
 
     new Setting(containerEl)
       .setName("保存 Diary 配置")

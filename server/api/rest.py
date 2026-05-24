@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from attachment_store import AttachmentStore
@@ -330,8 +330,8 @@ async def list_personas() -> list[PersonaSummary]:
 
 
 @router.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health(request: Request) -> dict[str, str]:
+    return {"status": "ok", "version": request.app.version}
 
 
 @router.get("/skills", response_model=list[SkillSummary])
@@ -584,13 +584,12 @@ async def chat(req: ChatRequest) -> ChatResponse:
                     allowed_exposures={TOOL_EXPOSURE_CHAT},
                 )
                 all_tool_calls.append(ui_payload)
-                ui_for_storage = {k: v for k, v in ui_payload.items() if k != "output"}
                 tool_results.append(
                     {
                         "type": "tool_result",
                         "tool_use_id": tool_id,
                         "content": llm_text,
-                        "ui": ui_for_storage,
+                        "ui": ui_payload,
                     }
                 )
 

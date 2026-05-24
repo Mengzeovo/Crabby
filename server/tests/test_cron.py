@@ -15,6 +15,18 @@ def _runtime_data(vault_path: Path) -> Path:
     return vault_path / ".crabby" / "data"
 
 
+def test_cron_create_model_visible_description_mentions_seconds_support():
+    tool = CronCreateTool()
+    schema = tool.to_anthropic_tool()
+
+    assert "6 字段 seconds-first cron" in tool.description
+    assert "*/10 * * * * *" in tool.description
+    assert (
+        "秒在前的 6 字段表达式"
+        in schema["input_schema"]["properties"]["cron"]["description"]
+    )
+
+
 async def test_cron_create_accepts_seconds_at_beginning(tmp_path: Path):
     result = await CronCreateTool().call(
         CronCreateInput(cron="*/10 * * * * *", prompt="run", recurring=True),

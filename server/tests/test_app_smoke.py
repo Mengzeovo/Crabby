@@ -22,7 +22,7 @@ def test_app_startup_and_shutdown_smoke():
         capabilities = client.get("/capabilities")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "ok", "version": main.app.version}
     assert capabilities.status_code == 200
     assert "supports_vision" in capabilities.json()
 
@@ -40,5 +40,5 @@ def test_app_startup_does_not_wait_for_mcp_reload(monkeypatch):
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "ok", "version": main.app.version}
     assert started.wait(timeout=1)

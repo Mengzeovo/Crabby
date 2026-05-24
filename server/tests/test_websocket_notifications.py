@@ -316,7 +316,7 @@ def test_tool_result_event_contains_full_payload(monkeypatch, tmp_path: Path):
     )
     block = tool_message["content"][0]
     assert block["ui"]["status"] == "error"
-    assert "output" not in block["ui"]
+    assert block["ui"]["output"] == LONG_FAILURE_OUTPUT
 
 
 def test_tool_iteration_limit_emits_warning_then_done(monkeypatch, tmp_path: Path):

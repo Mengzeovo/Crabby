@@ -114,12 +114,13 @@ def test_tool_result_ui_payload_is_not_sent_to_model(tmp_path):
                 "type": "tool_result",
                 "tool_use_id": "toolu_1",
                 "content": "[exit code: 7]",
-                "ui": {
-                    "id": "toolu_1",
-                    "name": "bash",
-                    "status": "error",
-                    "metadata": {"exit_code": 7},
-                },
+                    "ui": {
+                        "id": "toolu_1",
+                        "name": "bash",
+                        "output": "full failure detail",
+                        "status": "error",
+                        "metadata": {"exit_code": 7},
+                    },
             }
         ]
     )
@@ -130,7 +131,7 @@ def test_tool_result_ui_payload_is_not_sent_to_model(tmp_path):
 
     assert ui_messages is not None
     assert ui_messages[1]["content"][0]["ui"]["status"] == "error"
-    assert "output" not in ui_messages[1]["content"][0]["ui"]
+    assert ui_messages[1]["content"][0]["ui"]["output"] == "full failure detail"
     assert model_messages is not None
     assert model_messages[1]["content"] == [
         {

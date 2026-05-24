@@ -280,12 +280,12 @@ chmod +x "<YourVault>/.obsidian/plugins/crabby/runtime/backend/0.3.0/darwin/crab
 ### 首次运行
 
 1. 打开 `Settings -> Crabby`。
-2. 检查 backend runtime 状态。
+2. 检查 **本地后端程序** 状态。手动安装包已内置后端程序时，通常不需要填写 **后端程序下载清单 URL** 或点击安装。
 3. 创建并激活一个 LLM Profile。
 4. 点击 **Test Current Profile**。
 5. 打开 Crabby chat view。
 
-插件托管的运行时文件位于：
+插件托管的本地后端程序文件位于：
 
 ```text
 <YourVault>/.obsidian/plugins/crabby/

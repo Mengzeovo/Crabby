@@ -86,11 +86,17 @@ Crabby 推断: interactive=False
 调用 cron_create(cron="0 9 * * *", prompt="写日记提醒")
 ```
 
+Cron 表达式支持：
+
+- 5 字段分钟级 cron，例如 `*/5 * * * *` 表示每 5 分钟。
+- 6 字段 seconds-first cron，例如 `*/10 * * * * *` 表示每 10 秒。
+- 秒级 cron 是后台 daemon 秒级轮询并等待会话空闲后执行，不是硬实时调度。
+
 **可用工具**：
 
 | 工具 | 说明 |
 |---|---|
-| `cron_create` | 创建非交互式定时任务，参数：cron（表达式）、prompt（任务指令）、recurring（是否循环） |
+| `cron_create` | 创建非交互式定时任务，参数：cron（5 字段分钟级或 6 字段 seconds-first 表达式）、prompt（任务指令）、recurring（是否循环） |
 | `cron_list` | 列出所有 loop 和 cron 任务 |
 | `cron_delete` | 删除指定 ID 的任务 |
 

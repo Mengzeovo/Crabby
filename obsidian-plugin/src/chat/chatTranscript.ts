@@ -48,6 +48,15 @@ export function normalizeToolPayload(
   return {
     ...payloadOrName,
     output: typeof payloadOrName.output === "string" ? payloadOrName.output : "",
+    summary: typeof payloadOrName.summary === "string" ? payloadOrName.summary : undefined,
+    input_summary:
+      typeof payloadOrName.input_summary === "string"
+        ? payloadOrName.input_summary
+        : undefined,
+    output_preview:
+      typeof payloadOrName.output_preview === "string"
+        ? payloadOrName.output_preview
+        : undefined,
     metadata:
       payloadOrName.metadata && typeof payloadOrName.metadata === "object"
         ? payloadOrName.metadata
@@ -229,7 +238,7 @@ function hasUsage(
   );
 }
 
-function buildBillLabel(
+function buildUsageBadgeLabel(
   actualUsage: ActualTokenUsage | null | undefined,
   cumulativeUsage: ActualTokenUsage | null | undefined,
 ): string {
@@ -240,12 +249,7 @@ function buildBillLabel(
     : "暂无";
 }
 
-function buildUsageLines(label: string, usage: ActualTokenUsage): string[] {
-  const lines = [
-    `${label}：${formatWholeTokens(usage.total_tokens)} tokens，${formatWholeTokens(usage.call_count)} 次模型调用。`,
-    `${label}明细：输入 ${formatWholeTokens(usage.prompt_tokens)}，输出 ${formatWholeTokens(usage.completion_tokens)}，推理 ${formatWholeTokens(usage.reasoning_tokens)}。`,
-  ];
-
+function buildCacheSummary(usage: ActualTokenUsage): string | null {
   const cacheParts: string[] = [];
   const promptCacheHit = usageValue(usage, "prompt_cache_hit_tokens");
   const promptCacheMiss = usageValue(usage, "prompt_cache_miss_tokens");
@@ -254,22 +258,37 @@ function buildUsageLines(label: string, usage: ActualTokenUsage): string[] {
   const cacheRead = usageValue(usage, "cache_read_input_tokens");
 
   if (promptCacheHit > 0) {
-    cacheParts.push(`缓存命中 ${formatWholeTokens(promptCacheHit)}`);
-  }
-  if (promptCacheMiss > 0) {
-    cacheParts.push(`未命中 ${formatWholeTokens(promptCacheMiss)}`);
+    cacheParts.push(`命中 ${formatWholeTokens(promptCacheHit)}`);
   }
   if (promptCached > 0) {
-    cacheParts.push(`缓存命中 ${formatWholeTokens(promptCached)}`);
+    cacheParts.push(`已缓存 ${formatWholeTokens(promptCached)}`);
   }
   if (cacheRead > 0) {
     cacheParts.push(`读缓存 ${formatWholeTokens(cacheRead)}`);
   }
+  if (promptCacheMiss > 0) {
+    cacheParts.push(`未命中 ${formatWholeTokens(promptCacheMiss)}`);
+  }
   if (cacheCreation > 0) {
     cacheParts.push(`建缓存 ${formatWholeTokens(cacheCreation)}`);
   }
-  if (cacheParts.length > 0) {
-    lines.push(`${label}缓存：${cacheParts.join("，")}。`);
+
+  return cacheParts.length > 0 ? cacheParts.join("，") : null;
+}
+
+function buildUsageLines(label: string, usage: ActualTokenUsage): string[] {
+  const reasoningTokens = usageValue(usage, "reasoning_tokens");
+  const reasoningSuffix =
+    reasoningTokens > 0 ? `（含推理 ${formatWholeTokens(reasoningTokens)}）` : "";
+  const lines = [
+    `${label}：${formatWholeTokens(usage.total_tokens)} tokens，${formatWholeTokens(usage.call_count)} 次模型调用。`,
+    `  输入：${formatWholeTokens(usage.prompt_tokens)}。`,
+    `  输出：${formatWholeTokens(usage.completion_tokens)}${reasoningSuffix}。`,
+  ];
+
+  const cacheSummary = buildCacheSummary(usage);
+  if (cacheSummary) {
+    lines.push(`  输入缓存：${cacheSummary}。`);
   }
 
   return lines;
@@ -277,25 +296,56 @@ function buildUsageLines(label: string, usage: ActualTokenUsage): string[] {
 
 function buildContextBarTitle(ctx: ContextStats, percentLabel: string): string {
   const lines = [
-    `上下文占用：${formatWholeTokens(ctx.total_tokens)} / ${formatWholeTokens(ctx.context_limit)} tokens（${percentLabel}）。`,
-    `上下文明细：系统 ${formatWholeTokens(ctx.system_tokens)}，工具定义 ${formatWholeTokens(ctx.schema_tokens)}，用户 ${formatWholeTokens(ctx.user_tokens)}，助手 ${formatWholeTokens(ctx.assistant_tokens)}，工具结果 ${formatWholeTokens(ctx.tool_result_tokens)}。`,
+    "当前上下文窗口",
+    `占用：${formatWholeTokens(ctx.total_tokens)} / ${formatWholeTokens(ctx.context_limit)} tokens（${percentLabel}）。`,
+    `组成：系统 ${formatWholeTokens(ctx.system_tokens)}，工具定义 ${formatWholeTokens(ctx.schema_tokens)}，用户 ${formatWholeTokens(ctx.user_tokens)}，助手 ${formatWholeTokens(ctx.assistant_tokens)}，工具结果 ${formatWholeTokens(ctx.tool_result_tokens)}。`,
     `消息数：${formatWholeTokens(ctx.message_count)}。`,
+    "",
+    "服务商用量（usage）",
   ];
 
   const actualUsage = ctx.actual_usage;
   const cumulativeUsage = ctx.cumulative_usage;
   if (hasUsage(actualUsage)) {
-    lines.push(...buildUsageLines("本轮账单", actualUsage));
+    lines.push(...buildUsageLines("本轮", actualUsage));
   } else {
-    lines.push("本轮账单：当前模型没有返回 usage 数据。");
+    lines.push("本轮：当前模型没有返回 usage 数据。");
   }
   if (hasUsage(cumulativeUsage)) {
-    lines.push(...buildUsageLines("会话账单", cumulativeUsage));
+    lines.push(...buildUsageLines("会话累计", cumulativeUsage));
   }
+  lines.push("");
   lines.push(
-    "账单来自服务商 usage，可能包含不进入上下文窗口的输出、推理和缓存相关 token。",
+    "说明：上下文是当前窗口估算；usage 是服务商返回的调用累计，工具循环会产生多次模型调用，缓存和推理按供应商口径展示。",
   );
 
+  return lines.join("\n");
+}
+
+export function formatToolPreview(payload: ToolCallPayload): string {
+  const preview =
+    payload.output_preview ||
+    payload.summary ||
+    getFirstNonEmptyLine(payload.output || "") ||
+    "(no output)";
+  return preview;
+}
+
+export function formatToolCardDetail(payload: ToolCallPayload): string {
+  const lines: string[] = [];
+  if (payload.input_summary) {
+    lines.push(`Input: ${payload.input_summary}`);
+    lines.push("");
+  }
+  if (payload.summary) {
+    lines.push(`Summary: ${payload.summary}`);
+    lines.push("");
+  }
+  lines.push(formatToolOutput(payload));
+  if (payload.detail_ref) {
+    lines.push("");
+    lines.push(`Detail ref: ${payload.detail_ref}`);
+  }
   return lines.join("\n");
 }
 
@@ -403,7 +453,8 @@ export function createChatTranscript(
   ): void {
     const payload = normalizeToolPayload(payloadOrName, legacyOutput);
     const name = getToolPayloadName(payload);
-    const output = formatToolOutput(payload);
+    const output = formatToolCardDetail(payload);
+    const previewText = formatToolPreview(payload);
     const status = toolStatus(payload);
 
     wrapper.classList.remove("running");
@@ -428,7 +479,7 @@ export function createChatTranscript(
         meta ? `${toolStatusLabel(status)} · ${meta}` : toolStatusLabel(status),
       );
 
-      const firstLine = getFirstNonEmptyLine(output);
+      const firstLine = getFirstNonEmptyLine(previewText);
       if (firstLine) {
         const preview = header.createSpan({ cls: "chat-tool-preview" });
         preview.setText(
@@ -819,8 +870,8 @@ export function createChatTranscript(
       text: "·",
     });
     elements.contextBarEl.createSpan({
-      cls: "context-bill-label",
-      text: "会话 暂无",
+      cls: "context-usage-label",
+      text: "用量 暂无",
     });
   }
 
@@ -831,7 +882,7 @@ export function createChatTranscript(
     const boundedPct = Math.max(0, Math.min(pct, 100));
     const actualUsage = ctx.actual_usage;
     const cumulativeUsage = ctx.cumulative_usage;
-    const billLabel = buildBillLabel(actualUsage, cumulativeUsage);
+    const usageLabel = buildUsageBadgeLabel(actualUsage, cumulativeUsage);
 
     let color = "var(--text-success)";
     if (pct > 80) {
@@ -873,8 +924,8 @@ export function createChatTranscript(
       text: "·",
     });
     elements.contextBarEl.createSpan({
-      cls: "context-bill-label",
-      text: `会话 ${billLabel}`,
+      cls: "context-usage-label",
+      text: `用量 ${usageLabel}`,
     });
   }
 

@@ -314,6 +314,7 @@ def create_default_registry() -> ToolRegistry:
     from tools.obsidian_search import ObsidianSearchTool
     from tools.read import ReadTool
     from tools.task_query import TaskQueryTool
+    from tools.tool_result_read import ToolResultReadTool
 
     registry = ToolRegistry()
 
@@ -337,6 +338,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(DiaryWriteTool())
     registry.register(EditTool())
     registry.register(TaskQueryTool())
+    registry.register(ToolResultReadTool())
 
     try:
         from tools.fetch import FetchTool

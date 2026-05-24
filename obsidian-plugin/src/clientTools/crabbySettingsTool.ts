@@ -121,7 +121,7 @@ async function setRuntimeValue(
       ok: false,
       message:
         "set_runtime_value only supports backendUrl, backendEnvPath, " +
-        "backendMcpConfigPath, or runtimeManifestUrl.",
+        "backendMcpConfigPath, or runtimeManifestUrl (shown as 后端程序下载清单 URL).",
       settings: buildSettingsSnapshot(plugin),
     };
   }

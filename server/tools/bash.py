@@ -325,14 +325,23 @@ class BashTool(Tool):
         if not command:
             return ToolResult(
                 output="错误：命令不能为空。",
-                metadata={"exit_code": None},
+                metadata={
+                    "error": True,
+                    "error_type": "empty_command",
+                    "exit_code": None,
+                },
             )
 
         blocked_reason = self._check_blocked(command)
         if blocked_reason:
             return ToolResult(
                 output=blocked_reason,
-                metadata={"blocked": True, "exit_code": None},
+                metadata={
+                    "error": True,
+                    "error_type": "blocked_command",
+                    "blocked": True,
+                    "exit_code": None,
+                },
             )
 
         warnings = self._check_dangerous(command)
@@ -350,7 +359,11 @@ class BashTool(Tool):
         except OSError as exc:
             return ToolResult(
                 output=f"无法启动进程：{exc}",
-                metadata={"exit_code": None},
+                metadata={
+                    "error": True,
+                    "error_type": "process_start",
+                    "exit_code": None,
+                },
             )
 
         if params.is_background:
@@ -413,13 +426,21 @@ class BashTool(Tool):
             output = output[: self.max_result_chars]
             is_truncated = True
 
+        metadata = {
+            "exit_code": exit_code,
+            "timeout": timeout_occurred,
+            "warnings": warnings,
+        }
+        if timeout_occurred:
+            metadata["error"] = True
+            metadata["error_type"] = "timeout"
+        elif exit_code != 0:
+            metadata["error"] = True
+            metadata["error_type"] = "nonzero_exit"
+
         return ToolResult(
             output=output,
-            metadata={
-                "exit_code": exit_code,
-                "timeout": timeout_occurred,
-                "warnings": warnings,
-            },
+            metadata=metadata,
             is_truncated=is_truncated,
             cache_path=cache_path,
         )

@@ -763,13 +763,12 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                             tool_id=tool_id,
                             allowed_exposures={TOOL_EXPOSURE_CHAT},
                         )
-                        ui_for_storage = {k: v for k, v in ui_payload.items() if k != "output"}
                         tool_results.append(
                             {
                                 "type": "tool_result",
                                 "tool_use_id": tool_id,
                                 "content": llm_text,
-                                "ui": ui_for_storage,
+                                "ui": ui_payload,
                             }
                         )
 

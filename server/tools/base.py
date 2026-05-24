@@ -61,7 +61,8 @@ class ToolResult(BaseModel):
     """工具执行后的标准化结果。
 
     Attributes:
-        output       : 工具输出的文本内容（供 LLM 或 UI 使用）。
+        output       : 工具完整文本输出。执行层会从它派生紧凑 LLM 回执
+                       和前端 UI 卡片，避免长输出默认进入后续上下文。
         metadata     : 附加的结构化元数据（文件数、匹配数等），
                        用于 UI 展示或内部统计。
         is_truncated : 输出是否因超长而被截断。
@@ -133,7 +134,7 @@ class Tool(ABC):
     # -- 输出格式化 ---------------------------------------------------------
 
     def format_for_llm(self, result: ToolResult) -> str:
-        """将结果格式化为精简纯文本，供 LLM 消费。
+        """将结果格式化为纯文本，供旧调用路径或测试使用。
 
         在文本前追加执行状态前缀（[success]/[error]/[warning]），
         使 LLM 能可靠判断工具是否成功执行。

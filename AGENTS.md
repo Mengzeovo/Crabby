@@ -110,7 +110,8 @@ Important backend files and folders:
 - `server/api/`: REST, WebSocket, attachments, sessions, client-tool bridge,
   and admin APIs.
 - `server/api/rest.py`: REST chat, diary-write bridge, context stats, persona,
-  skill, capability, and admin-facing routes with safe ID validation.
+  skill, health/version, capability, and admin-facing routes with safe ID
+  validation.
 - `server/api/sessions.py`: session metadata and message-history APIs.
 - `server/api/websocket.py`: streaming chat WebSocket, tool-loop warnings, and
   safe conversation ID checks.
@@ -126,9 +127,10 @@ Important backend files and folders:
 - `server/llm/profile_probe.py`: validates/tests active profiles.
 - `server/llm/agent_runner.py`: shared non-streaming agent runner for REST,
   fallback WebSocket paths, cron, and other background turns.
-- `server/llm/tool_executor.py`: validates, runs, and formats tool calls,
-  including standardized UI payloads with tool IDs, status, metadata,
-  truncation/cache details, and elapsed time.
+- `server/llm/tool_executor.py`: validates, runs, and formats tool calls into
+  compact LLM-visible receipts plus structured UI card payloads with full
+  output, summaries, previews, detail refs, status, metadata, truncation/cache
+  details, and elapsed time.
 - `server/llm/token_usage.py`: normalizes provider usage and accumulates
   per-turn/session totals.
 - `server/personas/`: persona loader, registry, router, runtime selection, and
@@ -139,6 +141,12 @@ Important backend files and folders:
 - `server/tools/bash.py`: non-interactive cross-platform shell tool. On
   Windows it launches PowerShell without a profile, forces UTF-8 output, and
   translates top-level `&&` / `||` chains for PowerShell 5.x compatibility.
+- `server/tools/tool_result_read.py`: read-only detail expansion tool for
+  previous tool-result cards in the current tool context session and
+  conversation only. It reads persisted UI-only `ui.output` by `detail_ref` or
+  `tool_use_id` with offset/limit/query controls, and can safely expand
+  truncated tool cache files only when `cache_path` resolves inside the runtime
+  `cache/tool-results/` directory.
 - `server/tools/edit.py`: Vault-relative exact replacement/new-file tool that
   preserves dominant newline style, rejects paths outside the Vault, and returns
   user-readable change summaries plus structured `metadata.file_changes` entries
@@ -225,7 +233,12 @@ Important plugin files and folders:
 
 - `obsidian-plugin/src/main.ts`: plugin entry point.
 - `obsidian-plugin/src/settings.ts`: settings UI, backend-owned profile
-  controls, active-profile test button, runtime/MCP settings.
+  controls, active-profile test button, local backend program/MCP settings, and
+  Diary root/template Vault-relative path autocomplete. Diary template
+  suggestions include Obsidian-loaded Markdown files plus adapter-listed hidden
+  `.crabby/templates/diary/` files. The local backend status panel shows the
+  backend version, preferring the live `/health` version and falling back to the
+  runtime state version while offline.
 - `obsidian-plugin/src/api/client.ts`: backend API client, WebSocket handling,
   transport/server error classification, admin reload/status calls, profile
   calls, active-profile test calls, and direct diary-write calls.
@@ -233,7 +246,10 @@ Important plugin files and folders:
   composer, assistant rendering, personas, profiles, sessions, current-session
   tree, fork actions, stylesheet injection, turn runner, inline loop-to-diary
   prompts, and tool-block metadata rendering including file-change counts from
-  `metadata.file_changes`.
+  `metadata.file_changes`. The context/token bar separates current context
+  window estimates from provider-returned usage totals; usage labels are not a
+  direct context-window bill, and reasoning/cache numbers are displayed as
+  provider sub-breakdowns rather than extra additive totals.
 - `obsidian-plugin/src/chat/ChatView.ts`: chat view shell. When no saved LLM
   profile exists, it shows a dismissing banner whose settings action opens the
   Obsidian settings modal and switches to the Crabby plugin tab.
@@ -356,12 +372,14 @@ npm run start
 11. LLM responses are normalized into text, reasoning, tool calls, stop
     reasons, and usage.
 12. Tool execution routes through built-in tools, connected MCP tools, and the
-    Obsidian client-tool bridge. Tool results include structured UI payloads
-    with `success`, `warning`, or `error` status.
+    Obsidian client-tool bridge. Tool results include compact model-visible
+    receipts plus structured UI card payloads with full UI output, summaries,
+    previews, detail refs, and `success`, `warning`, or `error` status.
 13. Responses include streamed events or structured REST output plus context
     stats, per-turn usage, cumulative session usage when available, and
     assistant/user message IDs. WebSocket `tool_result` events and REST
-    `tool_calls` carry the full tool UI payload, not a shortened preview.
+    `tool_calls` carry the full tool UI card payload, while persisted
+    `tool_result.content` stays compact for future model context.
 14. When a chat turn completes with a successful `loop_stop` tool result, the
     Obsidian chat view can show an inline prompt directly above the input box
     to write the loop summary to today's diary through `/diary/write`. The
@@ -406,8 +424,11 @@ npm run start
   `sha256(conversation_id:revision|...)` branch fingerprints.
 - Session history is not capped by `max_turns`; pruning/summarization is a
   future explicit feature.
-- Persisted `tool_result` blocks may contain a UI-only `ui` payload for
-  frontend restoration. Model-message materialization strips UI-only fields
+- Persisted `tool_result` blocks may contain a UI-only `ui` payload, including
+  full `ui.output`, for frontend restoration and `tool_result_read` detail
+  expansion. `tool_result_read` is limited to the current session/conversation
+  from the execution context and must not accept model-supplied session or
+  conversation overrides. Model-message materialization strips UI-only fields
   before provider requests.
 
 ## Persona And Skill Rules
@@ -534,6 +555,8 @@ npm run start
   `LLM_REASONING_SPLIT`.
 - Backend-owned profiles are stored in `.env` as `PROFILE_<id>_*`, with
   `ACTIVE_PROFILE_ID` selecting the active profile.
+- The backend runtime dependency set includes `tzdata` so PyInstaller Windows
+  builds bundle IANA timezone data for any future named-timezone use.
 - Backend-owned profile IDs must be env-key safe: ASCII letters, digits, and
   underscores only, up to 64 chars.
 - In the plugin settings UI, "添加配置" creates a local editable draft card;
@@ -541,6 +564,10 @@ npm run start
   action calls the backend profile admin API. Draft profiles are preserved
   across settings refreshes but are ignored by startup migration, chat model
   selection, and send-time profile activation until saved.
+- The plugin settings UI calls the managed backend install/start section
+  "本地后端程序". The persisted setting key remains `runtimeManifestUrl`, but
+  the user-facing field is "后端程序下载清单 URL" and the install action is
+  "安装/更新本地后端程序".
 - Managed backend cleanup uses `CRABBY_HOST_HEARTBEAT_FILE`,
   `CRABBY_HOST_HEARTBEAT_TIMEOUT_SECONDS`, `CRABBY_HOST_PID`, and
   `CRABBY_BACKEND_RELOADER_PARENT`.
@@ -582,6 +609,9 @@ npm run start
 - Completion notifications are stored on the source session and pushed through
   WebSocket when possible.
 - Supports standard 5-field cron and 6-field seconds-first cron.
+- `cron_create` and `skills/loop/SKILL.md` must describe the 6-field
+  seconds-first form in model-visible text so Crabby does not incorrectly claim
+  cron is 5-field-only.
 
 ## Before Editing
 
@@ -687,14 +717,19 @@ Use the smallest relevant verification set:
 - Backend chat REST responses and WebSocket `done` events carry both
   `message_id` and `user_message_id`.
 - REST `tool_calls`, WebSocket `tool_result` events, and persisted tool-result
-  `ui` payloads share the same tool UI shape with ID, name, output, metadata,
-  status, truncation/cache fields, and elapsed time when available.
+  `ui` payloads share the same tool UI card shape with ID, name, full output,
+  summary, input summary, output preview, optional detail ref, metadata, status,
+  truncation/cache fields, and elapsed time when available.
 - Successful `edit` tool writes include a concise text change summary in the
   model-visible tool result plus `metadata.file_changes` entries with path,
   operation, replacement count, replace-all flag, old/new previews, and character
   counts for UI restoration and non-git user visibility.
-- Non-streaming agent-runner tool results persist that same `ui` payload while
-  `Session.get_messages()` strips it from model-bound messages.
+- Non-streaming agent-runner tool results persist that same full `ui` payload
+  while `Session.get_messages()` strips it from model-bound messages.
+- New tools should put durable structure in `metadata`, mark failures with
+  `metadata.error` / `metadata.error_type`, and return raw details in
+  `ToolResult.output`; the executor derives compact LLM receipts so raw tool
+  output does not automatically bloat future model context.
 - Auto-save review jobs use enqueue-time snapshots, not live active
   conversations at drain time. Empty/no-value batches still advance
   per-conversation checkpoints after successful review; unresolved tool errors

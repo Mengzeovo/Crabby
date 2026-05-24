@@ -108,15 +108,24 @@ async def test_run_agent_turn_executes_tool_then_final_reply(
     assert session.messages[1]["role"] == "user"
     assert session.messages[1]["content"][0]["type"] == "tool_result"
     assert session.messages[1]["content"][0]["tool_use_id"] == "toolu_1"
-    assert session.messages[1]["content"][0]["content"] == "[success] echo: hello"
+    assert session.messages[1]["content"][0]["content"].startswith(
+        "[success] echo completed with status=success."
+    )
+    assert "summary: echo: hello" in session.messages[1]["content"][0]["content"]
     ui_payload = session.messages[1]["content"][0]["ui"]
     assert isinstance(ui_payload["elapsed_ms"], int)
     assert ui_payload["elapsed_ms"] >= 0
-    assert ui_payload == {
+    assert ui_payload | {"elapsed_ms": ui_payload["elapsed_ms"]} == {
         "id": "toolu_1",
         "tool_use_id": "toolu_1",
         "name": "echo",
         "tool": "echo",
+        "output": "echo: hello",
+        "summary": "echo: hello",
+        "input_summary": '{"text": "hello"}',
+        "output_preview": "echo: hello",
+        "detail_ref": "tool-result://echo/toolu_1",
+        "detail_available": True,
         "metadata": {},
         "status": "success",
         "is_error": False,
@@ -128,7 +137,7 @@ async def test_run_agent_turn_executes_tool_then_final_reply(
         {
             "type": "tool_result",
             "tool_use_id": "toolu_1",
-            "content": "[success] echo: hello",
+            "content": session.messages[1]["content"][0]["content"],
         }
     ]
     assert session.messages[1]["message_id"].startswith("m_")

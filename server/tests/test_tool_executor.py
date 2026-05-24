@@ -61,6 +61,17 @@ class LongOutputTool(Tool):
         return ToolResult(output=long_output)
 
 
+class HugeOutputTool(Tool):
+    """A tool that returns a huge untruncated output."""
+
+    name = "huge_output"
+    description = "Returns a huge string."
+    input_schema = SimpleInput
+
+    async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
+        return ToolResult(output="0123456789" * 1000)
+
+
 class TruncatedResultTool(Tool):
     """A tool that marks its result as already truncated."""
 
@@ -200,7 +211,7 @@ async def test_truncation_sets_is_truncated_flag(tmp_path: Path):
     registry.register(LongOutputTool())
     ctx = Context(vault_path=tmp_path)
 
-    _llm_text, ui = await execute_tool_call(
+    llm_text, ui = await execute_tool_call(
         registry,
         "long_output",
         {"value": "test"},
@@ -210,6 +221,11 @@ async def test_truncation_sets_is_truncated_flag(tmp_path: Path):
 
     assert ui["is_truncated"] is True
     assert ui["status"] in ("warning", "error")
+    assert len(llm_text) <= 3500
+    assert ui["detail_available"] is True
+    assert ui["detail_ref"] == "tool-result://long_output/toolu_long"
+    assert ui["input_summary"] == '{"value": "test"}'
+    assert ui["output_preview"]
 
 
 @pytest.mark.asyncio
@@ -465,6 +481,28 @@ def test_status_success_on_clean_result():
     assert ui["status"] == "success"
     assert ui["is_error"] is False
     assert ui["is_truncated"] is False
+
+
+@pytest.mark.asyncio
+async def test_llm_receipt_is_compact_while_ui_keeps_full_output(tmp_path: Path):
+    registry = ToolRegistry()
+    registry.register(HugeOutputTool())
+    ctx = Context(vault_path=tmp_path)
+
+    llm_text, ui = await execute_tool_call(
+        registry,
+        "huge_output",
+        {"value": "compact"},
+        ctx=ctx,
+        tool_id="toolu_compact",
+    )
+
+    assert ui["output"] == "0123456789" * 1000
+    assert len(llm_text) < len(ui["output"])
+    assert len(llm_text) <= 3500
+    assert "detail_ref: tool-result://huge_output/toolu_compact" in llm_text
+    assert ui["summary"]
+    assert ui["output_preview"]
 
 
 # ---------------------------------------------------------------------------

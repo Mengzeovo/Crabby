@@ -54,7 +54,10 @@ class ObsidianSearchTool(Tool):
 
         query = params.query.strip()
         if not query:
-            return ToolResult(output="Obsidian search query is empty.")
+            return ToolResult(
+                output="Obsidian search query is empty.",
+                metadata={"error": True, "error_type": "empty_query"},
+            )
 
         try:
             payload = await obsidian_client_tools.search(params.model_dump())
@@ -64,14 +67,25 @@ class ObsidianSearchTool(Tool):
                     f"Obsidian search unavailable: {exc}\n"
                     "Fallback: use grep/glob/read for backend file search."
                 ),
-                metadata={"connected": False, "query": query},
+                metadata={
+                    "error": True,
+                    "error_type": "bridge_unavailable",
+                    "connected": False,
+                    "query": query,
+                },
             )
 
         results = payload.get("results")
         if not isinstance(results, list):
             return ToolResult(
                 output="Obsidian search returned an invalid response.",
-                metadata={"connected": True, "query": query, "raw": payload},
+                metadata={
+                    "error": True,
+                    "error_type": "invalid_response",
+                    "connected": True,
+                    "query": query,
+                    "raw": payload,
+                },
             )
 
         truncated = bool(payload.get("truncated"))
