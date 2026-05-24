@@ -108,6 +108,8 @@ async def startup() -> None:
 
     from loop_daemon import start_loop_daemon
     background_tasks.extend(start_loop_daemon(registry, store, settings.vault_path))
+    from dream_daemon import start_dream_daemon
+    background_tasks.extend(start_dream_daemon(registry, settings.vault_path))
     background_tasks.append(
         asyncio.create_task(
             auto_save_daemon_loop(registry, store),

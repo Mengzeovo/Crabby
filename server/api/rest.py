@@ -22,6 +22,7 @@ from llm.token_usage import (
 )
 from llm.tool_executor import build_default_context, execute_tool_call
 from llm.tool_search_service import ToolSearchService
+from llm.user_activity import mark_user_activity
 from memory import (
     ConversationNotFoundError,
     InvalidSessionIdError,
@@ -457,6 +458,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                 session.persona_state.model_dump()
             ),
         )
+    mark_user_activity()
 
     try:
         prepared_turn = prepare_user_turn(

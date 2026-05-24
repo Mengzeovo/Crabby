@@ -23,6 +23,7 @@ from llm.token_usage import (
 )
 from llm.tool_executor import build_default_context, execute_tool_call
 from llm.tool_search_service import ToolSearchService
+from llm.user_activity import mark_user_activity
 from memory import (
     ConversationNotFoundError,
     InvalidSessionIdError,
@@ -525,6 +526,8 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
             if validation_error is not None:
                 await _send(ws, {"type": "error", "message": validation_error})
                 continue
+
+            mark_user_activity()
 
             apply_persona_selection(
                 session,

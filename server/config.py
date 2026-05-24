@@ -91,6 +91,15 @@ class Settings(BaseSettings):
     # Hooks
     auto_save_interval: int = 15
 
+    # Dream maintenance agent
+    dream_enabled: bool = True
+    dream_idle_seconds: int = 30 * 60
+    dream_min_interval_seconds: int = 7 * 24 * 60 * 60
+    dream_max_interval_seconds: int = 14 * 24 * 60 * 60
+    dream_scan_interval_seconds: int = 60
+    dream_min_group_size: int = 5
+    dream_max_iterations: int = 12
+
     # Skills
     skills_enabled: bool = True
     skills_dir: str = ""

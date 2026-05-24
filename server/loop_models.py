@@ -217,6 +217,8 @@ def should_fire(job: "LoopJob", now: datetime | None = None) -> bool:
     """
     if job.interactive:
         return False
+    if job.status != LoopStatus.ACTIVE:
+        return False
 
     fields_count = len(job.cron.strip().split())
     if fields_count not in (5, 6):

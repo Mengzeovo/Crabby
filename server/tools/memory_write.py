@@ -15,7 +15,12 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from memory.facets import MemoryDocument, parse_frontmatter
-from memory.name_index import check_name_available, read_name_index, register_name
+from memory.maintenance import (
+    MemoryMaintenanceError,
+    invalidate_memories,
+    rewrite_memory_frontmatter,
+)
+from memory.name_index import check_name_available, register_name
 from memory.registry_store import ensure_terms
 from tools._path_utils import is_within_path
 from tools.base import Context, Tool, ToolResult
@@ -213,37 +218,13 @@ def _find_potential_conflicts(
 
 def _invalidate_memory(memory_dir: Path, name: str) -> None:
     """Find a memory by name via the index and mark it invalidated."""
-    index_path = memory_dir / "NAME_INDEX.md"
-    index = read_name_index(index_path)
-    location = index.lookup(name)
-
-    if location is None:
+    try:
+        invalidate_memories(memory_dir, [name])
+    except MemoryMaintenanceError:
         logger.warning("Cannot invalidate '%s': not found in NAME_INDEX.md", name)
         return
-
-    mem_type, topic = location
-    target = memory_dir / mem_type / topic / f"{name}.md"
-
-    if not target.is_file():
-        logger.warning("Index points to '%s' but file does not exist", target)
-        return
-
-    text = target.read_text(encoding="utf-8")
-    fm, body = parse_frontmatter(text)
-    fm["state"] = "invalidated"
-    fm["valid_to"] = date.today().isoformat()
-    _rewrite_with_frontmatter(target, fm, body)
 
 
 def _rewrite_with_frontmatter(path: Path, fm: dict[str, Any], body: str) -> None:
     """Rewrite a memory file with updated frontmatter."""
-    from memory.facets import _yaml_line
-
-    lines = ["---"]
-    for key, value in fm.items():
-        lines.append(_yaml_line(key, value))
-    lines.append("---")
-    lines.append("")
-    lines.append(body.rstrip())
-    lines.append("")
-    path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+    rewrite_memory_frontmatter(path, fm, body)

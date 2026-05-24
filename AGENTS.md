@@ -94,6 +94,12 @@ Important backend files and folders:
 - `server/mcp_runtime.py`: MCP startup, status, and transactional reload.
 - `server/host_watchdog.py`: host heartbeat watchdog for managed backends.
 - `server/cron_daemon.py`: background cron scanner/queue/consumer.
+- `server/dream_daemon.py`: low-frequency background memory maintenance
+  scheduler. It persists `<vault>/.crabby/data/dream_state.json`, schedules
+  the first and subsequent dream attempts 7-14 days out, enforces a minimum
+  7-day gap between dream starts, requires 30 minutes of real-user idle time
+  plus global session idleness, and interrupts running dream work when the user
+  starts chatting.
 - `server/api/`: REST, WebSocket, attachments, sessions, client-tool bridge,
   and admin APIs.
 - `server/api/rest.py`: REST chat, diary-write bridge, context stats, persona,
@@ -175,6 +181,15 @@ Important backend files and folders:
   agent to `memory_search` / `memory_write`, rejects any non-memory tool use
   before execution, and advances per-conversation checkpoints only after
   successful review.
+- `server/memory/dream.py`: maintenance dream runner. It plans with
+  `memory_inventory` / `memory_read` only, then commits validated aggregation
+  plans by writing a new active summary memory and archiving source memories;
+  invalidation is reserved for replaced, expired, or conflicting facts. Plan
+  validation rejects missing or memory-root-escaping source/invalidation targets,
+  and commit checks cancellation before each write/archive action.
+- `server/memory/maintenance.py`: internal memory lifecycle helpers used by
+  dream and `memory_write` for frontmatter state transitions. It is not an
+  LLM-visible tool.
 - `server/memory/layout.py`: creates the Vault-backed long-term memory layout
   under `<vault>/.crabby/memory/`, seeds `MEMORY.md`, `REGISTRY.md`, the
   `user/`, `feedback/`, `project/`, and `reference/` type directories, keeps the
@@ -353,9 +368,16 @@ npm run start
     `memory_write`. Diary entries are user-facing records created through the
     diary skill or explicit inline user confirmation. Unresolved tool errors
     and max-iteration exhaustion do not advance the checkpoint.
-16. Cron jobs run in isolated sessions through the shared non-streaming agent
+16. Dream maintenance runs as a separate low-frequency daemon. It does not run
+    immediately on first startup; it schedules attempts 7-14 days out, requires
+    30 minutes of real-user idle time and global `session_activity` idleness,
+    and cancels promptly when a new user chat starts. Dream uses maintenance
+    memory tools only during planning and internal helpers for source-memory
+    archiving, so ordinary chat is not blocked and does not see archived /
+    invalidated memory bodies.
+17. Cron jobs run in isolated sessions through the shared non-streaming agent
     runner and push completion notifications back to source sessions.
-17. WebSocket `error` events are reserved for transport/protocol failures.
+18. WebSocket `error` events are reserved for transport/protocol failures.
     Backend-delivered business conditions should use `warning`/`done`.
 
 ## Session And Conversation Rules
@@ -449,6 +471,14 @@ npm run start
   default chat recall. They stay registered in the backend but are filtered out
   of normal chat tool catalogs and `tool_search`. There is no hard-delete memory
   tool in the current V1.
+- Dream memory maintenance is enabled by default. It persists scheduler state at
+  `<vault>/.crabby/data/dream_state.json`, draws each next run uniformly between
+  7 and 14 days, enforces a minimum 7-day gap between dream starts, and only
+  runs after 30 minutes without real user chat plus global session idleness.
+  Relevant settings are `DREAM_ENABLED`, `DREAM_IDLE_SECONDS`,
+  `DREAM_MIN_INTERVAL_SECONDS`, `DREAM_MAX_INTERVAL_SECONDS`,
+  `DREAM_SCAN_INTERVAL_SECONDS`, `DREAM_MIN_GROUP_SIZE`, and
+  `DREAM_MAX_ITERATIONS`.
 - `memory_search` distinguishes fact validity from file recency:
   `valid_at` filters `valid_from`/`valid_to`, while `created_after`,
   `created_before`, `updated_after`, and `updated_before` filter memory
@@ -537,6 +567,8 @@ npm run start
 - Persistence: `<vault>/.crabby/data/cron_jobs.json` in
   plugin-managed production runs, or `DATA_DIR/cron_jobs.json` generally.
 - Daemon scans once per second and consumes due jobs FIFO.
+- Non-interactive loop/cron jobs only fire while their status is `active`;
+  paused/done jobs are skipped by `should_fire`.
 - Execution waits for idle session activity, up to 30 minutes.
 - Each run uses a new isolated session and does not reuse source conversation
   context.
@@ -570,7 +602,7 @@ Use the smallest relevant verification set:
   when the diary settings sync path or plugin runtime layout changes.
 - Memory write/search/inventory/read, memory checkpoint, or memory provenance
   change:
-  `cd server && uv run pytest tests/test_auto_save.py tests/test_memory.py tests/test_memory_tools.py`,
+  `cd server && uv run pytest tests/test_auto_save.py tests/test_memory.py tests/test_memory_tools.py tests/test_memory_dream.py tests/test_dream_daemon.py`,
   then full backend tests and ruff.
 - Branch cache/session tree change: targeted tests for TTL, LRU,
   serialized-size accounting, global-budget eviction, warm hits, cold rebuilds,
