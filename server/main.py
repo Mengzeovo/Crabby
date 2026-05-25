@@ -2,6 +2,16 @@
 
 from __future__ import annotations
 
+import sys
+
+from vault_tools_entrypoint import VAULT_TOOLS_RUNNER_ARG
+
+if __name__ == "__main__" and VAULT_TOOLS_RUNNER_ARG in sys.argv[1:]:
+    from tools.vault_tools_runner import main as run_vault_tools_runner
+
+    run_vault_tools_runner()
+    raise SystemExit(0)
+
 import asyncio
 import logging
 from typing import Any
@@ -145,8 +155,6 @@ async def shutdown() -> None:
 
 
 if __name__ == "__main__":
-    import sys
-
     is_frozen = getattr(sys, "frozen", False)
     uvicorn.run(
         app if is_frozen else "main:app",

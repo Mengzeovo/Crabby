@@ -13,6 +13,7 @@ import pytest
 from tools.vault_tools_registry import Context, Tool, ToolRegistry, ToolResult
 from tools import vault_tools_runner
 from pydantic import BaseModel as PydanticBaseModel
+from vault_tools_entrypoint import VAULT_TOOLS_RUNNER_ARG
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +279,33 @@ def test_runner_subprocess_list_tools_via_stdio(tmp_path: Path) -> None:
         proc.stdin.close()
         proc.terminate()
         proc.wait(timeout=5)
+
+
+def test_main_runner_entrypoint_dispatches_before_backend_startup(
+    tmp_path: Path,
+) -> None:
+    """The packaged runner entry should not initialize the FastAPI backend."""
+    main_script = Path(__file__).resolve().parents[1] / "main.py"
+    env = {
+        **subprocess.os.environ,
+        "VAULT_PATH": str(tmp_path),
+        "CRABBY_DATA_DIR": str(tmp_path / "data"),
+    }
+
+    result = subprocess.run(
+        [sys.executable, str(main_script), VAULT_TOOLS_RUNNER_ARG],
+        capture_output=True,
+        text=True,
+        env=env,
+        input="",
+        timeout=10,
+    )
+
+    combined_output = result.stdout + result.stderr
+    assert result.returncode == 0
+    assert "Vault tools directory does not exist" in result.stderr
+    assert "on_event is deprecated" not in combined_output
+    assert "Uvicorn running" not in combined_output
 
 
 def test_runner_aborts_when_vault_path_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:

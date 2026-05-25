@@ -72,7 +72,9 @@ workflows. It is not a cloud multi-user SaaS.
   automatically starting lessons or evaluations.
 - `docs/claude-code-analysis.md`: design reference, not current implementation.
 - `docs/agent-harness-重构-2026-05.md`: current agent harness refactor
-  status, completed extraction work, and remaining loop-consolidation notes.
+  status, completed extraction work, future child-agent tool safety boundary
+  plan for context-injection risk reduction, and remaining loop-consolidation
+  notes.
 - `docs/prompt-cache-现状与优化方向.md`: current prompt-cache limitations and
   future provider-cache optimization direction; no implementation yet.
 - `prompts/`: repository default prompt fragments.
@@ -97,7 +99,11 @@ workflows. It is not a cloud multi-user SaaS.
 Important backend files and folders:
 
 - `server/main.py`: FastAPI app entry, route assembly, MCP startup,
-  loop/cron startup, and background daemons.
+  loop/cron startup, background daemons, and the packaged
+  `--crabby-vault-tools-runner` subprocess entry used by Vault tools.
+- `server/vault_tools_entrypoint.py`: dependency-light shared subprocess
+  entrypoint constants, imported by `main.py` before backend modules so the
+  packaged Vault tools runner can dispatch without initializing the backend app.
 - `server/config.py`: environment-backed settings.
 - `server/diary_config.py`: Vault-root diary config loader/validator for
   `<vault>/.crabby/config/diary.json`, with Vault-relative root/template path
@@ -106,7 +112,11 @@ Important backend files and folders:
 - `server/runtime_config.py`: runtime config helpers for prompts, personas,
   and skills.
 - `server/mcp_config.py`: MCP config loading and environment interpolation.
-- `server/mcp_runtime.py`: MCP startup, status, and transactional reload.
+- `server/mcp_runtime.py`: MCP startup, status, and transactional reload. When
+  Vault tools are enabled, it launches `vault_tools_runner.py` directly in dev
+  mode and launches the bundled backend executable with
+  `--crabby-vault-tools-runner` in PyInstaller mode so the runner does not
+  start a second backend server.
 - `server/host_watchdog.py`: host heartbeat watchdog for managed backends.
 - `server/loop_daemon.py`: background scanner/queue/consumer for
   non-interactive Loop jobs and cron-compatible jobs. It waits for global

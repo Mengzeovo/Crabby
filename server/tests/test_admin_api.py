@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -57,12 +58,14 @@ class _FakeMCPManager:
 
     def __init__(self) -> None:
         self.connected_servers: list[str] = []
+        self.configs: list[object] = []
         self.disconnected = False
         _FakeMCPManager.instances.append(self)
 
     async def connect(self, config_obj) -> _FakeSession:
         if config_obj.name in self.failing_servers:
             raise RuntimeError(f"connect failed for {config_obj.name}")
+        self.configs.append(config_obj)
         self.connected_servers.append(config_obj.name)
         return _FakeSession(config_obj.name)
 
@@ -672,6 +675,60 @@ def test_admin_reload_refreshes_mcp_runtime_from_config_file(monkeypatch, tmp_pa
     assert registry.get("beta_tool") is not None
     assert _FakeMCPManager.instances[-2].disconnected is True
     assert _FakeMCPManager.instances[-1].connected_servers == ["beta"]
+
+
+def test_mcp_reload_starts_vault_tools_with_backend_flag_when_frozen(
+    monkeypatch,
+    tmp_path: Path,
+):
+    config_path = tmp_path / "mcp_servers.json"
+    config_path.write_text('{"mcpServers":{}}', encoding="utf-8")
+
+    registry = ToolRegistry()
+    registry.register(_NamedTool("builtin_tool"), source="builtin")
+
+    app = _build_admin_app()
+    app.state.tool_registry = registry
+    app.state.mcp_reload_lock = asyncio.Lock()
+
+    _install_admin_runtime(monkeypatch, config_path)
+    vault_path = tmp_path / "vault"
+    data_dir = tmp_path / "data"
+    backend_exe = tmp_path / "crabby-backend.exe"
+    monkeypatch.setattr(config.settings, "vault_tools_enabled", True)
+    monkeypatch.setattr(config.settings, "vault_path", vault_path)
+    monkeypatch.setattr(mcp_runtime, "DATA_DIR", data_dir)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(backend_exe))
+
+    async def fake_register_mcp_tools(session, registry_obj, server_name):
+        registry_obj.register(
+            _NamedTool("vault_hello"),
+            source="mcp",
+            metadata={"server_name": server_name, "tool_name": "vault_hello"},
+        )
+        return 1
+
+    monkeypatch.setattr(mcp_runtime, "register_mcp_tools", fake_register_mcp_tools)
+
+    _FakeMCPManager.instances.clear()
+    _FakeMCPManager.failing_servers.clear()
+    status = asyncio.run(mcp_runtime.reload_mcp_servers(app))
+
+    assert status["connected_servers"] == [mcp_runtime.VAULT_TOOLS_SERVER_NAME]
+    assert status["vault_tools_enabled"] is True
+    assert status["vault_tools_tools"] == ["vault_hello"]
+
+    manager = _FakeMCPManager.instances[-1]
+    assert len(manager.configs) == 1
+    vault_tools_config = manager.configs[0]
+    assert vault_tools_config.name == mcp_runtime.VAULT_TOOLS_SERVER_NAME
+    assert vault_tools_config.command == str(backend_exe)
+    assert vault_tools_config.args == [mcp_runtime.VAULT_TOOLS_RUNNER_ARG]
+    assert vault_tools_config.env == {
+        "VAULT_PATH": str(vault_path),
+        "CRABBY_DATA_DIR": str(data_dir),
+    }
 
 
 def test_admin_reload_rolls_back_on_invalid_config(monkeypatch, tmp_path: Path):

@@ -17,6 +17,7 @@ from mcp_client.client import MCPClientManager, MCPServerConfig
 from mcp_config import load_mcp_server_configs
 from tools.base import Tool
 from tools.registry import ToolRegistry
+from vault_tools_entrypoint import VAULT_TOOLS_RUNNER_ARG
 
 # Server directory resolved without importing from config (avoids circular deps).
 _SERVER_DIR = Path(__file__).resolve().parent
@@ -154,6 +155,31 @@ async def _safe_disconnect(manager: MCPClientManager | None) -> None:
         logger.exception("Failed to disconnect MCP servers")
 
 
+def _vault_tools_server_config() -> MCPServerConfig:
+    """Build the stdio config for the internal vault-tools MCP runner."""
+    import sys
+
+    env = {
+        "VAULT_PATH": str(settings.vault_path),
+        "CRABBY_DATA_DIR": str(DATA_DIR),
+    }
+    if getattr(sys, "frozen", False):
+        return MCPServerConfig(
+            name=VAULT_TOOLS_SERVER_NAME,
+            command=sys.executable,
+            args=[VAULT_TOOLS_RUNNER_ARG],
+            env=env,
+        )
+
+    runner_path = str((_SERVER_DIR / "tools" / "vault_tools_runner.py").resolve())
+    return MCPServerConfig(
+        name=VAULT_TOOLS_SERVER_NAME,
+        command=sys.executable,
+        args=[runner_path],
+        env=env,
+    )
+
+
 async def reload_mcp_servers(app: FastAPI) -> dict[str, Any]:
     """Reload MCP connections with transactional commit semantics."""
     ensure_mcp_runtime_state(app)
@@ -191,20 +217,7 @@ async def reload_mcp_servers(app: FastAPI) -> dict[str, Any]:
 
             # Inject vault-tools runner as an internal MCP server when enabled.
             if settings.vault_tools_enabled:
-                import sys
-
-                runner_path = str(
-                    (_SERVER_DIR / "tools" / "vault_tools_runner.py").resolve()
-                )
-                vault_tools_cfg = MCPServerConfig(
-                    name=VAULT_TOOLS_SERVER_NAME,
-                    command=sys.executable,
-                    args=[runner_path],
-                    env={
-                        "VAULT_PATH": str(settings.vault_path),
-                        "CRABBY_DATA_DIR": str(DATA_DIR),
-                    },
-                )
+                vault_tools_cfg = _vault_tools_server_config()
                 try:
                     session = await next_manager.connect(vault_tools_cfg)
                     count = await register_mcp_tools(
