@@ -21,6 +21,7 @@ from llm.profile_store import (
 from llm.profile_probe import test_current_profile
 from mcp_runtime import MCPReloadError, get_mcp_runtime_status, reload_mcp_servers
 from runtime_config import reload_agent_config
+from tools.registry import ToolRegistry, sync_configurable_builtin_tools
 
 ADMIN_TOKEN_HEADER = "X-Crabby-Admin-Token"
 
@@ -105,6 +106,12 @@ def request_process_shutdown(delay_seconds: float = 0.25) -> None:
     loop.call_later(delay_seconds, lambda: os.kill(os.getpid(), signal.SIGTERM))
 
 
+def _sync_configurable_tools(request: Request) -> None:
+    registry = getattr(request.app.state, "tool_registry", None)
+    if isinstance(registry, ToolRegistry):
+        sync_configurable_builtin_tools(registry)
+
+
 @router.post("/reload")
 async def admin_reload(
     request: Request,
@@ -116,6 +123,7 @@ async def admin_reload(
     """Reload runtime settings and refresh MCP connections."""
     _validate_admin_token(admin_token)
     reload_settings()
+    _sync_configurable_tools(request)
     reload_agent_config(request.app)
     try:
         await reload_mcp_servers(request.app)
@@ -138,6 +146,7 @@ async def admin_reload_settings(
     """Reload runtime settings without reconnecting MCP servers."""
     _validate_admin_token(admin_token)
     reload_settings()
+    _sync_configurable_tools(request)
     reload_agent_config(request.app)
     return {"status": "settings_reloaded"}
 

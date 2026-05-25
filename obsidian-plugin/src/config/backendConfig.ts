@@ -222,6 +222,193 @@ export function upsertEnvFile(
   writeFileSync(envPath, nextContent === "" ? "" : `${nextContent}${newline}`, "utf8");
 }
 
+export type RuntimeEnvReloadMode = "settings" | "full";
+
+export interface RuntimeIntegerInputResult {
+  ok: boolean;
+  value: number | null;
+  envValue: string | null;
+  message: string;
+}
+
+export function parseRuntimeEnvBoolean(
+  value: string | null | undefined,
+  fallback: boolean,
+): boolean {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
+export function parseRuntimeEnvInteger(
+  value: string | null | undefined,
+  fallback: number,
+): number {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  const normalized = value.trim();
+  if (!/^\d+$/.test(normalized)) {
+    return fallback;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isSafeInteger(parsed) ? parsed : fallback;
+}
+
+export function normalizeRuntimeIntegerInput(
+  value: string,
+): RuntimeIntegerInputResult {
+  const normalized = value.trim();
+  if (!normalized) {
+    return {
+      ok: true,
+      value: null,
+      envValue: null,
+      message: "",
+    };
+  }
+
+  if (!/^\d+$/.test(normalized)) {
+    return {
+      ok: false,
+      value: null,
+      envValue: null,
+      message: "请输入非负整数，或留空恢复默认值。",
+    };
+  }
+
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed)) {
+    return {
+      ok: false,
+      value: null,
+      envValue: null,
+      message: "数值过大，请输入一个安全的非负整数。",
+    };
+  }
+
+  return {
+    ok: true,
+    value: parsed,
+    envValue: String(parsed),
+    message: "",
+  };
+}
+
+export function readRuntimeEnvBoolean(
+  settings: Pick<CrabbySettings, "backendEnvPath" | "backendPath">,
+  key: string,
+  fallback: boolean,
+): boolean {
+  const resolution = resolveBackendEnvPath(settings);
+  if (!resolution.ok || !resolution.envPath) {
+    return fallback;
+  }
+  return parseRuntimeEnvBoolean(readEnvValue(resolution.envPath, key), fallback);
+}
+
+export function readRuntimeEnvInteger(
+  settings: Pick<CrabbySettings, "backendEnvPath" | "backendPath">,
+  key: string,
+  fallback: number,
+): number {
+  const resolution = resolveBackendEnvPath(settings);
+  if (!resolution.ok || !resolution.envPath) {
+    return fallback;
+  }
+  return parseRuntimeEnvInteger(readEnvValue(resolution.envPath, key), fallback);
+}
+
+export async function saveRuntimeEnvSetting(
+  settings: Pick<CrabbySettings, "backendEnvPath" | "backendPath">,
+  key: string,
+  value: string | null,
+  client: Pick<AgentClient, "reloadSettings" | "reloadConfig">,
+  reloadMode: RuntimeEnvReloadMode = "settings",
+): Promise<LocalConfigResult> {
+  const resolution = resolveBackendEnvPath(settings);
+  if (!resolution.ok || !resolution.envPath) {
+    return {
+      ok: false,
+      message: resolution.message,
+      changed: false,
+    };
+  }
+
+  upsertEnvFile(resolution.envPath, { [key]: value });
+
+  const savedLabel = value === null ? `${key}=<default>` : `${key}=${value}`;
+  const adminEnabled = readEnvValue(resolution.envPath, ADMIN_ENABLED_KEY);
+  if (!isTruthyEnvValue(adminEnabled)) {
+    return {
+      ok: false,
+      envPath: resolution.envPath,
+      needsMigration: resolution.derivedFromLegacyPath,
+      changed: true,
+      message:
+        `已将 ${savedLabel} 保存到 ${resolution.envPath}，但后端热重载未开启。` +
+        `请设置 ${ADMIN_ENABLED_KEY}=true 后再试，或重启后端。`,
+    };
+  }
+
+  const adminToken = readEnvValue(resolution.envPath, ADMIN_TOKEN_KEY)?.trim();
+  if (!adminToken) {
+    return {
+      ok: false,
+      envPath: resolution.envPath,
+      needsMigration: resolution.derivedFromLegacyPath,
+      changed: true,
+      message:
+        `已将 ${savedLabel} 保存到 ${resolution.envPath}，但缺少 ${ADMIN_TOKEN_KEY}。` +
+        "请稍后重载或重启后端使其生效。",
+    };
+  }
+
+  const reloadResult =
+    reloadMode === "full"
+      ? await client.reloadConfig(adminToken)
+      : await client.reloadSettings(adminToken);
+  if (reloadResult.ok) {
+    return {
+      ok: true,
+      envPath: resolution.envPath,
+      needsMigration: resolution.derivedFromLegacyPath,
+      reloadStatus: reloadResult.status,
+      changed: true,
+      message:
+        reloadMode === "full"
+          ? `已保存 ${savedLabel}，并完成后端配置重载。`
+          : `已保存 ${savedLabel}，并完成后端设置热重载。`,
+    };
+  }
+
+  return {
+    ok: false,
+    envPath: resolution.envPath,
+    needsMigration: resolution.derivedFromLegacyPath,
+    reloadStatus: reloadResult.status,
+    changed: true,
+    message:
+      `已将 ${savedLabel} 保存到 ${resolution.envPath}，但后端重载失败` +
+      formatReloadSuffix(reloadResult) +
+      "。请稍后重载或重启后端使其生效。",
+  };
+}
+
 export function buildActiveProfileEnvMap(
   profile: Pick<
     LlmProfile,

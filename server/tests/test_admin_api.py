@@ -428,6 +428,81 @@ def test_admin_reload_settings_refreshes_settings_from_env_file(monkeypatch, tmp
     assert config.settings.llm_model == "after-reload"
 
 
+def test_admin_reload_settings_syncs_bash_tool_and_auto_save_interval(
+    monkeypatch,
+    tmp_path: Path,
+):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "CRABBY_ADMIN_ENABLED=true",
+                "CRABBY_ADMIN_TOKEN=secret",
+                "BASH_ENABLED=true",
+                "AUTO_SAVE_INTERVAL=15",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(config.Settings.model_config, "env_file", str(env_path))
+    config.reload_settings()
+
+    app = _build_admin_app()
+    registry = ToolRegistry()
+    app.state.tool_registry = registry
+
+    with TestClient(app) as client:
+        enabled = client.post(
+            "/admin/reload-settings",
+            headers={"X-Crabby-Admin-Token": "secret"},
+        )
+        assert enabled.status_code == 200
+        assert registry.get("bash") is not None
+        assert config.settings.auto_save_interval == 15
+
+        env_path.write_text(
+            "\n".join(
+                [
+                    "CRABBY_ADMIN_ENABLED=true",
+                    "CRABBY_ADMIN_TOKEN=secret",
+                    "BASH_ENABLED=false",
+                    "AUTO_SAVE_INTERVAL=0",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        disabled = client.post(
+            "/admin/reload-settings",
+            headers={"X-Crabby-Admin-Token": "secret"},
+        )
+        assert disabled.status_code == 200
+        assert registry.get("bash") is None
+        assert config.settings.auto_save_interval == 0
+
+        env_path.write_text(
+            "\n".join(
+                [
+                    "CRABBY_ADMIN_ENABLED=true",
+                    "CRABBY_ADMIN_TOKEN=secret",
+                    "BASH_ENABLED=true",
+                    "AUTO_SAVE_INTERVAL=23",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        reenabled = client.post(
+            "/admin/reload-settings",
+            headers={"X-Crabby-Admin-Token": "secret"},
+        )
+
+    assert reenabled.status_code == 200
+    assert registry.get("bash") is not None
+    assert config.settings.auto_save_interval == 23
+
+
 def test_admin_reload_settings_does_not_reload_mcp(monkeypatch, tmp_path: Path):
     def fail_if_mcp_reloads(_app: FastAPI):
         raise AssertionError("MCP reload should not run for /admin/reload-settings")
@@ -590,6 +665,8 @@ def test_admin_reload_refreshes_mcp_runtime_from_config_file(monkeypatch, tmp_pa
     assert status_response.status_code == 200
     assert status_response.json()["connected_servers"] == ["beta"]
     assert status_response.json()["tools_by_server"] == {"beta": ["beta_tool"]}
+    assert status_response.json()["vault_tools_enabled"] is False
+    assert status_response.json()["vault_tools_tools"] == []
     assert registry.get("builtin_tool") is not None
     assert registry.get("alpha_tool") is None
     assert registry.get("beta_tool") is not None

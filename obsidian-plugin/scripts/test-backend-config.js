@@ -296,6 +296,91 @@ async function testBackendConfig(mod) {
   assert.equal(mod.readEnvValue(envPath, "CRABBY_ADMIN_TOKEN"), "reload-secret");
   assert.equal(mod.isTruthyEnvValue("true"), true);
   assert.equal(mod.isTruthyEnvValue("0"), false);
+  assert.equal(mod.parseRuntimeEnvBoolean(null, true), true);
+  assert.equal(mod.parseRuntimeEnvBoolean("off", true), false);
+  assert.equal(mod.parseRuntimeEnvBoolean("yes", false), true);
+  assert.equal(mod.parseRuntimeEnvInteger(null, 15), 15);
+  assert.equal(mod.parseRuntimeEnvInteger("0", 15), 0);
+  assert.equal(mod.parseRuntimeEnvInteger("24", 15), 24);
+  assert.equal(mod.parseRuntimeEnvInteger("bad", 15), 15);
+
+  const emptyInteger = mod.normalizeRuntimeIntegerInput("");
+  assert.equal(emptyInteger.ok, true);
+  assert.equal(emptyInteger.envValue, null);
+  const zeroInteger = mod.normalizeRuntimeIntegerInput("0");
+  assert.equal(zeroInteger.ok, true);
+  assert.equal(zeroInteger.value, 0);
+  assert.equal(zeroInteger.envValue, "0");
+  const positiveInteger = mod.normalizeRuntimeIntegerInput(" 42 ");
+  assert.equal(positiveInteger.ok, true);
+  assert.equal(positiveInteger.envValue, "42");
+  assert.equal(mod.normalizeRuntimeIntegerInput("1.5").ok, false);
+  assert.equal(mod.normalizeRuntimeIntegerInput("-1").ok, false);
+
+  let runtimeSettingsReloads = 0;
+  let runtimeFullReloads = 0;
+  const runtimeClient = {
+    reloadSettings: async () => {
+      runtimeSettingsReloads += 1;
+      return { ok: true, status: 200, detail: null };
+    },
+    reloadConfig: async () => {
+      runtimeFullReloads += 1;
+      return { ok: true, status: 200, detail: null };
+    },
+  };
+  const autoSaveSaved = await mod.saveRuntimeEnvSetting(
+    { backendEnvPath: envPath, backendPath: "" },
+    "AUTO_SAVE_INTERVAL",
+    "0",
+    runtimeClient,
+    "settings",
+  );
+  assert.equal(autoSaveSaved.ok, true);
+  assert.equal(mod.readEnvValue(envPath, "AUTO_SAVE_INTERVAL"), "0");
+  assert.equal(
+    mod.readRuntimeEnvInteger(
+      { backendEnvPath: envPath, backendPath: "" },
+      "AUTO_SAVE_INTERVAL",
+      15,
+    ),
+    0,
+  );
+  const autoSaveDefault = await mod.saveRuntimeEnvSetting(
+    { backendEnvPath: envPath, backendPath: "" },
+    "AUTO_SAVE_INTERVAL",
+    null,
+    runtimeClient,
+    "settings",
+  );
+  assert.equal(autoSaveDefault.ok, true);
+  assert.equal(mod.readEnvValue(envPath, "AUTO_SAVE_INTERVAL"), null);
+  assert.equal(
+    mod.readRuntimeEnvInteger(
+      { backendEnvPath: envPath, backendPath: "" },
+      "AUTO_SAVE_INTERVAL",
+      15,
+    ),
+    15,
+  );
+  const vaultToolsSaved = await mod.saveRuntimeEnvSetting(
+    { backendEnvPath: envPath, backendPath: "" },
+    "VAULT_TOOLS_ENABLED",
+    "true",
+    runtimeClient,
+    "full",
+  );
+  assert.equal(vaultToolsSaved.ok, true);
+  assert.equal(
+    mod.readRuntimeEnvBoolean(
+      { backendEnvPath: envPath, backendPath: "" },
+      "VAULT_TOOLS_ENABLED",
+      false,
+    ),
+    true,
+  );
+  assert.equal(runtimeSettingsReloads, 2);
+  assert.equal(runtimeFullReloads, 1);
 
   const switchSettings = {
     backendEnvPath: envPath,

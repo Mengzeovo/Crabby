@@ -303,9 +303,22 @@ def get_search_service(registry: ToolRegistry) -> "ToolSearchService | None":
     return _search_service
 
 
-def create_default_registry() -> ToolRegistry:
+def sync_configurable_builtin_tools(registry: ToolRegistry) -> None:
+    """Apply settings-backed built-in tool toggles to an existing registry."""
     from config import settings
     from tools.bash import BashTool
+
+    bash_source = registry.source_of("bash")
+    if settings.bash_enabled:
+        if registry.get("bash") is None:
+            registry.register(BashTool())
+        return
+
+    if bash_source == "builtin":
+        registry.remove("bash")
+
+
+def create_default_registry() -> ToolRegistry:
     from tools.edit import EditTool
     from tools.glob import GlobTool
     from tools.grep import GrepTool
@@ -404,7 +417,6 @@ def create_default_registry() -> ToolRegistry:
     registry.register(MemorySearchTool())
     registry.register(MemoryWriteTool())
 
-    if settings.bash_enabled:
-        registry.register(BashTool())
+    sync_configurable_builtin_tools(registry)
 
     return registry

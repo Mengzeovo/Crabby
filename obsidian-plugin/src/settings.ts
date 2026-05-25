@@ -1,6 +1,14 @@
 import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
+
+import {
   AbstractInputSuggest,
   App,
+  Modal,
   Notice,
   PluginSettingTab,
   Setting,
@@ -12,9 +20,13 @@ import {
 import { AgentClient, type MCPRuntimeStatus } from "./api/client";
 import {
   deleteLlmProfileFromBackend,
+  normalizeRuntimeIntegerInput,
   readEnvValue,
+  readRuntimeEnvBoolean,
+  readRuntimeEnvInteger,
   resolveBackendEnvPath,
   saveLlmProfileToBackend,
+  saveRuntimeEnvSetting,
 } from "./config/backendConfig";
 import {
   findModelPreset,
@@ -125,6 +137,33 @@ export const DEFAULT_SETTINGS: CrabbySettings = {
   llmProfiles: [],
   activeProfileId: "",
 };
+
+const AUTO_SAVE_INTERVAL_KEY = "AUTO_SAVE_INTERVAL";
+const DEFAULT_AUTO_SAVE_INTERVAL = 15;
+const BASH_ENABLED_KEY = "BASH_ENABLED";
+const VAULT_TOOLS_ENABLED_KEY = "VAULT_TOOLS_ENABLED";
+const VAULT_TOOL_EXAMPLE = `from pydantic import BaseModel
+
+from tools.vault_tools_registry import Context, Tool, ToolRegistry, ToolResult
+
+
+class HelloInput(BaseModel):
+    name: str = "Crabby"
+
+
+class HelloTool(Tool):
+    name = "hello_vault_tool"
+    description = "Return a greeting from a user-defined Vault tool."
+    input_schema = HelloInput
+    is_read_only = True
+
+    async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
+        return ToolResult(output=f"Hello, {params.name}!")
+
+
+def register(registry: ToolRegistry) -> None:
+    registry.register(HelloTool())
+`;
 
 type VaultPathSuggestMode = "folder" | "markdownFile";
 
@@ -427,6 +466,158 @@ function formatMcpRuntimeSummary(status: MCPRuntimeStatus): string {
   return lines.join("\n");
 }
 
+class VaultToolsModal extends Modal {
+  constructor(app: App, private plugin: CrabbyPlugin) {
+    super(app);
+  }
+
+  onOpen(): void {
+    void this.render();
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+
+  private async render(): Promise<void> {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "用户自定义工具" });
+
+    const vaultPath = this.plugin.getCurrentVaultPath();
+    const toolsDir = vaultPath ? join(vaultPath, ".crabby", "tools") : "";
+    const enabled = readRuntimeEnvBoolean(
+      this.plugin.settings,
+      VAULT_TOOLS_ENABLED_KEY,
+      false,
+    );
+
+    const statusEl = contentEl.createEl("pre");
+    Object.assign(statusEl.style, {
+      backgroundColor: "var(--background-secondary)",
+      border: "1px solid var(--background-modifier-border)",
+      borderRadius: "6px",
+      padding: "10px 12px",
+      whiteSpace: "pre-wrap",
+      fontSize: "12px",
+      lineHeight: "1.5",
+      wordBreak: "break-word",
+    });
+
+    const setLocalStatus = (extra = "") => {
+      statusEl.setText(
+        [
+          `启用状态：${enabled ? "已启用" : "未启用"}`,
+          `工具目录：${toolsDir || "无法检测当前 Vault 路径"}`,
+          extra,
+        ]
+          .filter((line) => line.trim())
+          .join("\n"),
+      );
+    };
+
+    const refreshStatus = async () => {
+      setLocalStatus("正在读取后端工具状态...");
+      try {
+        const client = new AgentClient(
+          this.plugin.settings.backendUrl || DEFAULT_SETTINGS.backendUrl,
+        );
+        const result = await fetchMcpRuntimeStatus(this.plugin.settings, client);
+        if (!result.ok || !result.status) {
+          setLocalStatus(result.message);
+          return;
+        }
+        const toolNames = result.status.vault_tools_tools ?? [];
+        setLocalStatus(
+          toolNames.length > 0
+            ? `已加载工具：${toolNames.join("、")}`
+            : "已加载工具：无",
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setLocalStatus(`读取后端工具状态失败：${message}`);
+      }
+    };
+
+    new Setting(contentEl)
+      .setName("创建工具目录")
+      .setDesc("创建 .crabby/tools/，用于放置自定义 Python 工具文件。")
+      .addButton((button) => {
+        button.setButtonText("创建目录");
+        button.setDisabled(!toolsDir);
+        button.onClick(() => {
+          if (!toolsDir) {
+            new Notice("无法检测当前 Vault 路径。");
+            return;
+          }
+          mkdirSync(toolsDir, { recursive: true });
+          new Notice("用户自定义工具目录已创建。");
+          setLocalStatus("工具目录已创建。");
+        });
+      });
+
+    new Setting(contentEl)
+      .setName("创建示例工具")
+      .setDesc("写入 hello_tool.py 示例；如果文件已存在，不会覆盖。")
+      .addButton((button) => {
+        button.setButtonText("创建示例");
+        button.setDisabled(!toolsDir);
+        button.onClick(() => {
+          if (!toolsDir) {
+            new Notice("无法检测当前 Vault 路径。");
+            return;
+          }
+          mkdirSync(toolsDir, { recursive: true });
+          const examplePath = join(toolsDir, "hello_tool.py");
+          if (existsSync(examplePath)) {
+            new Notice("hello_tool.py 已存在，未覆盖。");
+            setLocalStatus(`示例工具已存在：${examplePath}`);
+            return;
+          }
+          writeFileSync(examplePath, VAULT_TOOL_EXAMPLE, "utf8");
+          new Notice("示例工具已创建。");
+          setLocalStatus(`示例工具已创建：${examplePath}`);
+        });
+      });
+
+    new Setting(contentEl)
+      .setName("重载工具")
+      .setDesc("保存当前启用状态，并让后端重新加载用户自定义工具。")
+      .addButton((button) => {
+        button.setButtonText("重载");
+        button.setCta();
+        button.onClick(async () => {
+          button.setDisabled(true);
+          try {
+            const client = new AgentClient(
+              this.plugin.settings.backendUrl || DEFAULT_SETTINGS.backendUrl,
+            );
+            const result = await saveRuntimeEnvSetting(
+              this.plugin.settings,
+              VAULT_TOOLS_ENABLED_KEY,
+              enabled ? "true" : "false",
+              client,
+              "full",
+            );
+            statusEl.setText(result.message);
+            new Notice(result.ok ? "用户自定义工具已重载。" : result.message);
+            if (result.ok) {
+              await refreshStatus();
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            statusEl.setText(`用户自定义工具重载失败：${message}`);
+            new Notice(`用户自定义工具重载失败：${message}`);
+          } finally {
+            button.setDisabled(false);
+          }
+        });
+      });
+
+    await refreshStatus();
+  }
+}
+
 export class CrabbySettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: CrabbyPlugin) {
     super(app, plugin);
@@ -439,6 +630,8 @@ export class CrabbySettingTab extends PluginSettingTab {
     containerEl.createEl("h2", { text: "Crabby 设置" });
 
     this.renderRuntimeSection(containerEl);
+    this.renderMemorySection(containerEl);
+    this.renderToolsSection(containerEl);
     this.renderDiarySection(containerEl);
     this.renderMcpSection(containerEl);
     this.renderLlmSection(containerEl);
@@ -610,6 +803,162 @@ export class CrabbySettingTab extends PluginSettingTab {
       });
 
     void renderStatus();
+  }
+
+  private renderMemorySection(containerEl: HTMLElement): void {
+    containerEl.createEl("h3", { text: "记忆" });
+
+    const envResolution = resolveBackendEnvPath(this.plugin.settings);
+    const envValue =
+      envResolution.ok && envResolution.envPath
+        ? readEnvValue(envResolution.envPath, AUTO_SAVE_INTERVAL_KEY)
+        : null;
+    const effectiveInterval = readRuntimeEnvInteger(
+      this.plugin.settings,
+      AUTO_SAVE_INTERVAL_KEY,
+      DEFAULT_AUTO_SAVE_INTERVAL,
+    );
+    let intervalDraft = envValue ?? "";
+
+    const statusEl = containerEl.createDiv();
+    Object.assign(statusEl.style, {
+      fontSize: "12px",
+      color: "var(--text-muted)",
+      marginBottom: "10px",
+      whiteSpace: "pre-wrap",
+      lineHeight: "1.5",
+    });
+    statusEl.setText(
+      envResolution.ok
+        ? `当前生效：${effectiveInterval}；留空恢复默认 ${DEFAULT_AUTO_SAVE_INTERVAL}，0 表示关闭。`
+        : envResolution.message,
+    );
+
+    new Setting(containerEl)
+      .setName("自动记忆沉淀间隔")
+      .setDesc("按对话轮数触发后台记忆沉淀；请输入非负整数，0 表示关闭。")
+      .addText((text) => {
+        text
+          .setPlaceholder(String(DEFAULT_AUTO_SAVE_INTERVAL))
+          .setValue(intervalDraft)
+          .onChange((value) => {
+            intervalDraft = value.trim();
+          });
+        text.inputEl.type = "number";
+        text.inputEl.min = "0";
+        text.inputEl.step = "1";
+        text.inputEl.style.width = "120px";
+      })
+      .addButton((button) => {
+        button.setButtonText("保存");
+        button.onClick(async () => {
+          const normalized = normalizeRuntimeIntegerInput(intervalDraft);
+          if (!normalized.ok) {
+            statusEl.setText(normalized.message);
+            new Notice(normalized.message);
+            return;
+          }
+
+          button.setDisabled(true);
+          try {
+            const client = new AgentClient(
+              this.plugin.settings.backendUrl || DEFAULT_SETTINGS.backendUrl,
+            );
+            const result = await saveRuntimeEnvSetting(
+              this.plugin.settings,
+              AUTO_SAVE_INTERVAL_KEY,
+              normalized.envValue,
+              client,
+              "settings",
+            );
+            statusEl.setText(result.message);
+            new Notice(result.ok ? "自动记忆沉淀配置已保存。" : result.message);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            statusEl.setText(`自动记忆沉淀配置保存失败：${message}`);
+            new Notice(`自动记忆沉淀配置保存失败：${message}`);
+          } finally {
+            button.setDisabled(false);
+          }
+        });
+      });
+  }
+
+  private renderToolsSection(containerEl: HTMLElement): void {
+    containerEl.createEl("h3", { text: "工具与权限" });
+
+    let bashEnabled = readRuntimeEnvBoolean(
+      this.plugin.settings,
+      BASH_ENABLED_KEY,
+      true,
+    );
+    let vaultToolsEnabled = readRuntimeEnvBoolean(
+      this.plugin.settings,
+      VAULT_TOOLS_ENABLED_KEY,
+      false,
+    );
+
+    const statusEl = containerEl.createDiv();
+    Object.assign(statusEl.style, {
+      fontSize: "12px",
+      color: "var(--text-muted)",
+      marginBottom: "10px",
+      minHeight: "18px",
+      whiteSpace: "pre-wrap",
+      lineHeight: "1.5",
+    });
+    statusEl.setText("Bash 工具和用户自定义工具的启用状态保存在后端 .env。");
+
+    const saveToolToggle = async (
+      key: string,
+      enabled: boolean,
+      reloadMode: "settings" | "full",
+    ): Promise<void> => {
+      try {
+        const client = new AgentClient(
+          this.plugin.settings.backendUrl || DEFAULT_SETTINGS.backendUrl,
+        );
+        const result = await saveRuntimeEnvSetting(
+          this.plugin.settings,
+          key,
+          enabled ? "true" : "false",
+          client,
+          reloadMode,
+        );
+        statusEl.setText(result.message);
+        new Notice(result.ok ? "工具配置已保存。" : result.message);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        statusEl.setText(`工具配置保存失败：${message}`);
+        new Notice(`工具配置保存失败：${message}`);
+      }
+    };
+
+    new Setting(containerEl)
+      .setName("Bash 工具")
+      .setDesc("允许模型执行本地非交互式 shell 命令。关闭后会从后端工具列表移除 bash。")
+      .addToggle((toggle) => {
+        toggle.setValue(bashEnabled).onChange(async (checked) => {
+          bashEnabled = checked;
+          await saveToolToggle(BASH_ENABLED_KEY, checked, "settings");
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("用户自定义工具")
+      .setDesc("启用 Vault 内 .crabby/tools/ 下的自定义 Python 工具。")
+      .addToggle((toggle) => {
+        toggle.setValue(vaultToolsEnabled).onChange(async (checked) => {
+          vaultToolsEnabled = checked;
+          await saveToolToggle(VAULT_TOOLS_ENABLED_KEY, checked, "full");
+        });
+      })
+      .addButton((button) => {
+        button.setButtonText("管理");
+        button.onClick(() => {
+          new VaultToolsModal(this.app, this.plugin).open();
+        });
+      });
   }
 
   private renderDiarySection(containerEl: HTMLElement): void {
