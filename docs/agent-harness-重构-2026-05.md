@@ -2,6 +2,34 @@
 
 本文记录 2026-05 期 agent harness 重构的成果与未完成的合并项，供后续接手者快速 onboard。
 
+## 后续：子 Agent 工具安全边界（未实施）
+
+当前 Crabby 还没有真正的 parent / child 子 agent 委派机制。已有基础包括：
+
+- `llm.agent_runner.run_agent_turn`：共享的非流式 agent loop，供后台任务复用。
+- 隔离 session：Loop / cron 类后台任务可在新 session 中执行，避免复用源 conversation。
+- `allowed_tools` / `Context.allowed_tool_names`：技能级工具白名单已经贯穿 schema 构造、`tool_search` 发现和执行时校验。
+- `execute_tool_call`：统一工具执行、Pydantic 参数校验、权限检查和紧凑 tool receipt 格式化。
+- `vault-tools` runner：用户自定义 Vault 工具运行在独立 MCP subprocess 中，但它是工具进程隔离，不是 LLM 子 agent。
+
+后续如果要用“子 agent 执行工具”来降低上下文注入风险，目标不应是简单多包一层模型，而是建立更小的能力边界：
+
+1. **子 agent 必须是短上下文、短生命周期、无长期记忆的 ephemeral runner。** 它只接收父 agent 交给它的最小结构化任务，不继承完整聊天历史、persona、memory 或用户原始上下文。
+2. **子 agent 的工具权限必须显式 allowlist。** 默认只给只读检索 / 读取工具；`edit`、`bash`、settings/profile、cron create、admin 类能力不得默认下放。
+3. **工具输出要按 untrusted data 处理。** 从网页、Vault、MCP、shell、用户文件读到的内容不能被当作系统指令或开发者指令；返回给父 agent 时应保留来源、摘要、证据片段和 taint 标记。
+4. **高危动作走 capability gate，而不是模型自证合理。** 写文件、shell、设置修改、后台任务创建等需要后端策略签发的短期 capability，必要时再接 UI 确认 / audit log。
+5. **父 agent 不应盲信子 agent 的自由文本。** 子 agent 返回值应优先是结构化 JSON：事实、引用、置信度、建议的下一步、是否需要高危 capability；父 agent 和后端策略再决定是否执行。
+
+建议实现顺序：
+
+1. 新增 `llm/subagent_runner.py`，复用 `agent_runner` 的底层循环，但强制 ephemeral session、独立 system prompt、小迭代上限、严格 allowed tools、无 memory/persona 注入。
+2. 为工具注册补充 `ToolSafetyProfile` 或等价 metadata：`read_only`、`writes_vault`、`shell`、`admin`、`network`、`requires_confirmation`、`taints_context`。
+3. 新增受控委派入口（例如内部 tool 或后端 helper），父 agent 只能提交结构化任务和允许的工具集合，不能把完整当前 prompt 直接交给子 agent。
+4. 在 tool result / persisted UI card 中加入 taint/source 字段，使父 agent prompt、UI 和 audit log 都能区分“可信系统状态”和“外部/文件/网页返回的非可信内容”。
+5. 最后再考虑把部分读工具调用迁移到子 agent；写入类工具在 capability gate 和确认体验成熟前不迁移。
+
+判断标准：如果子 agent 看到同样的污染上下文、拥有同样的高危工具、返回自由文本并被父 agent 无条件采纳，那它不能缓解上下文注入，只是把风险搬到了另一个 loop。
+
 ## 已落地
 
 ### P1 — websocket.py 解耦
