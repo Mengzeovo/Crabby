@@ -1633,5 +1633,27 @@ function locateSpan(
       }
     }
   }
+  if (kind === "block") {
+    const block = findPartContaining(doc.blocks, line);
+    if (block) {
+      const start = block.line ?? line;
+      const lineCount = block.text.split(/\r?\n/).length;
+      return { start_line: start, end_line: start + lineCount - 1 };
+    }
+  }
   return { start_line: line, end_line: line };
+}
+
+function findPartContaining(
+  parts: SearchTextPart[] | undefined,
+  line: number,
+): SearchTextPart | undefined {
+  if (!parts) return undefined;
+  for (const part of parts) {
+    const start = part.line;
+    if (start === undefined) continue;
+    const end = start + part.text.split(/\r?\n/).length - 1;
+    if (line >= start && line <= end) return part;
+  }
+  return undefined;
 }

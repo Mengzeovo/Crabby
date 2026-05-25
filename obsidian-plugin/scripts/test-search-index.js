@@ -197,6 +197,7 @@ async function main() {
   {
     const fileA = tfile("Notes/a.md", "alpha bravo charlie", 1000);
     const { app, adapter } = makeFakeApp([fileA]);
+    const recentRebuildAt = Date.now();
     // Pre-populate manifest + documents.jsonl as if a previous run wrote them.
     adapter._files.set(
       ".crabby/data/search-index/manifest.json",
@@ -204,7 +205,7 @@ async function main() {
         schema_version: 1,
         built_with_plugin_version: "test-2",
         document_count: 1,
-        last_full_rebuild_at: 1,
+        last_full_rebuild_at: recentRebuildAt,
       }),
     );
     adapter._files.set(
@@ -232,8 +233,71 @@ async function main() {
 
     const index = new SearchIndex(app, { pluginVersion: "test-2" });
     await index.initialize();
-    assert.equal(index.getDocuments().length, 1);
+    const docs = index.getDocuments();
+    assert.equal(docs.length, 1);
+    assert.equal(
+      docs[0].content_sha256,
+      "stub",
+      "recent warm start should reconcile without full rebuild",
+    );
     console.log("ok warm start");
+    await index.shutdown();
+  }
+
+  // Test 2b: stale warm index forces a full rebuild even when mtime/size match
+  {
+    const fileA = tfile("Notes/a.md", "alpha bravo charlie", 1000);
+    const { app, adapter } = makeFakeApp([fileA]);
+    const staleRebuildAt = Date.now() - 31 * 24 * 60 * 60 * 1000;
+    adapter._files.set(
+      ".crabby/data/search-index/manifest.json",
+      JSON.stringify({
+        schema_version: 1,
+        built_with_plugin_version: "test-2b",
+        document_count: 1,
+        last_full_rebuild_at: staleRebuildAt,
+      }),
+    );
+    adapter._files.set(
+      ".crabby/data/search-index/documents.jsonl",
+      JSON.stringify({
+        path: "Notes/a.md",
+        name: "a.md",
+        ext: "md",
+        title: "a",
+        content: "alpha bravo charlie",
+        mtime: 1000,
+        ctime: 1000,
+        tags: [],
+        aliases: [],
+        properties: {},
+        headings: [],
+        sections: [{ text: "alpha bravo charlie", line: 1 }],
+        blocks: [{ text: "alpha bravo charlie" }],
+        tasks: [],
+        contentSha256: "stub",
+        indexedAt: 1,
+        size: fileA.stat.size,
+      }),
+    );
+
+    const index = new SearchIndex(app, { pluginVersion: "test-2b" });
+    await index.initialize();
+    const docs = index.getDocuments();
+    assert.equal(docs.length, 1);
+    assert.notEqual(
+      docs[0].content_sha256,
+      "stub",
+      "stale warm start must force a content-hash refresh",
+    );
+    const manifest = JSON.parse(
+      adapter._files.get(".crabby/data/search-index/manifest.json"),
+    );
+    assert.ok(
+      manifest.last_full_rebuild_at > staleRebuildAt,
+      "stale warm start must write a new full rebuild timestamp",
+    );
+    console.log("ok stale warm start triggers full rebuild");
     await index.shutdown();
   }
 

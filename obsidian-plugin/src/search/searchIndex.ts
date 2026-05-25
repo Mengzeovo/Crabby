@@ -15,6 +15,10 @@ const MANIFEST_FILE = `${INDEX_DIR}/manifest.json`;
 const DOCUMENTS_FILE = `${INDEX_DIR}/documents.jsonl`;
 const FLUSH_DEBOUNCE_MS = 5000;
 const FLUSH_QUEUE_LIMIT = 50;
+// Cap drift accumulated by the cheap mtime+size reconcile path: if the last
+// full rebuild is older than this, force a full rebuild on startup so any
+// content that changed without mtime/size moving still gets re-hashed.
+const FULL_REBUILD_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 interface IndexedDocument extends SearchDocument {
   contentSha256: string;
@@ -69,7 +73,7 @@ export class SearchIndex {
     try {
       await this.ensureIndexDir();
       const loaded = await this.loadFromDisk();
-      if (loaded) {
+      if (loaded && !this.isRebuildOverdue()) {
         await this.reconcileWithVault();
       } else {
         await this.fullRebuild();
@@ -143,21 +147,29 @@ export class SearchIndex {
       await Promise.allSettled(Array.from(this.inflight.values()));
     }
     await this.pendingFlush;
+    const maxAttempts = 5;
     let attempts = 0;
-    while (this.dirty.size > 0 && attempts < 3) {
+    let delay = 50;
+    while (this.dirty.size > 0 && attempts < maxAttempts) {
       attempts++;
       const before = this.dirty.size;
-      await this.flushNow();
+      try {
+        await this.flushNow();
+      } catch {
+        /* flushNow swallows internally; loop checks dirty.size */
+      }
       if (this.dirty.size === 0) {
         break;
       }
-      if (attempts >= 3) {
+      if (attempts >= maxAttempts) {
         console.warn(
           "[Crabby] SearchIndex shutdown could not flush dirty paths after retries",
-          { remaining: this.dirty.size, before },
+          { remaining: this.dirty.size, before, attempts },
         );
         break;
       }
+      await sleep(delay);
+      delay = Math.min(delay * 2, 1000);
     }
   }
 
@@ -259,6 +271,11 @@ export class SearchIndex {
       this.documents.clear();
       return false;
     }
+  }
+
+  private isRebuildOverdue(): boolean {
+    if (!this.lastFullRebuildAt) return true;
+    return Date.now() - this.lastFullRebuildAt > FULL_REBUILD_MAX_AGE_MS;
   }
 
   private async reconcileWithVault(): Promise<void> {
@@ -483,4 +500,8 @@ function eventKey(event: PendingEvent): string {
     case "rename-deleted":
       return event.oldPath;
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

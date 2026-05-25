@@ -27,8 +27,6 @@ import {
 import { BackendRuntimeManager } from "./runtime/backendRuntime";
 import { SearchIndex } from "./search/searchIndex";
 
-const PLUGIN_VERSION = "0.3.0";
-
 export default class CrabbyPlugin extends Plugin {
   settings: CrabbySettings = hydrateSettings(DEFAULT_SETTINGS, null);
   runtimeManager: BackendRuntimeManager | null = null;
@@ -47,7 +45,7 @@ export default class CrabbyPlugin extends Plugin {
     this.clientToolBridge.start();
 
     this.searchIndex = new SearchIndex(this.app, {
-      pluginVersion: PLUGIN_VERSION,
+      pluginVersion: this.manifest.version,
     });
     this.app.workspace.onLayoutReady(() => {
       void this.initializeSearchIndex();
