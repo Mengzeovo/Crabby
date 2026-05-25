@@ -28,6 +28,7 @@ venv/
 # Node / Obsidian plugin
 node_modules/
 obsidian-plugin/dist/
+obsidian-plugin/tmp/
 
 # Reference source (large, not our code)
 claude-code/

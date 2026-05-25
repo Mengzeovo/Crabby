@@ -1,6 +1,6 @@
 # Agent Handoff
 
-Last rewritten: 2026-05-24
+Last rewritten: 2026-05-25
 
 This file is the fast entry point for agents and maintainers taking over the
 Crabby repository. It should reflect the current repo, not old plans or memory
@@ -71,6 +71,10 @@ workflows. It is not a cloud multi-user SaaS.
   signals, and cron-style reminders should stay low-interruption rather than
   automatically starting lessons or evaluations.
 - `docs/claude-code-analysis.md`: design reference, not current implementation.
+- `docs/agent-harness-重构-2026-05.md`: current agent harness refactor
+  status, completed extraction work, and remaining loop-consolidation notes.
+- `docs/prompt-cache-现状与优化方向.md`: current prompt-cache limitations and
+  future provider-cache optimization direction; no implementation yet.
 - `prompts/`: repository default prompt fragments.
 - `personas/`: checked-in runtime personas.
 - `skills/`: checked-in runtime skills.
@@ -92,8 +96,8 @@ workflows. It is not a cloud multi-user SaaS.
 
 Important backend files and folders:
 
-- `server/main.py`: FastAPI app entry, route assembly, MCP startup, cron
-  startup, and background daemons.
+- `server/main.py`: FastAPI app entry, route assembly, MCP startup,
+  loop/cron startup, and background daemons.
 - `server/config.py`: environment-backed settings.
 - `server/diary_config.py`: Vault-root diary config loader/validator for
   `<vault>/.crabby/config/diary.json`, with Vault-relative root/template path
@@ -104,7 +108,14 @@ Important backend files and folders:
 - `server/mcp_config.py`: MCP config loading and environment interpolation.
 - `server/mcp_runtime.py`: MCP startup, status, and transactional reload.
 - `server/host_watchdog.py`: host heartbeat watchdog for managed backends.
-- `server/cron_daemon.py`: background cron scanner/queue/consumer.
+- `server/loop_daemon.py`: background scanner/queue/consumer for
+  non-interactive Loop jobs and cron-compatible jobs. It waits for global
+  session idleness before executing jobs in isolated sessions and pushes
+  completion notifications back to source sessions.
+- `server/loop_manager.py`: Loop job persistence under runtime data, including
+  migration from legacy `cron_jobs.json` into the Loop job schema.
+- `server/loop_models.py`: Loop job models, cron-compatible aliases, cron
+  validation, and shared fire-time logic.
 - `server/dream_daemon.py`: low-frequency background memory maintenance
   scheduler. It persists `<vault>/.crabby/data/dream_state.json`, schedules
   the first and subsequent dream attempts 7-14 days out, enforces a minimum
@@ -117,8 +128,12 @@ Important backend files and folders:
   skill, health/version, capability, and admin-facing routes with safe ID
   validation.
 - `server/api/sessions.py`: session metadata and message-history APIs.
-- `server/api/websocket.py`: streaming chat WebSocket, tool-loop warnings, and
-  safe conversation ID checks.
+- `server/api/websocket.py`: streaming chat WebSocket, tool-loop warnings,
+  safe conversation ID checks, and delegation of frontend loop-control messages.
+- `server/api/loop_control.py`: WebSocket loop-control handler for
+  `loop_submit`, `loop_next`, `loop_stop`, and `loop_pause`. It resolves the
+  same Vault runtime data path as loop tools, updates Loop jobs, persists
+  `active_loop_id` changes, and sends compact frontend events.
 - `server/api/client_tools.py`: WebSocket bridge for Obsidian-hosted tools.
 - `server/llm/`: LLM client, provider presets, output adapters, profile store,
   profile probe, prompt assembly, context metering, token accounting, session
@@ -126,22 +141,33 @@ Important backend files and folders:
 - `server/llm/providers.py`: built-in provider presets, base URLs, key
   fallbacks, reasoning/output shapes, and streaming-tool support flags.
 - `server/llm/output_adapters.py`: normalizes provider chunks/responses into
-  text, reasoning, tool, and done events.
+  text, reasoning, tool, and done events, and exposes shared reasoning-detail
+  text extraction for non-streaming paths.
 - `server/llm/profile_store.py`: persists backend-owned profiles in `.env`.
 - `server/llm/profile_probe.py`: validates/tests active profiles.
 - `server/llm/agent_runner.py`: shared non-streaming agent runner for REST,
   fallback WebSocket paths, cron, and other background turns.
+- `server/llm/tools_schema.py`: shared helper for assembling per-round eager
+  tool schemas plus the full system-prompt tool catalog. It applies skill
+  `allowed_tools` filters when supplied and promotes deferred tools discovered
+  through `tool_search` for the next LLM round.
 - `server/llm/tool_executor.py`: validates, runs, and formats tool calls into
   compact LLM-visible receipts plus structured UI card payloads with full
   output, summaries, previews, detail refs, status, metadata, truncation/cache
-  details, and elapsed time.
-- `server/llm/token_usage.py`: normalizes provider usage and accumulates
-  per-turn/session totals.
+  details, and elapsed time. When an active skill supplies an allowed-tool
+  whitelist, the whitelist is carried on `Context.allowed_tool_names` and
+  enforced before execution.
+- `server/llm/token_usage.py`: normalizes provider usage, accumulates
+  per-turn/session totals, and provides the shared helper that records a turn's
+  accumulated usage onto the in-memory session before callers persist it.
 - `server/personas/`: persona loader, registry, router, runtime selection, and
   API models.
 - `server/tools/`: built-in tools such as `obsidian_search`,
   `crabby_settings`, `read`, `grep`, `glob`, `bash`, `edit`, `fetch`, `cron`,
   `task_query`, and memory tools.
+- `server/tools/registry.py`: built-in/dynamic tool registry. It also exposes
+  `sync_configurable_builtin_tools()` so admin settings reloads can add or
+  remove the `bash` tool immediately when `BASH_ENABLED` changes.
 - `server/tools/bash.py`: non-interactive cross-platform shell tool. On
   Windows it launches PowerShell without a profile, forces UTF-8 output, and
   translates top-level `&&` / `||` chains for PowerShell 5.x compatibility.
@@ -160,6 +186,9 @@ Important backend files and folders:
   timeout / exit-code failures.
 - `server/tools/crabby_settings.py`: self-management tool that talks to the
   Obsidian bridge and backend admin profile APIs.
+- `server/tools/tool_search.py`: session-scoped deferred-tool discovery tool.
+  It respects `Context.allowed_tool_names`, so restricted skills cannot discover
+  deferred tools that their `allowed_tools` whitelist excludes.
 - `server/tools/diary.py`: `diary_write` and `diary_read` tools for
   Vault-facing diary, weekly, monthly, quarterly, and yearly records. Paths and
   templates come from `diary.json`; writes create from the configured template
@@ -188,8 +217,8 @@ Important backend files and folders:
   hidden from the normal chat tool catalog and `tool_search`.
 - `server/memory/catalog.py`: shared scanner/filter helper for Vault-backed
   memory documents, used by `memory_search` and `memory_inventory`.
-- `server/tools/cron.py`: cron create/list/delete tool and
-  backend runtime `data/cron_jobs.json` persistence.
+- `server/tools/loop_task.py`: interactive loop tools plus cron-compatible
+  create/list/delete tools, all routed through LoopManager/runtime data.
 - `server/memory/`: file-backed session manifest/conversation storage, legacy
   flat-session migration, active branch materialization/cache, ID validation,
   actual usage snapshots, pending notifications, per-conversation auto-save
@@ -235,14 +264,19 @@ uv run --with pyinstaller python ../scripts/build-backend-runtime.py --version 0
 
 Important plugin files and folders:
 
-- `obsidian-plugin/src/main.ts`: plugin entry point.
+- `obsidian-plugin/src/main.ts`: plugin entry point. It passes the live
+  `manifest.version` into the Vault search index so plugin version changes can
+  invalidate stale persisted indexes without a duplicated version constant.
 - `obsidian-plugin/src/settings.ts`: settings UI, backend-owned profile
   controls, active-profile test button, local backend program/MCP settings, and
-  Diary root/template Vault-relative path autocomplete. Diary template
-  suggestions include Obsidian-loaded Markdown files plus adapter-listed hidden
-  `.crabby/templates/diary/` files. The local backend status panel shows the
-  backend version, preferring the live `/health` version and falling back to the
-  runtime state version while offline.
+  Diary root/template Vault-relative path autocomplete. It also exposes
+  `.env`-backed `AUTO_SAVE_INTERVAL`, `BASH_ENABLED`, and
+  `VAULT_TOOLS_ENABLED`; Vault user tools are managed in a separate modal for
+  `<vault>/.crabby/tools/` directory creation, example creation, status, and
+  reload. Diary template suggestions include Obsidian-loaded Markdown files
+  plus adapter-listed hidden `.crabby/templates/diary/` files. The local
+  backend status panel shows the backend version, preferring the live `/health`
+  version and falling back to the runtime state version while offline.
 - `obsidian-plugin/src/api/client.ts`: backend API client, WebSocket handling,
   transport/server error classification, admin reload/status calls, profile
   calls, active-profile test calls, and direct diary-write calls.
@@ -288,13 +322,17 @@ Important plugin files and folders:
 - `obsidian-plugin/src/runtime/runtimeState.ts`: serializes production backend
   executable paths relative to the installed plugin runtime directory and
   resolves relative/legacy absolute paths at launch.
-- `obsidian-plugin/src/search/`: Obsidian-search-compatible DSL parsing and
-  `.md` / `.canvas` search implementation. Ranking is field-aware: filename,
-  title, aliases, headings, tags/properties, path, tasks, body BM25-lite,
-  query-term coverage, phrase hits, and a small recency boost contribute to the
-  final score. Internal `debug_score_details` is available to tests/local
-  diagnostics but is not accepted through the client bridge or shown in normal
-  tool output.
+- `obsidian-plugin/src/search/`: Obsidian-search-compatible DSL parsing,
+  `.md` / `.canvas` search implementation, and persisted Vault search index.
+  Ranking is field-aware: filename, title, aliases, headings, tags/properties,
+  path, tasks, body BM25-lite, query-term coverage, phrase hits, and a small
+  recency boost contribute to the final score. Source references include stable
+  content hashes and, for block matches with line metadata, block-wide line
+  spans. Internal `debug_score_details` is available to tests/local diagnostics
+  but is not accepted through the client bridge or shown in normal tool output.
+  `SearchIndex` loads a matching on-disk index when possible, reconciles by
+  mtime/size on warm start, and forces a full rebuild when the last full rebuild
+  is older than 30 days.
 - `obsidian-plugin/scripts/`: repo-local verification scripts.
 - `obsidian-plugin/scripts/test-chat-tools.js`: verifies tool-result payload
   normalization and chat transcript tool-block rendering behavior.
@@ -312,6 +350,7 @@ Plugin commands:
 cd obsidian-plugin
 npm ci
 npm run test:config
+npm run test:search-index
 npm run test:chat-content
 npm run test:chat-styles
 npx tsc --noEmit
@@ -381,40 +420,47 @@ npm run start
    persona/config state, session state, skills, and available tools.
 10. The active session branch is materialized from `SessionStore` and branch
     cache before each model call.
-11. LLM responses are normalized into text, reasoning, tool calls, stop
+11. Before each LLM round trip, the backend rebuilds the per-turn eager tool
+    schema from the registry, active skill filters, and per-session
+    `tool_search` discoveries so deferred tools discovered in the previous
+    round can be called immediately. The same active skill allowlist is carried
+    into tool execution context so `tool_search` results and direct tool
+    execution cannot escape skill restrictions.
+12. LLM responses are normalized into text, reasoning, tool calls, stop
     reasons, and usage.
-12. Tool execution routes through built-in tools, connected MCP tools, and the
+13. Tool execution routes through built-in tools, connected MCP tools, and the
     Obsidian client-tool bridge. Tool results include compact model-visible
     receipts plus structured UI card payloads with full UI output, summaries,
     previews, detail refs, and `success`, `warning`, or `error` status.
-13. Responses include streamed events or structured REST output plus context
+14. Responses include streamed events or structured REST output plus context
     stats, per-turn usage, cumulative session usage when available, and
     assistant/user message IDs. WebSocket `tool_result` events and REST
     `tool_calls` carry the full tool UI card payload, while persisted
     `tool_result.content` stays compact for future model context.
-14. When a chat turn completes with a successful `loop_stop` tool result, the
+15. When a chat turn completes with a successful `loop_stop` tool result, the
     Obsidian chat view can show an inline prompt directly above the input box
     to write the loop summary to today's diary through `/diary/write`. The
     prompt requires a non-error loop result with `metadata.job_id`; stale or
     missing loop jobs must not be treated as writable summaries. If the configured
     daily template file is missing, the prompt offers settings/close actions and
     does not show a write button.
-15. Auto-save queues frozen conversation review windows, uses
+16. Auto-save queues frozen conversation review windows, uses
     `auto_save_checkpoints` to continue from the last reviewed message for each
     conversation, and writes only strict long-term value through
     `memory_write`. Diary entries are user-facing records created through the
     diary skill or explicit inline user confirmation. Unresolved tool errors
     and max-iteration exhaustion do not advance the checkpoint.
-16. Dream maintenance runs as a separate low-frequency daemon. It does not run
+17. Dream maintenance runs as a separate low-frequency daemon. It does not run
     immediately on first startup; it schedules attempts 7-14 days out, requires
     30 minutes of real-user idle time and global `session_activity` idleness,
     and cancels promptly when a new user chat starts. Dream uses maintenance
     memory tools only during planning and internal helpers for source-memory
     archiving, so ordinary chat is not blocked and does not see archived /
     invalidated memory bodies.
-17. Cron jobs run in isolated sessions through the shared non-streaming agent
-    runner and push completion notifications back to source sessions.
-18. WebSocket `error` events are reserved for transport/protocol failures.
+18. Cron-compatible Loop jobs run in isolated sessions through the shared
+    non-streaming agent runner and push completion notifications back to source
+    sessions.
+19. WebSocket `error` events are reserved for transport/protocol failures.
     Backend-delivered business conditions should use `warning`/`done`.
 
 ## Session And Conversation Rules
@@ -472,6 +518,9 @@ npm run start
 - The checked-in `diary` skill routes diary/journal/review requests to
   `diary_read` and `diary_write`, forbids `edit`/`bash` for diary writes, and
   treats weekly/monthly/quarterly/yearly records as explicit-request only.
+- A skill with a non-empty `allowed_tools` list restricts the per-turn schema,
+  `tool_search` discovery results, and execution-time tool calls to that
+  whitelist. A skill with `allowed_tools=[]` imposes no restriction.
 
 ## Configuration Notes
 
@@ -541,6 +590,16 @@ npm run start
   automatically in the current V1.
 - Memory auto-save only accepts `memory_search` / `memory_write`; any
   non-memory tool call returned by the model is rejected before execution.
+- `AUTO_SAVE_INTERVAL` controls memory auto-save cadence by conversation turn
+  count; `0` disables triggering. The Obsidian settings UI writes this value to
+  `<vault>/.crabby/config/.env` and uses `/admin/reload-settings` so ordinary
+  cadence changes do not require restarting the backend.
+- `BASH_ENABLED` controls whether the built-in `bash` tool is registered.
+  Admin settings reload hot-syncs this tool without reconnecting MCP servers.
+- `VAULT_TOOLS_ENABLED` controls the internal `vault-tools` MCP subprocess for
+  user-defined tools under `<vault>/.crabby/tools/`. The Obsidian settings UI
+  saves this value through `.env` and uses full admin reload so MCP state and
+  status reflect the change.
 - Tool errors should expose `metadata.error` so the LLM sees `[error]` instead
   of a success prefix. Loop tools, including `loop_stop`, must mark missing jobs
   as errors rather than successful textual results.
