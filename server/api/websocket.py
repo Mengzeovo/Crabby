@@ -4,30 +4,31 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from attachment_store import AttachmentStore
+from api.loop_control import handle_loop_message
 from config import settings
 from llm.agent_runner import DEFAULT_MAX_AGENT_ITERATIONS
 from llm.client import chat_completion, chat_completion_stream
 from llm.context_meter import measure_context
+from llm.output_adapters import reasoning_text_from_block
 from llm.prompts import build_system_prompt
 from llm.providers import get_provider_preset, supports_streaming_tool_calls
 from llm.token_usage import (
     TokenUsageAccumulator,
     context_with_actual_usage,
-    merge_accumulated_usage,
+    record_turn_usage,
 )
 from llm.tool_executor import build_default_context, execute_tool_call
 from llm.tool_search_service import ToolSearchService
+from llm.tools_schema import build_per_turn_tools
 from llm.user_activity import mark_user_activity
 from memory import (
     ConversationNotFoundError,
     InvalidSessionIdError,
-    Session,
     SessionStore,
     validate_conversation_id,
     validate_session_id,
@@ -38,8 +39,12 @@ from notification_utils import (
     inject_notifications_into_messages,
 )
 from personas import PersonaRegistry, PersonaRouter
-from personas.runtime import apply_persona_selection, resolve_active_persona
-from skills import SkillRegistry
+from personas.runtime import (
+    apply_persona_selection,
+    resolve_active_persona,
+    validate_manual_persona_selection,
+)
+from skills import SkillRegistry, collect_allowed_tools
 from tools.registry import TOOL_EXPOSURE_CHAT, ToolRegistry, get_search_service
 from user_turn import prepare_user_turn
 
@@ -48,6 +53,13 @@ logger = logging.getLogger(__name__)
 
 def _context_limit() -> int:
     return get_provider_preset().context_window
+
+
+def _allowed_tool_names(active_skills: list) -> set[str] | None:
+    if not active_skills:
+        return None
+    allowed = collect_allowed_tools(active_skills)
+    return allowed or None
 
 router = APIRouter()
 
@@ -91,62 +103,19 @@ def set_persona_router(router: PersonaRouter) -> None:
     _persona_router = router
 
 
-def _collect_allowed_tools(skills: list) -> set[str]:
-    """Collect allowed tool names from skills that explicitly restrict tools.
-
-    A skill with allowed_tools=[] means "no restriction" — skip it.
-    Only accumulate tools from skills that specify an explicit list.
-    Returns an empty set if every skill has no restriction, meaning
-    all tools should be available.
-    """
-    allowed: set[str] = set()
-    for skill in skills:
-        if not skill.allowed_tools:
-            continue
-        allowed.update(skill.allowed_tools)
-    return allowed
-
-
 def _build_tools_schema_and_catalog(
     active_skills: list,
     session_id: str | None = None,
     search_service: "ToolSearchService | None" = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     assert _registry is not None
-
-    # 1. skill allowed_tools filter (existing logic)
-    allowed_names: set[str] | None = None
-    if active_skills:
-        allowed = _collect_allowed_tools(active_skills)
-        if allowed:
-            allowed_names = allowed
-
-    # 2. Split eager / deferred
-    eager_schemas, deferred_schemas = _registry.get_eager_and_deferred(allowed_names)
-
-    # 3. Promote discovered deferred tools into eager for this request
-    if session_id and search_service:
-        discovered = search_service.get_discovered(session_id)
-        eager_schemas.extend(
-            s for s in deferred_schemas
-            if s["name"] in discovered
-        )
-
-    # 4. tool_search tool is always_eager=True so it is already in eager_schemas
-
-    # 5. tool_catalog for system prompt (remains the complete list)
-    tool_catalog = _registry.build_tool_catalog(allowed_names=allowed_names)
-
-    # 6. Deduplicate by name — a tool with always_eager=True that is also
-    # discovered via tool_search would otherwise appear twice.
-    seen_names: set[str] = set()
-    deduped_eager: list[dict[str, Any]] = []
-    for s in eager_schemas:
-        if s["name"] not in seen_names:
-            seen_names.add(s["name"])
-            deduped_eager.append(s)
-
-    return deduped_eager, tool_catalog
+    allowed_names = _allowed_tool_names(active_skills)
+    return build_per_turn_tools(
+        _registry,
+        allowed_names=allowed_names,
+        session_id=session_id,
+        search_service=search_service,
+    )
 
 
 async def _send(ws: WebSocket, event: dict[str, Any]) -> None:
@@ -298,175 +267,6 @@ async def send_loop_event(session_id: str, event: dict[str, Any]) -> bool:
         return False
 
 
-def _consume_pending_notifications(session: Session) -> list[str]:
-    notifications = [note for note in session.pending_notifications if note.strip()]
-    session.pending_notifications.clear()
-    return notifications
-
-
-async def _handle_loop_message(
-    ws: WebSocket,
-    session: Session,
-    loop_type: str,
-    msg: dict[str, Any],
-) -> None:
-    """Handle frontend → backend loop control messages.
-
-    loop_submit : User submitted a response for the current round
-    loop_next   : User wants to skip/continue to next round
-    loop_stop   : User wants to stop the loop early
-    loop_pause  : User wants to pause the loop
-    """
-    from loop_manager import (
-        complete_job,
-        get as loop_get,
-        update_status as loop_update_status,
-    )
-    from loop_models import LoopStatus
-    from tools.base import Context
-    from runtime_paths import context_runtime_data_dir
-
-    # Derive runtime_data_path from session.vault_path to stay consistent
-    # with the tool path (which uses context_runtime_data_dir).
-    vault_path = getattr(session, 'vault_path', None)
-    if vault_path is not None:
-        runtime_data_path = (Path(vault_path) / ".crabby" / "data").resolve()
-    else:
-        logger.warning(
-            "Loop message for session %s: vault_path is None, falling back to DATA_DIR",
-            session.id,
-        )
-        # Use context_runtime_data_dir for consistency with tool-layer path resolution.
-        ctx = Context(vault_path=None)
-        runtime_data_path = context_runtime_data_dir(ctx)
-    job_id = str(msg.get("job_id") or "")
-    job = loop_get(job_id, runtime_data_path=runtime_data_path) if job_id else None
-
-    if loop_type == "loop_submit":
-        user_input = str(msg.get("user_input") or "")
-        if not job:
-            await _send(ws, {"type": "error", "message": f"未找到 Loop 任务 [{job_id}]"})
-            return
-        from loop_manager import update_round as loop_update_round
-        updated = loop_update_round(
-            job.id,
-            response={"user_input": user_input},
-            runtime_data_path=runtime_data_path,
-        )
-        if updated is None:
-            await _send(ws, {"type": "error", "message": f"无法更新 Loop 任务 [{job_id}]"})
-            return
-        await _send(
-            ws,
-            {
-                "type": "loop_recorded",
-                "job_id": job.id,
-                "current_round": updated.current_round,
-                "all_rounds_complete": updated.status == LoopStatus.DONE,
-            },
-        )
-
-    elif loop_type == "loop_next":
-        if not job:
-            await _send(ws, {"type": "error", "message": f"未找到 Loop 任务 [{job_id}]"})
-            return
-        from loop_manager import update_round as loop_update_round
-        updated = loop_update_round(
-            job.id,
-            response={},
-            runtime_data_path=runtime_data_path,
-        )
-        if updated is None:
-            await _send(ws, {"type": "error", "message": f"无法更新 Loop 任务 [{job_id}]"})
-            return
-        if updated.status == LoopStatus.DONE and getattr(session, 'active_loop_id', None) == job.id:
-            session.active_loop_id = None
-            _session_store.persist(session)
-        await _send(
-            ws,
-            {
-                "type": "loop_next",
-                "job_id": updated.id,
-                "current_round": updated.current_round,
-                "total_rounds": updated.rounds or 0,
-                "done": updated.status == LoopStatus.DONE,
-            },
-        )
-
-    elif loop_type == "loop_stop":
-        if not job:
-            await _send(ws, {"type": "error", "message": f"未找到 Loop 任务 [{job_id}]"})
-            return
-        complete_job(job.id, runtime_data_path=runtime_data_path)
-        if getattr(session, 'active_loop_id', None) == job.id:
-            session.active_loop_id = None
-            _session_store.persist(session)
-        await _send(
-            ws,
-            {
-                "type": "loop_ended",
-                "job_id": job.id,
-                "reason": "user_stopped",
-                "done": True,
-            },
-        )
-
-    elif loop_type == "loop_pause":
-        if not job:
-            await _send(ws, {"type": "error", "message": f"未找到 Loop 任务 [{job_id}]"})
-            return
-        ok = loop_update_status(job.id, LoopStatus.PAUSED, runtime_data_path=runtime_data_path)
-        if not ok:
-            await _send(ws, {"type": "error", "message": f"无法暂停 Loop [{job.id}]"})
-            return
-        # PAUSED is not DONE — do NOT clear active_loop_id; the loop is still active.
-        await _send(
-            ws,
-            {
-                "type": "loop_paused",
-                "job_id": job.id,
-            },
-        )
-
-
-def _validate_manual_persona(msg: dict[str, Any]) -> str | None:
-    mode = str(msg.get("persona_mode") or "").strip().lower()
-    if mode != "manual":
-        return None
-
-    persona_id = str(msg.get("manual_persona_id") or "").strip()
-    if not persona_id:
-        return "manual_persona_id is required for manual mode"
-    if _persona_registry is not None and _persona_registry.get(persona_id) is None:
-        return f"Unknown persona: {persona_id}"
-    return None
-
-
-def _reasoning_text_from_block(block: dict[str, Any]) -> str:
-    details = block.get("reasoning_details")
-    if not isinstance(details, list):
-        return ""
-
-    parts = [
-        detail.get("text", "")
-        for detail in details
-        if isinstance(detail, dict) and isinstance(detail.get("text"), str)
-    ]
-    return "".join(parts)
-
-
-def _record_turn_usage(
-    session: Session,
-    usage_accumulator: TokenUsageAccumulator,
-) -> dict[str, int]:
-    if usage_accumulator.has_usage:
-        session.actual_usage_total = merge_accumulated_usage(
-            session.actual_usage_total,
-            usage_accumulator.to_dict(),
-        )
-    return session.actual_usage_total
-
-
 @router.websocket("/sessions/{session_id}/conversations/{conversation_id}/ws")
 async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
     """Streaming chat over WebSocket."""
@@ -509,7 +309,9 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
             # -- Loop control messages (frontend → backend) ----------------------
             loop_type = str(msg.get("type") or "")
             if loop_type in ("loop_submit", "loop_next", "loop_stop", "loop_pause"):
-                await _handle_loop_message(ws, session, loop_type, msg)
+                await handle_loop_message(
+                    ws, session, loop_type, msg, session_store=_session_store,
+                )
                 continue
 
             if msg.get("type") != "message" or (not has_content and not has_images):
@@ -522,7 +324,7 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                 )
                 continue
 
-            validation_error = _validate_manual_persona(msg)
+            validation_error = validate_manual_persona_selection(msg, _persona_registry)
             if validation_error is not None:
                 await _send(ws, {"type": "error", "message": validation_error})
                 continue
@@ -554,6 +356,7 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
             start_session_activity("api_call")
 
             active_skills = prepared_turn.active_skills
+            allowed_tool_names = _allowed_tool_names(active_skills)
             all_skills = _skill_registry.list_skills() if _skill_registry else []
             active_persona = await resolve_active_persona(
                 session,
@@ -577,8 +380,9 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
             ctx = build_default_context(
                 session_id=session.id,
                 conversation_id=conversation_id,
+                allowed_tool_names=allowed_tool_names,
             )
-            turn_notifications = _consume_pending_notifications(session)
+            turn_notifications = session.consume_pending_notifications()
             if turn_notifications:
                 _session_store.persist(session)
                 display_prefix = format_notifications_for_display(turn_notifications)
@@ -599,6 +403,17 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
             usage_accumulator = TokenUsageAccumulator(provider=settings.llm_provider)
             try:
                 for _ in range(max_iterations):
+                    # Refresh tools_schema each round so deferred tools that
+                    # `tool_search` discovered in the previous iteration are
+                    # callable on the very next LLM call, not deferred to the
+                    # next user turn. tool_catalog is rendered into ``system``
+                    # once outside this loop — that's an accepted minor lag and
+                    # not a correctness issue.
+                    tools_schema, _ = _build_tools_schema_and_catalog(
+                        active_skills,
+                        session_id=session.id,
+                        search_service=_search_service,
+                    )
                     messages = _session_store.get_model_messages(
                         session.id,
                         _attachment_store,
@@ -623,7 +438,7 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                         )
                         for block in full_response.get("content", []):
                             if block.get("type") == "reasoning_details":
-                                reasoning_text = _reasoning_text_from_block(block)
+                                reasoning_text = reasoning_text_from_block(block)
                                 if reasoning_text:
                                     await _send(
                                         ws,
@@ -699,7 +514,7 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                         assistant_message_id = session.add_assistant_message(
                             content_blocks
                         )
-                        cumulative_usage = _record_turn_usage(session, usage_accumulator)
+                        cumulative_usage = record_turn_usage(session, usage_accumulator)
                         _session_store.persist(session)
                         if should_trigger_auto_save(session):
                             trigger_auto_save(session)
@@ -746,15 +561,6 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                         tool_input = block["input"]
                         tool_id = block["id"]
 
-                        # Trigger tool_search discovery if the model just called tool_search
-                        if tool_name == "tool_search" and _search_service:
-                            search_input = block.get("input", {})
-                            _search_service.search(
-                                query=search_input.get("query", ""),
-                                session_id=session.id,
-                                max_results=search_input.get("max_results", 5),
-                            )
-
                         llm_text, ui_payload = await execute_tool_call(
                             _registry,
                             tool_name,
@@ -793,7 +599,7 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                     limit_message_id = session.add_assistant_message(
                         [{"type": "text", "text": TOOL_ITERATION_LIMIT_MESSAGE}]
                     )
-                    cumulative_usage = _record_turn_usage(session, usage_accumulator)
+                    cumulative_usage = record_turn_usage(session, usage_accumulator)
                     _session_store.persist(session)
                     await _send(
                         ws,

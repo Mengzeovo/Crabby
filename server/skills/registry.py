@@ -23,6 +23,23 @@ MATCH_THRESHOLD = 0.10
 MAX_ACTIVE_SKILLS = 3
 
 
+def collect_allowed_tools(skills: list[Skill]) -> set[str]:
+    """Aggregate allowed tool names across skills that explicitly restrict tools.
+
+    A skill with ``allowed_tools=[]`` means "no restriction" — it is skipped.
+    Only accumulate tools from skills that declare an explicit non-empty list.
+
+    Returns an empty set when no skill restricts the tool set, signalling that
+    callers should treat all tools as available rather than "no tools allowed".
+    """
+    allowed: set[str] = set()
+    for skill in skills:
+        if not skill.allowed_tools:
+            continue
+        allowed.update(skill.allowed_tools)
+    return allowed
+
+
 class SkillRegistry:
     """Skill 注册中心 — 管理所有 Skill 的发现、注册和匹配。
 

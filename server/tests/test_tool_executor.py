@@ -170,6 +170,29 @@ async def test_unavailable_tool_returns_error_payload(tmp_path: Path):
     assert ui["metadata"]["error_type"] == "unavailable_tool"
 
 
+@pytest.mark.asyncio
+async def test_disallowed_tool_returns_error_payload(tmp_path: Path):
+    """A skill allowlist must block tools outside the current turn context."""
+    registry = ToolRegistry()
+    registry.register(SimpleTool())
+    ctx = Context(vault_path=tmp_path, allowed_tool_names={"other_tool"})
+
+    llm_text, ui = await execute_tool_call(
+        registry,
+        "simple",
+        {"value": "test"},
+        ctx=ctx,
+        tool_id="toolu_disallowed",
+    )
+
+    assert "not available" in llm_text.lower()
+    assert ui["status"] == "error"
+    assert ui["is_error"] is True
+    assert ui["id"] == "toolu_disallowed"
+    assert ui["name"] == "simple"
+    assert ui["metadata"]["error_type"] == "disallowed_tool"
+
+
 # ---------------------------------------------------------------------------
 # Tool throws exception
 # ---------------------------------------------------------------------------

@@ -10,6 +10,25 @@ from llm.providers import LLMProviderPreset
 from llm.token_usage import merge_usage_snapshot
 
 
+def reasoning_text_from_block(block: dict[str, Any]) -> str:
+    """Extract concatenated reasoning text from a content block's reasoning_details list.
+
+    Used by non-streaming paths (REST, WS non-streaming branch) that receive a
+    full response and need to surface reasoning_details as a single text stream.
+    Returns ``""`` when the block has no usable reasoning_details list.
+    """
+    details = block.get("reasoning_details")
+    if not isinstance(details, list):
+        return ""
+
+    parts = [
+        detail.get("text", "")
+        for detail in details
+        if isinstance(detail, dict) and isinstance(detail.get("text"), str)
+    ]
+    return "".join(parts)
+
+
 def merge_reasoning_details(
     current: list[dict[str, Any]],
     update: Any,

@@ -41,6 +41,7 @@ class ToolSearchTool(Tool):
             query=params.query,
             session_id=ctx.session_id or "",
             max_results=params.max_results,
+            allowed_names=ctx.allowed_tool_names,
         )
 
         if not results:

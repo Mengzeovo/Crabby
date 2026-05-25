@@ -138,6 +138,36 @@ class TestToolSearchServiceScoring:
         assert discovered is not None
         assert discovered.name == "maintenance_tool"
 
+    def test_search_respects_allowed_names(self) -> None:
+        registry = ToolRegistry()
+        registry.register(ObsidianSearchFake())
+        registry.register(CrabbySettingsFake())
+        service = ToolSearchService(registry)
+
+        results = service.search(
+            "settings",
+            session_id="s1",
+            allowed_names={"obsidian_search"},
+        )
+
+        assert results == []
+        assert not service.is_discovered("crabby_settings", "s1")
+
+    def test_discover_by_name_respects_allowed_names(self) -> None:
+        registry = ToolRegistry()
+        registry.register(ObsidianSearchFake())
+        registry.register(CrabbySettingsFake())
+        service = ToolSearchService(registry)
+
+        result = service.discover_by_name(
+            "crabby_settings",
+            "s1",
+            allowed_names={"obsidian_search"},
+        )
+
+        assert result is None
+        assert not service.is_discovered("crabby_settings", "s1")
+
     def test_empty_query_returns_nothing(self) -> None:
         registry = ToolRegistry()
         registry.register(FakeDeferredTool())
@@ -367,6 +397,31 @@ class TestToolSearchToolIntegration:
         result = await tool.call(params, ctx)
 
         assert "No matching tools" in result.output
+
+    @pytest.mark.asyncio
+    async def test_tool_search_tool_respects_context_allowed_names(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        registry = ToolRegistry()
+        registry.register(ObsidianSearchFake())
+        registry.register(CrabbySettingsFake())
+        service = ToolSearchService(registry)
+
+        from tools.tool_search import ToolSearchInput, ToolSearchTool
+
+        tool = ToolSearchTool(service)
+        params = ToolSearchInput(query="settings", max_results=5)
+        ctx = Context(
+            vault_path=tmp_path,
+            session_id="test-session",
+            allowed_tool_names={"obsidian_search", "tool_search"},
+        )
+
+        result = await tool.call(params, ctx)
+
+        assert "No matching tools" in result.output
+        assert not service.is_discovered("crabby_settings", "test-session")
 
     @pytest.mark.asyncio
     async def test_tool_search_tool_none_session_id(self, tmp_path: Path) -> None:

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from llm.client import chat_completion
 from llm.tool_executor import execute_tool_call
+from llm.tools_schema import build_per_turn_tools
 from tools.base import Context
 from tools.registry import TOOL_EXPOSURE_CHAT, ToolRegistry
 
@@ -21,26 +22,28 @@ TOOL_ITERATION_LIMIT_MESSAGE = "Tool call iteration limit exceeded. Please try a
 DEFAULT_MAX_AGENT_ITERATIONS = 200
 
 
-def _build_tools_schema(
+def _refresh_tools_schema(
     registry: ToolRegistry,
     tools_schema: list[dict[str, Any]],
     session_id: str | None,
     search_service: "ToolSearchService | None",
+    allowed_names: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Rebuild eager schemas, promoting newly discovered deferred tools.
+    """Re-resolve eager schemas, promoting any newly discovered deferred tools.
 
-    When tool_search discovers tools, we need to re-check which deferred
-    tools are now in the discovered set so they can be called in the next turn.
+    Called once at the top of every loop iteration so that a ``tool_search``
+    call made in the previous round makes its discoveries callable on the very
+    next round. Falls back to the caller-supplied ``tools_schema`` when no
+    search service / session is available.
     """
     if not search_service or not session_id:
         return tools_schema
-    eager, deferred = registry.get_eager_and_deferred()
-    discovered = search_service.get_discovered(session_id)
-    seen_names: set[str] = {s["name"] for s in eager}
-    for s in deferred:
-        if s["name"] in discovered and s["name"] not in seen_names:
-            eager.append(s)
-            seen_names.add(s["name"])
+    eager, _catalog = build_per_turn_tools(
+        registry,
+        allowed_names=allowed_names,
+        session_id=session_id,
+        search_service=search_service,
+    )
     return eager
 
 
@@ -56,8 +59,15 @@ async def run_agent_turn(
     session_id: str | None = None,
 ) -> str:
     """Run a full non-streaming agent turn and persist messages into session."""
+    allowed_names = getattr(ctx, "allowed_tool_names", None)
     for _ in range(max_iterations):
-        tools_schema = _build_tools_schema(registry, tools_schema, session_id, search_service)
+        tools_schema = _refresh_tools_schema(
+            registry,
+            tools_schema,
+            session_id,
+            search_service,
+            allowed_names,
+        )
         resp = await chat_completion(
             messages=session.get_messages(),
             system=system_prompt,
@@ -81,15 +91,6 @@ async def run_agent_turn(
             tool_name = block["name"]
             tool_input = block["input"]
             tool_id = block["id"]
-
-            # Trigger tool_search discovery if the model just called tool_search
-            if tool_name == "tool_search" and search_service and session_id:
-                search_input = tool_input or {}
-                search_service.search(
-                    query=search_input.get("query", ""),
-                    session_id=session_id,
-                    max_results=search_input.get("max_results", 5),
-                )
 
             llm_text, ui_payload = await execute_tool_call(
                 registry,

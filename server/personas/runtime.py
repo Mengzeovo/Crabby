@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from memory import Session
 from personas import (
     Persona,
@@ -10,6 +12,29 @@ from personas import (
     PersonaRouteResult,
     PersonaState,
 )
+
+
+def validate_manual_persona_selection(
+    msg: dict[str, Any],
+    persona_registry: PersonaRegistry | None,
+) -> str | None:
+    """Return an error string when manual persona selection is invalid; else None.
+
+    ``msg`` is the raw client payload that may set ``persona_mode='manual'`` plus
+    ``manual_persona_id``. When mode is anything other than ``'manual'``, this
+    returns ``None`` (no validation needed). Otherwise it requires a non-empty
+    ``manual_persona_id`` that the supplied registry knows about.
+    """
+    mode = str(msg.get("persona_mode") or "").strip().lower()
+    if mode != "manual":
+        return None
+
+    persona_id = str(msg.get("manual_persona_id") or "").strip()
+    if not persona_id:
+        return "manual_persona_id is required for manual mode"
+    if persona_registry is not None and persona_registry.get(persona_id) is None:
+        return f"Unknown persona: {persona_id}"
+    return None
 
 
 def _clear_auto_persona(

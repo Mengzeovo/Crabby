@@ -13,15 +13,17 @@ from config import settings
 from llm.agent_runner import DEFAULT_MAX_AGENT_ITERATIONS
 from llm.client import chat_completion
 from llm.context_meter import measure_context
+from llm.output_adapters import reasoning_text_from_block
 from llm.prompts import build_system_prompt
 from llm.providers import get_provider_preset
 from llm.token_usage import (
     TokenUsageAccumulator,
     context_with_actual_usage,
-    merge_accumulated_usage,
+    record_turn_usage,
 )
 from llm.tool_executor import build_default_context, execute_tool_call
 from llm.tool_search_service import ToolSearchService
+from llm.tools_schema import build_per_turn_tools
 from llm.user_activity import mark_user_activity
 from memory import (
     ConversationNotFoundError,
@@ -37,7 +39,7 @@ from notification_utils import (
 )
 from personas import PersonaRegistry, PersonaRouter
 from personas.runtime import apply_persona_selection, resolve_active_persona
-from skills import SkillRegistry
+from skills import SkillRegistry, collect_allowed_tools
 from tools.registry import TOOL_EXPOSURE_CHAT, ToolRegistry, get_search_service
 from user_turn import prepare_user_turn
 
@@ -89,20 +91,11 @@ def _context_limit() -> int:
     return get_provider_preset().context_window
 
 
-def _collect_allowed_tools(skills: list) -> set[str]:
-    """Collect allowed tool names from skills that explicitly restrict tools.
-
-    A skill with allowed_tools=[] means "no restriction" — skip it.
-    Only accumulate tools from skills that specify an explicit list.
-    Returns an empty set if every skill has no restriction, meaning
-    all tools should be available.
-    """
-    allowed: set[str] = set()
-    for skill in skills:
-        if not skill.allowed_tools:
-            continue
-        allowed.update(skill.allowed_tools)
-    return allowed
+def _allowed_tool_names(active_skills: list) -> set[str] | None:
+    if not active_skills:
+        return None
+    allowed = collect_allowed_tools(active_skills)
+    return allowed or None
 
 
 def _build_tools_schema_and_catalog(
@@ -111,46 +104,14 @@ def _build_tools_schema_and_catalog(
     search_service: ToolSearchService | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     assert _registry is not None
+    allowed_names = _allowed_tool_names(active_skills)
+    return build_per_turn_tools(
+        _registry,
+        allowed_names=allowed_names,
+        session_id=session_id,
+        search_service=search_service,
+    )
 
-    # 1. skill allowed_tools filter (existing logic)
-    allowed_names: set[str] | None = None
-    if active_skills:
-        allowed = _collect_allowed_tools(active_skills)
-        if allowed:
-            allowed_names = allowed
-
-    # 2. Split eager / deferred
-    eager_schemas, deferred_schemas = _registry.get_eager_and_deferred(allowed_names)
-
-    # 3. Promote discovered deferred tools into eager for this request
-    if session_id and search_service:
-        discovered = search_service.get_discovered(session_id)
-        eager_schemas.extend(
-            s for s in deferred_schemas
-            if s["name"] in discovered
-        )
-
-    # 4. tool_search tool is always_eager=True so it is already in eager_schemas
-
-    # 5. tool_catalog for system prompt (remains the complete list)
-    tool_catalog = _registry.build_tool_catalog(allowed_names=allowed_names)
-
-    # 6. Deduplicate by name — a tool with always_eager=True that is also
-    # discovered via tool_search would otherwise appear twice.
-    seen_names: set[str] = set()
-    deduped_eager: list[dict[str, Any]] = []
-    for s in eager_schemas:
-        if s["name"] not in seen_names:
-            seen_names.add(s["name"])
-            deduped_eager.append(s)
-
-    return deduped_eager, tool_catalog
-
-
-def _consume_pending_notifications(session) -> list[str]:
-    notifications = [note for note in session.pending_notifications if note.strip()]
-    session.pending_notifications.clear()
-    return notifications
 
 
 def _resolve_session_persona(session):
@@ -231,26 +192,13 @@ class CapabilitiesResponse(BaseModel):
     supports_vision: bool
 
 
-def _reasoning_text_from_block(block: dict[str, Any]) -> str:
-    details = block.get("reasoning_details")
-    if not isinstance(details, list):
-        return ""
-
-    parts = [
-        detail.get("text", "")
-        for detail in details
-        if isinstance(detail, dict) and isinstance(detail.get("text"), str)
-    ]
-    return "".join(parts)
-
-
 def _content_blocks_to_display_text(content_blocks: list[dict[str, Any]]) -> str:
     reasoning_parts: list[str] = []
     text_parts: list[str] = []
 
     for block in content_blocks:
         if block.get("type") == "reasoning_details":
-            reasoning_text = _reasoning_text_from_block(block)
+            reasoning_text = reasoning_text_from_block(block)
             if reasoning_text:
                 reasoning_parts.append(reasoning_text)
         elif block.get("type") == "text":
@@ -263,18 +211,6 @@ def _content_blocks_to_display_text(content_blocks: list[dict[str, Any]]) -> str
     if reasoning_text:
         return f"<think>\n{reasoning_text}\n</think>\n\n{visible_text}".strip()
     return visible_text
-
-
-def _record_turn_usage(
-    session,
-    usage_accumulator: TokenUsageAccumulator,
-) -> dict[str, int]:
-    if usage_accumulator.has_usage:
-        session.actual_usage_total = merge_accumulated_usage(
-            session.actual_usage_total,
-            usage_accumulator.to_dict(),
-        )
-    return session.actual_usage_total
 
 
 def _require_safe_session_id(session_id: str) -> str:
@@ -471,6 +407,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     active_skills = prepared_turn.active_skills
+    allowed_tool_names = _allowed_tool_names(active_skills)
     all_skills = _skill_registry.list_skills() if _skill_registry else []
     active_persona = await resolve_active_persona(
         session,
@@ -494,10 +431,11 @@ async def chat(req: ChatRequest) -> ChatResponse:
     ctx = build_default_context(
         session_id=session.id,
         conversation_id=conversation_id,
+        allowed_tool_names=allowed_tool_names,
     )
 
     user_message_id = session.add_user_prepared_turn(prepared_turn)
-    turn_notifications = _consume_pending_notifications(session)
+    turn_notifications = session.consume_pending_notifications()
     _session_store.persist(session)
     model_messages = _session_store.get_model_messages(
         session.id,
@@ -518,6 +456,14 @@ async def chat(req: ChatRequest) -> ChatResponse:
     max_iterations = DEFAULT_MAX_AGENT_ITERATIONS
     try:
         for _ in range(max_iterations):
+            # Refresh tools_schema each round so deferred tools discovered via
+            # `tool_search` in the previous iteration are callable in the very
+            # next LLM call — see notes in api/websocket.py for details.
+            tools_schema, _ = _build_tools_schema_and_catalog(
+                active_skills,
+                session_id=session.id,
+                search_service=_search_service,
+            )
             resp = await chat_completion(
                 messages=messages,
                 system=system,
@@ -534,7 +480,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                     reply_text = f"{display_prefix}{reply_text}"
 
                 assistant_message_id = session.add_assistant_message(content_blocks)
-                cumulative_usage = _record_turn_usage(session, usage_accumulator)
+                cumulative_usage = record_turn_usage(session, usage_accumulator)
                 _session_store.persist(session)
                 context = context_with_actual_usage(
                     measure_context(
@@ -608,7 +554,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                 turn_notifications,
             )
 
-        cumulative_usage = _record_turn_usage(session, usage_accumulator)
+        cumulative_usage = record_turn_usage(session, usage_accumulator)
         if usage_accumulator.has_usage:
             _session_store.persist(session)
         context = context_with_actual_usage(

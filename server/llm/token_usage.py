@@ -263,3 +263,21 @@ def merge_accumulated_usage(
     accumulator.add_accumulated(current)
     accumulator.add_accumulated(update)
     return accumulator.to_dict() if accumulator.has_usage else {}
+
+
+def record_turn_usage(
+    session: Any,
+    usage_accumulator: TokenUsageAccumulator,
+) -> dict[str, int]:
+    """Merge per-turn accumulated usage into ``session.actual_usage_total``.
+
+    Returns the cumulative usage dict (post-merge). Callers persist the session
+    afterwards; this helper only mutates the in-memory ``actual_usage_total``.
+    No-op when the accumulator has not seen any usage chunks.
+    """
+    if usage_accumulator.has_usage:
+        session.actual_usage_total = merge_accumulated_usage(
+            session.actual_usage_total,
+            usage_accumulator.to_dict(),
+        )
+    return session.actual_usage_total

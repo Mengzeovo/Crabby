@@ -46,6 +46,7 @@ class ToolSearchService:
         session_id: str,
         max_results: int = 5,
         *,
+        allowed_names: set[str] | None = None,
         include_maintenance: bool = False,
     ) -> list[ScoredTool]:
         """Search deferred tools by query, rank by score, mark all results as discovered.
@@ -56,6 +57,7 @@ class ToolSearchService:
             return []
 
         deferred_tools = self._get_deferred_tools(
+            allowed_names=allowed_names,
             include_maintenance=include_maintenance,
         )
         scored: list[ScoredTool] = []
@@ -96,10 +98,12 @@ class ToolSearchService:
         name: str,
         session_id: str,
         *,
+        allowed_names: set[str] | None = None,
         include_maintenance: bool = False,
     ) -> ScoredTool | None:
         """Direct name-based discovery. Returns the tool's full ScoredTool if deferred."""
         deferred_tools = self._get_deferred_tools(
+            allowed_names=allowed_names,
             include_maintenance=include_maintenance,
         )
         for tool_name, tool_obj, source in deferred_tools:
@@ -125,11 +129,14 @@ class ToolSearchService:
     def _get_deferred_tools(
         self,
         *,
+        allowed_names: set[str] | None = None,
         include_maintenance: bool = False,
     ) -> list[tuple[str, Any, str]]:
         """Return all non-eager tools as (name, tool_obj, source) tuples."""
         results: list[tuple[str, Any, str]] = []
         for name, tool_obj, source, _metadata in self._registry.snapshot():
+            if allowed_names is not None and name not in allowed_names:
+                continue
             if self._registry.is_eager_tool(name):
                 continue
             if not self._registry.is_visible_tool(

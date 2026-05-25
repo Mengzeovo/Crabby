@@ -506,6 +506,15 @@ class Session:
         )
         self._touch_messages_changed()
 
+    def consume_pending_notifications(self) -> list[str]:
+        """Pop all non-empty pending notifications and clear the queue.
+
+        Callers persist the session afterwards to commit the cleared state.
+        """
+        notifications = [note for note in self.pending_notifications if note.strip()]
+        self.pending_notifications.clear()
+        return notifications
+
     def get_auto_save_checkpoint(
         self,
         conversation_id: str | None = None,

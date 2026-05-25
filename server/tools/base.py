@@ -51,6 +51,9 @@ class Context(BaseModel):
     runtime_data_path: Path | None = None
     """后端运行时 data 目录，用于插件托管状态和缓存。"""
 
+    allowed_tool_names: set[str] | None = None
+    """当前 turn 的 skill 工具白名单；None 表示不限制。"""
+
 
 # ---------------------------------------------------------------------------
 # ToolResult — 工具执行的标准化返回值

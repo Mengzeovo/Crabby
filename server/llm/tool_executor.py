@@ -225,6 +225,7 @@ def build_default_context(
     session_id: str | None = None,
     conversation_id: str | None = None,
     branch_fingerprint: str | None = None,
+    allowed_tool_names: set[str] | None = None,
 ) -> Context:
     """Build a normal-permission Context from global settings."""
     return Context(
@@ -234,6 +235,7 @@ def build_default_context(
         conversation_id=conversation_id,
         branch_fingerprint=branch_fingerprint,
         runtime_data_path=DATA_DIR,
+        allowed_tool_names=allowed_tool_names,
     )
 
 
@@ -257,6 +259,28 @@ async def execute_tool_call(
     """
     if ctx is None:
         ctx = build_default_context()
+
+    if ctx.allowed_tool_names is not None and tool_name not in ctx.allowed_tool_names:
+        msg = f"Tool is not available in the current skill context: {tool_name}"
+        payload = _build_ui_payload(
+            tool_name=tool_name,
+            output=msg,
+            tool_id=tool_id,
+            metadata={"error": msg, "error_type": "disallowed_tool"},
+            elapsed_ms=0,
+            is_error=True,
+        )
+        payload = _enrich_card_payload(payload, tool_input=tool_input)
+        return _compact_llm_receipt(
+            tool_name=tool_name,
+            tool_input=tool_input,
+            output=msg,
+            metadata=payload["metadata"],
+            status=payload["status"],
+            is_truncated=False,
+            cache_path=None,
+            detail_ref=payload.get("detail_ref"),
+        ), payload
 
     tool_exposure = registry.exposure_of(tool_name) or TOOL_EXPOSURE_CHAT
     if (

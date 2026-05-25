@@ -175,6 +175,7 @@ async def _execute_loop_job(
     from llm.prompts import build_system_prompt
     from llm.session_activity import start_session_activity, stop_session_activity
     from llm.tool_executor import build_default_context
+    from llm.tools_schema import build_per_turn_tools
     from tools.registry import get_search_service
 
     # Loop jobs use empty session_id to participate in the global refcount,
@@ -194,18 +195,12 @@ async def _execute_loop_job(
         )
 
         search_service = get_search_service(registry)
-        tool_catalog = registry.build_tool_catalog()
+        eager_schemas, tool_catalog = build_per_turn_tools(
+            registry,
+            session_id=isolated_session_id,
+            search_service=search_service,
+        )
         system = build_system_prompt(tool_catalog=tool_catalog)
-
-        # Use eager + discovered tools for isolated session
-        eager_schemas, deferred_schemas = registry.get_eager_and_deferred()
-        if search_service and isolated_session_id:
-            discovered = search_service.get_discovered(isolated_session_id)
-            seen_names: set[str] = {s["name"] for s in eager_schemas}
-            for s in deferred_schemas:
-                if s["name"] in discovered and s["name"] not in seen_names:
-                    eager_schemas.append(s)
-                    seen_names.add(s["name"])
 
         ctx = build_default_context(
             session_id=isolated_session_id,
