@@ -619,6 +619,8 @@ class VaultToolsModal extends Modal {
 }
 
 export class CrabbySettingTab extends PluginSettingTab {
+  private refreshToolRuntimeStatus: (() => void) | null = null;
+
   constructor(app: App, private plugin: CrabbyPlugin) {
     super(app, plugin);
   }
@@ -927,6 +929,9 @@ export class CrabbySettingTab extends PluginSettingTab {
         );
         statusEl.setText(result.message);
         new Notice(result.ok ? "工具配置已保存。" : result.message);
+        if (result.ok) {
+          this.refreshToolRuntimeStatus?.();
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         statusEl.setText(`工具配置保存失败：${message}`);
@@ -959,6 +964,98 @@ export class CrabbySettingTab extends PluginSettingTab {
           new VaultToolsModal(this.app, this.plugin).open();
         });
       });
+
+    this.refreshToolRuntimeStatus = this.renderToolRuntimeStatus(containerEl);
+  }
+
+  private renderToolRuntimeStatus(containerEl: HTMLElement): () => void {
+    containerEl.createEl("h4", { text: "运行中的工具" });
+
+    const backendUrl = () =>
+      this.plugin.settings.backendUrl || DEFAULT_SETTINGS.backendUrl;
+
+    const runtimeSummaryEl = containerEl.createDiv({ cls: "mcp-runtime-summary" });
+    Object.assign(runtimeSummaryEl.style, {
+      backgroundColor: "var(--background-secondary)",
+      border: "1px solid var(--background-modifier-border)",
+      borderRadius: "8px",
+      padding: "12px 14px",
+      marginBottom: "10px",
+      fontSize: "12px",
+      lineHeight: "1.6",
+      whiteSpace: "pre-wrap",
+      color: "var(--text-normal)",
+    });
+    runtimeSummaryEl.setText("正在读取工具运行状态...");
+
+    const statusEl = containerEl.createDiv({ cls: "mcp-status-bar" });
+    statusEl.style.fontSize = "12px";
+    statusEl.style.color = "var(--text-muted)";
+    statusEl.style.marginBottom = "10px";
+    statusEl.style.minHeight = "18px";
+
+    const runtimeDetailsEl = createCollapsibleSection(
+      containerEl,
+      "查看 MCP 服务与 Vault 工具详情",
+    );
+    const runtimeStatusEl = runtimeDetailsEl.createEl("pre", {
+      cls: "mcp-runtime-status",
+    });
+    Object.assign(runtimeStatusEl.style, {
+      backgroundColor: "var(--background-secondary)",
+      border: "1px solid var(--background-modifier-border)",
+      borderRadius: "6px",
+      padding: "10px 12px",
+      marginBottom: "0",
+      fontSize: "12px",
+      fontFamily: "var(--font-monospace)",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-word",
+      lineHeight: "1.5",
+      color: "var(--text-normal)",
+    });
+    runtimeStatusEl.setText("正在读取工具运行状态...");
+
+    const setRuntimeStatus = async (): Promise<void> => {
+      const loadingText = "正在读取工具运行状态...";
+      runtimeSummaryEl.setText(loadingText);
+      runtimeStatusEl.setText(loadingText);
+      statusEl.setText("");
+      try {
+        const client = new AgentClient(backendUrl());
+        const result = await fetchMcpRuntimeStatus(this.plugin.settings, client);
+        if (result.ok && result.status) {
+          runtimeSummaryEl.setText(formatMcpRuntimeSummary(result.status));
+          runtimeStatusEl.setText(formatMcpRuntimeStatus(result.status));
+          statusEl.setText("工具运行状态已刷新。");
+        } else {
+          runtimeSummaryEl.setText(result.message);
+          runtimeStatusEl.setText(result.message);
+          statusEl.setText(result.message);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const failureMessage = `读取工具运行状态失败：${message}`;
+        runtimeSummaryEl.setText(failureMessage);
+        runtimeStatusEl.setText(failureMessage);
+        statusEl.setText(failureMessage);
+      }
+    };
+
+    new Setting(containerEl)
+      .setName("工具运行状态")
+      .setDesc("重新读取后端当前可用的 MCP 服务、MCP 工具和 Vault 自定义工具。")
+      .addButton((button) => {
+        button.setButtonText("刷新");
+        button.onClick(() => {
+          void setRuntimeStatus();
+        });
+      });
+
+    void setRuntimeStatus();
+    return () => {
+      void setRuntimeStatus();
+    };
   }
 
   private renderDiarySection(containerEl: HTMLElement): void {
@@ -1098,7 +1195,7 @@ export class CrabbySettingTab extends PluginSettingTab {
   }
 
   private renderMcpSection(containerEl: HTMLElement): void {
-    containerEl.createEl("h3", { text: "MCP 服务与工具" });
+    containerEl.createEl("h3", { text: "MCP 服务配置" });
 
     let draftMcpConfigPath = this.plugin.settings.backendMcpConfigPath;
     const backendUrl = () =>
@@ -1119,47 +1216,11 @@ export class CrabbySettingTab extends PluginSettingTab {
       wordBreak: "break-word",
     });
 
-    const runtimeSummaryEl = containerEl.createDiv({ cls: "mcp-runtime-summary" });
-    Object.assign(runtimeSummaryEl.style, {
-      backgroundColor: "var(--background-secondary)",
-      border: "1px solid var(--background-modifier-border)",
-      borderRadius: "8px",
-      padding: "12px 14px",
-      marginBottom: "10px",
-      fontSize: "12px",
-      lineHeight: "1.6",
-      whiteSpace: "pre-wrap",
-      color: "var(--text-normal)",
-    });
-    runtimeSummaryEl.setText("正在读取 MCP 运行状态...");
-
-    const statusEl = containerEl.createDiv({ cls: "mcp-status-bar" });
+    const statusEl = containerEl.createDiv({ cls: "mcp-config-status-bar" });
     statusEl.style.fontSize = "12px";
     statusEl.style.color = "var(--text-muted)";
     statusEl.style.marginBottom = "10px";
     statusEl.style.minHeight = "18px";
-
-    const runtimeDetailsEl = createCollapsibleSection(
-      containerEl,
-      "查看服务与工具详情",
-    );
-    const runtimeStatusEl = runtimeDetailsEl.createEl("pre", {
-      cls: "mcp-runtime-status",
-    });
-    Object.assign(runtimeStatusEl.style, {
-      backgroundColor: "var(--background-secondary)",
-      border: "1px solid var(--background-modifier-border)",
-      borderRadius: "6px",
-      padding: "10px 12px",
-      marginBottom: "0",
-      fontSize: "12px",
-      fontFamily: "var(--font-monospace)",
-      whiteSpace: "pre-wrap",
-      wordBreak: "break-word",
-      lineHeight: "1.5",
-      color: "var(--text-normal)",
-    });
-    runtimeStatusEl.setText("正在读取 MCP 运行状态...");
 
     const updatePathHint = () => {
       const resolution = resolveBackendMcpConfigPath(settingsWithDraftPath());
@@ -1183,38 +1244,6 @@ export class CrabbySettingTab extends PluginSettingTab {
       this.plugin.settings.backendMcpConfigPath = draftMcpConfigPath;
       await this.plugin.saveSettings();
     };
-
-    const setRuntimeStatus = async (): Promise<void> => {
-      const loadingText = "正在读取 MCP 运行状态...";
-      runtimeSummaryEl.setText(loadingText);
-      runtimeStatusEl.setText(loadingText);
-      try {
-        const client = new AgentClient(backendUrl());
-        const result = await fetchMcpRuntimeStatus(settingsWithDraftPath(), client);
-        if (result.ok && result.status) {
-          runtimeSummaryEl.setText(formatMcpRuntimeSummary(result.status));
-          runtimeStatusEl.setText(formatMcpRuntimeStatus(result.status));
-        } else {
-          runtimeSummaryEl.setText(result.message);
-          runtimeStatusEl.setText(result.message);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const failureMessage = `读取 MCP 运行状态失败：${message}`;
-        runtimeSummaryEl.setText(failureMessage);
-        runtimeStatusEl.setText(failureMessage);
-      }
-    };
-
-    new Setting(containerEl)
-      .setName("刷新运行状态")
-      .setDesc("重新读取后端当前已连接的 MCP 服务和工具。")
-      .addButton((button) => {
-        button.setButtonText("刷新");
-        button.onClick(() => {
-          void setRuntimeStatus();
-        });
-      });
 
     const advancedPathSectionEl = createCollapsibleSection(
       containerEl,
@@ -1292,7 +1321,6 @@ export class CrabbySettingTab extends PluginSettingTab {
             editor.value = result.text ?? "";
             statusEl.setText(result.message);
             new Notice("已根据模板创建 MCP 配置文件。");
-            await setRuntimeStatus();
           } else {
             statusEl.setText(result.message);
             new Notice(`创建失败：${result.message}`);
@@ -1357,17 +1385,16 @@ export class CrabbySettingTab extends PluginSettingTab {
           statusEl.setText(reloadResult.message);
           if (reloadResult.ok) {
             new Notice("MCP 配置已保存，并完成后端重载。");
+            this.refreshToolRuntimeStatus?.();
           } else {
             new Notice(`重载失败：${reloadResult.message}`);
           }
-          await setRuntimeStatus();
           updatePathHint();
         });
       });
 
     updatePathHint();
     loadEditorFromDisk();
-    void setRuntimeStatus();
   }
 
   private renderLlmSection(containerEl: HTMLElement): void {

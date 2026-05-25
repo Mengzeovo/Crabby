@@ -281,9 +281,12 @@ Important plugin files and folders:
   controls, active-profile test button, local backend program/MCP settings, and
   Diary root/template Vault-relative path autocomplete. It also exposes
   `.env`-backed `AUTO_SAVE_INTERVAL`, `BASH_ENABLED`, and
-  `VAULT_TOOLS_ENABLED`; Vault user tools are managed in a separate modal for
-  `<vault>/.crabby/tools/` directory creation, example creation, status, and
-  reload. Diary template suggestions include Obsidian-loaded Markdown files
+  `VAULT_TOOLS_ENABLED`; the Tools and Permissions section owns tool toggles
+  plus runtime MCP/Vault tool status and detail viewing, while the MCP section
+  is limited to service config path/editor actions. Vault user tools are
+  managed in a separate modal for `<vault>/.crabby/tools/` directory creation,
+  example creation, status, and reload. Diary template suggestions include
+  Obsidian-loaded Markdown files
   plus adapter-listed hidden `.crabby/templates/diary/` files. The local
   backend status panel shows 开发版 / 正式版 as user-facing runtime labels,
   preferring the live `/health` backend version and falling back to the runtime
