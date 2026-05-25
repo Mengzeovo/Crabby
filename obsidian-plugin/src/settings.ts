@@ -666,7 +666,7 @@ export class CrabbySettingTab extends PluginSettingTab {
         const versionLabel = backendVersion?.trim() || status.version;
         statusEl.setText(
           [
-            `模式：${status.mode === "dev" ? "开发模式" : "生产模式"}`,
+            `模式：${status.mode === "dev" ? "开发版" : "正式版"}`,
             `后端版本：${versionLabel}`,
             `后端程序已安装：${status.installed ? "是" : "否"}`,
             `后端进程：${status.running ? "运行中" : "未运行"}`,
@@ -704,7 +704,7 @@ export class CrabbySettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("后端程序下载清单 URL")
-      .setDesc("用于在线安装或更新本地后端程序。手动安装包通常已内置，无需填写；开发模式会优先使用 .dev-runtime.json。")
+      .setDesc("用于在线安装或更新本地后端程序。手动安装包通常已内置，无需填写；开发版会优先使用 .dev-runtime.json。")
       .addText((text) => {
         text
           .setPlaceholder("https://example.com/life-assistant/runtime-manifest.json")

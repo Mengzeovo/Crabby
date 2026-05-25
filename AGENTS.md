@@ -285,8 +285,10 @@ Important plugin files and folders:
   `<vault>/.crabby/tools/` directory creation, example creation, status, and
   reload. Diary template suggestions include Obsidian-loaded Markdown files
   plus adapter-listed hidden `.crabby/templates/diary/` files. The local
-  backend status panel shows the backend version, preferring the live `/health`
-  version and falling back to the runtime state version while offline.
+  backend status panel shows 开发版 / 正式版 as user-facing runtime labels,
+  preferring the live `/health` backend version and falling back to the runtime
+  state version while offline; internal runtime mode values remain `dev` /
+  `production`.
 - `obsidian-plugin/src/api/client.ts`: backend API client, WebSocket handling,
   transport/server error classification, admin reload/status calls, profile
   calls, active-profile test calls, and direct diary-write calls.

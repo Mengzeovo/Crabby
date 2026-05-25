@@ -399,7 +399,7 @@ export class BackendRuntimeManager {
 
     const launch = this.resolveLaunchConfig();
     if (!launch) {
-      this.statusDetail = "生产模式本地后端程序尚未安装。";
+      this.statusDetail = "正式版后端程序尚未安装。";
       this.appendRuntimeLog("start aborted: no launch config");
       return this.getStatus();
     }
@@ -502,7 +502,7 @@ export class BackendRuntimeManager {
 
     try {
       await waitForHealth(backendUrl, HEALTH_TIMEOUT_MS);
-      this.statusDetail = `后端正在以${launch.mode === "dev" ? "开发" : "生产"}模式运行。`;
+      this.statusDetail = `后端正在以${launch.mode === "dev" ? "开发版" : "正式版"}运行。`;
       this.appendRuntimeLog(`health check passed: ${backendUrl}`);
     } catch (error) {
       this.statusDetail =
