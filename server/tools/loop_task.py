@@ -551,6 +551,8 @@ class CronCreateTool(Tool):
         "（秒在前，例如 */10 * * * * *）。"
         "系统会按秒级轮询满足触发时间的任务，并在会话空闲时执行。"
         "适用于定期归档、检查更新或日志汇报等不需要用户参与的任务。"
+        "\n必填参数：cron（Cron 表达式）和 prompt（触发时的任务指令）；"
+        "缺一不可，调用前请确认两个字段都已生成具体内容。"
     )
     input_schema = CronCreateInput
     is_read_only = False

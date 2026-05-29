@@ -24,3 +24,29 @@ async def test_read_truncated_output_caches_under_plugin_data(tmp_path: Path):
     assert cache_path.is_relative_to(
         tmp_path / ".crabby" / "data" / "cache"
     )
+
+
+async def test_read_rejects_binary_file_before_decoding(tmp_path: Path):
+    docx = tmp_path / "report.docx"
+    docx.write_bytes(b"PK\x03\x04\xbb\xff\x00\x01garbage")
+
+    result = await ReadTool().call(
+        ReadInput(file_path="report.docx"),
+        Context(vault_path=tmp_path),
+    )
+
+    assert result.metadata.get("error") is True
+    assert result.metadata.get("error_type") == "binary_file"
+    assert ".docx" in result.output
+
+
+async def test_read_binary_suffix_check_is_case_insensitive(tmp_path: Path):
+    pdf = tmp_path / "Slides.PDF"
+    pdf.write_bytes(b"%PDF-1.4\n%\xff\xff")
+
+    result = await ReadTool().call(
+        ReadInput(file_path="Slides.PDF"),
+        Context(vault_path=tmp_path),
+    )
+
+    assert result.metadata.get("error_type") == "binary_file"

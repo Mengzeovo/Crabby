@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from memory.layout import ensure_memory_layout
 from memory.registry_store import read_registry
@@ -199,13 +200,13 @@ class TestMemoryWrite:
 
     @pytest.mark.asyncio
     async def test_permission_check_blocks_traversal(self, write_tool, ctx):
-        params = MemoryWriteInput(
-            name="evil",
-            type="../../etc",
-            topic="passwd",
-            body="hack",
-        )
-        assert write_tool.check_permission(params, ctx) is False
+        with pytest.raises(ValidationError):
+            MemoryWriteInput(
+                name="evil",
+                type="../../etc",
+                topic="passwd",
+                body="hack",
+            )
 
     @pytest.mark.asyncio
     async def test_name_uniqueness_blocks_duplicate(self, write_tool, ctx, vault):

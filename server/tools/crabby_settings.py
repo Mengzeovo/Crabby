@@ -100,6 +100,10 @@ class CrabbySettingsTool(Tool):
         "search. It can inspect current plugin settings, update runtime paths/URLs, "
         "sync backend vault state, and create/update/delete/activate backend-owned "
         "LLM profiles through the connected Obsidian plugin."
+        "\n必填参数：action（必须是以下值之一：inspect / set_runtime_value / "
+        "save_profile / delete_profile / activate_profile / "
+        "sync_profiles_from_backend / sync_backend_vault_path）。"
+        "若只想查看当前设置，请传 action='inspect'，不要省略或猜测其它值如 'list'。"
     )
     input_schema = CrabbySettingsInput
     is_read_only = False

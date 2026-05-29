@@ -301,6 +301,11 @@ class BashTool(Tool):
     description = (
         "执行跨平台、非交互式 shell 命令（Windows 用 PowerShell，macOS 用 zsh，"
         "Linux 用 bash）。该工具没有 TTY，不适合需要人工输入的命令。"
+        "\n注意：Windows/PowerShell 下 `curl` 是 Invoke-WebRequest 的别名，"
+        "不识别 POSIX 风格的 -s/-o/--connect-timeout 等参数。"
+        "如需 POSIX curl 行为，请显式调用 `curl.exe -s ...`，或改用 `Invoke-RestMethod`。"
+        "\n破坏性命令（rm/del/Remove-Item/format/mkfs/dd 等）会被直接拦截，"
+        "请改用专用工具或先与用户确认。"
     )
     input_schema = BashInput
     is_read_only = False

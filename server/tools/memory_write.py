@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -31,12 +31,43 @@ logger = logging.getLogger(__name__)
 class MemoryWriteInput(BaseModel):
     """Input parameters for memory_write."""
 
-    name: str = Field(description="Kebab-case slug, globally unique, used as filename")
-    type: str = Field(description="Memory type: user/feedback/project/reference")
-    topic: str = Field(default="general", description="Topic (vertical boundary)")
-    domain: list[str] = Field(default_factory=list, description="Domain tags (horizontal)")
-    kind: str = Field(default="fact", description="Knowledge form: fact/rule/pattern/mistake/goal/case/reflection")
-    state: str = Field(default="active", description="Lifecycle state: active/archived/invalidated")
+    name: str = Field(
+        description=(
+            "全局唯一文件名 slug。必须是 kebab-case："
+            "纯小写 ASCII 字母数字 + 内部连字符，不接受中文、空格、下划线或大写。"
+            "示例: 'hstech-clear-20260526'、'career-dev-plan-overview'。"
+        ),
+    )
+    type: Literal["user", "feedback", "project", "reference"] = Field(
+        description=(
+            "记忆类型（决定一级目录）。"
+            "user=用户画像/偏好；feedback=用户反馈/纠正规则；"
+            "project=项目事实/进展；reference=外部资源指针。"
+        ),
+    )
+    topic: str = Field(
+        default="general",
+        description=(
+            "二级目录名，按主题分组。可含中日韩字符或 ASCII 小写字母数字，"
+            "内部可有连字符；不能含空格、大写 ASCII、路径分隔符（/ \\）。"
+            "示例: 'investment'、'五院卫星仿真'、'career-plan'。"
+        ),
+    )
+    domain: list[str] = Field(
+        default_factory=list,
+        description="跨记忆的横向标签，用于检索，不进路径。例如 ['frontend', 'auth']。",
+    )
+    kind: Literal["fact", "rule", "pattern", "mistake", "goal", "case", "reflection"] = Field(
+        default="fact",
+        description=(
+            "知识形式。fact=客观事实；rule=约束/规范；pattern=可复用做法；"
+            "mistake=已犯错误；goal=目标；case=具体案例；reflection=反思。"
+        ),
+    )
+    state: Literal["active", "archived", "invalidated"] = Field(
+        default="active",
+        description="生命周期。active=有效；archived=已归档；invalidated=已失效。",
+    )
     valid_from: str | None = Field(default=None, description="ISO date when fact became true")
     valid_to: str | None = Field(default=None, description="ISO date when fact expires")
     body: str = Field(description="Markdown body content of the memory")

@@ -41,6 +41,22 @@ BLOCKED_PATTERNS: tuple[str, ...] = (
     "id_ed25519.*",
 )
 
+# 二进制/非纯文本扩展名——直接 UTF-8 解码会抛 UnicodeDecodeError，
+# 透传给模型既泄漏内部异常，又不利于自我修复。提前拦截并给出明确错误。
+BINARY_SUFFIXES: frozenset[str] = frozenset({
+    ".docx", ".doc", ".pptx", ".ppt", ".potx", ".xlsx", ".xls",
+    ".pdf", ".rtf", ".odt",
+    ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".ico",
+    ".mp3", ".wav", ".flac", ".ogg", ".m4a",
+    ".mp4", ".mkv", ".avi", ".mov", ".webm",
+    ".vsdx", ".vsd", ".xmind", ".mmap",
+    ".exe", ".dll", ".so", ".dylib", ".bin",
+    ".pyc", ".pyo", ".class",
+    ".db", ".sqlite", ".sqlite3",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+})
+
 
 class ReadInput(BaseModel):
     """Read 工具的输入参数。"""
@@ -141,6 +157,22 @@ class ReadTool(Tool):
             return ToolResult(
                 output=f"文件不存在: {params.file_path}",
                 metadata={"error": True, "error_type": "file_not_found", "file_path": params.file_path},
+            )
+
+        # 二进制文件早期拦截：用 UTF-8 解码会崩，直接给模型明确指引
+        suffix = full_path.suffix.lower()
+        if suffix in BINARY_SUFFIXES:
+            return ToolResult(
+                output=(
+                    f"无法读取二进制文件 {params.file_path}（扩展名 {suffix}）。"
+                    f"read 工具仅支持文本文件（.md/.txt/.json/.py/.ts 等）。"
+                ),
+                metadata={
+                    "error": True,
+                    "error_type": "binary_file",
+                    "file_path": params.file_path,
+                    "suffix": suffix,
+                },
             )
 
         # 读取文件全部内容
