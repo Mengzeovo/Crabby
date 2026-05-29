@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
 from urllib.parse import urlparse
 
@@ -21,12 +22,39 @@ from tools.base import Context, Tool, ToolResult
 # 允许的最大跳转次数（手动跟随，每跳都重新做一次目标安全检查）
 MAX_REDIRECTS = 5
 
+# Clash / V2Ray / sing-box 等代理软件常用的 fake-IP 段（RFC 2544 Benchmark）。
+# 用户开了代理之后，所有公网主机名都会被劫持解析到这里，导致 fetch 全部失败。
+# 默认仍按私网段拒绝（保持 SSRF 防护），用户可通过环境变量明确放行。
+FAKE_IP_NETWORKS: tuple[ipaddress.IPv4Network, ...] = (
+    ipaddress.IPv4Network("198.18.0.0/15"),
+)
+
+
+def _allow_fake_ip() -> bool:
+    """Return True unless user has explicitly opted out of fake-IP proxy ranges.
+
+    Defaults to True (allow) because most dev machines run behind a TUN proxy.
+    Set CRABBY_FETCH_ALLOW_FAKE_IP=0 to restore strict blocking.
+    """
+    val = os.environ.get("CRABBY_FETCH_ALLOW_FAKE_IP", "1").strip().lower()
+    return val not in ("0", "false", "no", "off")
+
+
+def _is_fake_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if not isinstance(ip, ipaddress.IPv4Address):
+        return False
+    return any(ip in net for net in FAKE_IP_NETWORKS)
+
 
 def _is_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Return True iff the address is a routable public address.
 
     Rejects loopback, link-local, private, multicast, reserved, unspecified.
+    Fake-IP ranges (198.18.0.0/15) are treated as private unless the user
+    sets CRABBY_FETCH_ALLOW_FAKE_IP=1.
     """
+    if _is_fake_ip(ip) and _allow_fake_ip():
+        return True
     return not (
         ip.is_loopback
         or ip.is_link_local
@@ -82,6 +110,12 @@ def _validate_url_target(url: str) -> str | None:
         except ValueError:
             continue
         if not _is_public_ip(ip):
+            if _is_fake_ip(ip):
+                return (
+                    f"目标主机解析到代理 fake-IP 段：{host} → {addr}。"
+                    f"这通常意味着本机正在使用 Clash/V2Ray 等代理；"
+                    f"请关闭代理重试，或设置 CRABBY_FETCH_ALLOW_FAKE_IP=1 显式放行。"
+                )
             return f"目标主机解析到不允许的 IP：{host} → {addr}"
 
     return None
@@ -112,7 +146,8 @@ class FetchTool(Tool):
     name = "fetch"
     description = (
         "获取网络上的 URL 内容并自动转换为 Markdown 格式供你阅读。\n"
-        "仅支持静态或基础网页，且仅可访问公网地址。"
+        "仅支持静态或基础网页，且仅可访问公网地址。\n"
+        "默认已放行代理 fake-IP 段（198.18.x.x）；若需恢复严格模式可设置 CRABBY_FETCH_ALLOW_FAKE_IP=0。"
     )
     input_schema = FetchInput
     is_read_only = True

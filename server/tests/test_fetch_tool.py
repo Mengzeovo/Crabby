@@ -46,6 +46,27 @@ class TestValidateUrlTarget:
         monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
         assert _validate_url_target("https://example.com/") is None
 
+    def test_rejects_fake_ip_when_opted_out(self, monkeypatch: pytest.MonkeyPatch):
+        # Clash / V2Ray fake-IP 段（198.18.0.0/15），显式关闭时应拒绝并给出提示
+        import socket
+        def fake_getaddrinfo(host, port, **kwargs):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.0.92", port or 0))]
+        monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+        monkeypatch.setenv("CRABBY_FETCH_ALLOW_FAKE_IP", "0")
+        msg = _validate_url_target("https://hq.sinajs.cn/list=sh513180")
+        assert msg is not None
+        assert "fake-IP" in msg
+        assert "CRABBY_FETCH_ALLOW_FAKE_IP" in msg
+
+    def test_allows_fake_ip_by_default(self, monkeypatch: pytest.MonkeyPatch):
+        # 默认放行 fake-IP 段（适配代理环境）
+        import socket
+        def fake_getaddrinfo(host, port, **kwargs):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.0.92", port or 0))]
+        monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+        monkeypatch.delenv("CRABBY_FETCH_ALLOW_FAKE_IP", raising=False)
+        assert _validate_url_target("https://hq.sinajs.cn/list=sh513180") is None
+
 
 class TestFetchToolBlocksSsrf:
     async def test_call_rejects_loopback_before_request(self, tmp_path: Path):
