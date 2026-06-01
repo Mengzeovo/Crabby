@@ -361,6 +361,23 @@ def create_default_registry() -> ToolRegistry:
     if FetchTool is not None:
         registry.register(FetchTool())
 
+    # Document tools (docx, pdf)
+    try:
+        from tools.docx_read import DocxReadTool
+    except ModuleNotFoundError:
+        DocxReadTool = None
+
+    if DocxReadTool is not None:
+        registry.register(DocxReadTool())
+
+    try:
+        from tools.pdf_read import PdfReadTool
+    except ModuleNotFoundError:
+        PdfReadTool = None
+
+    if PdfReadTool is not None:
+        registry.register(PdfReadTool())
+
     # Loop tools (interactive, frontend-driven)
     try:
         from tools.loop_task import (

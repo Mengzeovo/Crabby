@@ -162,10 +162,15 @@ class ReadTool(Tool):
         # 二进制文件早期拦截：用 UTF-8 解码会崩，直接给模型明确指引
         suffix = full_path.suffix.lower()
         if suffix in BINARY_SUFFIXES:
+            hint = ""
+            if suffix == ".docx":
+                hint = " 请改用 docx_read 工具。"
+            elif suffix == ".pdf":
+                hint = " 请改用 pdf_read 工具。"
             return ToolResult(
                 output=(
                     f"无法读取二进制文件 {params.file_path}（扩展名 {suffix}）。"
-                    f"read 工具仅支持文本文件（.md/.txt/.json/.py/.ts 等）。"
+                    f"read 工具仅支持文本文件（.md/.txt/.json/.py/.ts 等）。{hint}"
                 ),
                 metadata={
                     "error": True,
