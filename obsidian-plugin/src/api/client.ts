@@ -62,6 +62,7 @@ export interface ChatRequestPayload {
   conversation_id?: string | null;
   persona_mode?: string | null;
   manual_persona_id?: string | null;
+  turn_id?: string | null;
 }
 
 export type ToolCallStatus = "success" | "warning" | "error" | string;
@@ -324,6 +325,7 @@ const WEB_SOCKET_CONNECTION_FAILED_MESSAGE =
   "WebSocket connection failed. Please confirm the backend is running.";
 const WEB_SOCKET_STREAM_INTERRUPTED_MESSAGE =
   "WebSocket connection lost while streaming. Please retry.";
+const ABORT_TURN_TIMEOUT_MS = 2000;
 
 export class WebSocketTransportError extends Error {
   readonly canFallbackToRest: boolean;
@@ -358,6 +360,13 @@ export function createDefaultPersonaState(): PersonaState {
   };
 }
 
+function createTurnId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export class AgentClient {
   private ws: WebSocket | null = null;
   private pendingCallbacks: StreamCallbacks | null = null;
@@ -365,6 +374,7 @@ export class AgentClient {
   private pendingResolve: (() => void) | null = null;
   private pendingReject: ((error: Error) => void) | null = null;
   private pendingMessageSent = false;
+  private pendingTurnId: string | null = null;
   private _sessionId: string | null = null;
   private _conversationId: string | null = null;
   private _wsHandlers: {
@@ -438,6 +448,7 @@ export class AgentClient {
     this.pendingResolve = null;
     this.pendingReject = null;
     this.pendingMessageSent = false;
+    this.pendingTurnId = null;
   }
 
   private resolvePendingStream(): void {
@@ -669,11 +680,13 @@ export class AgentClient {
     callbacks: StreamCallbacks,
   ): Promise<void> {
     await this.ensureWebSocket();
+    const turnId = createTurnId();
 
     return new Promise<void>((resolve, reject) => {
       this.pendingResolve = resolve;
       this.pendingReject = reject;
       this.pendingMessageSent = false;
+      this.pendingTurnId = turnId;
       this.pendingUserOnError = callbacks.onError ?? null;
       this.pendingCallbacks = {
         onAssistantPrefix: callbacks.onAssistantPrefix,
@@ -713,7 +726,7 @@ export class AgentClient {
         if (!ws) {
           throw new WebSocketTransportError(WEB_SOCKET_CONNECTION_FAILED_MESSAGE, true);
         }
-        ws.send(JSON.stringify(this.normalizeWebSocketPayload(payload)));
+        ws.send(JSON.stringify(this.normalizeWebSocketPayload(payload, turnId)));
         this.pendingMessageSent = true;
       } catch (error) {
         this.resetPendingStream();
@@ -898,9 +911,15 @@ export class AgentClient {
     this._conversationId = null;
   }
 
-  abort(): void {
+  async abort(): Promise<void> {
     const resolve = this.pendingResolve;
+    const sessionId = this._sessionId;
+    const conversationId = this._conversationId;
+    const turnId = this.pendingTurnId;
     this.resetPendingStream();
+    if (sessionId && conversationId && turnId) {
+      await this.abortTurn(sessionId, conversationId, turnId);
+    }
     if (this.ws) {
       if (this._wsHandlers) {
         this.ws.removeEventListener("open", this._wsHandlers.onopen);
@@ -913,6 +932,30 @@ export class AgentClient {
       this.ws = null;
     }
     resolve?.();
+  }
+
+  private async abortTurn(
+    sessionId: string,
+    conversationId: string,
+    turnId: string,
+  ): Promise<void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ABORT_TURN_TIMEOUT_MS);
+    try {
+      await fetch(
+        `${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(conversationId)}/abort`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ turn_id: turnId }),
+          signal: controller.signal,
+        },
+      );
+    } catch {
+      // The UI must still release; backend cleanup may finish independently.
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async health(): Promise<boolean> {
@@ -1121,9 +1164,10 @@ export class AgentClient {
 
   private normalizeWebSocketPayload(
     payload: string | ChatRequestPayload,
+    turnId?: string,
   ): Record<string, unknown> {
     if (typeof payload === "string") {
-      return { type: "message", content: payload };
+      return { type: "message", content: payload, turn_id: turnId };
     }
     return {
       type: "message",
@@ -1131,6 +1175,7 @@ export class AgentClient {
       pasted_contents: payload.pasted_contents,
       persona_mode: payload.persona_mode,
       manual_persona_id: payload.manual_persona_id,
+      turn_id: payload.turn_id ?? turnId,
     };
   }
 

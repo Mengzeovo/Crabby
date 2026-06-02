@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
+import threading
 from typing import Any
 
 from fastapi import FastAPI
@@ -46,6 +48,24 @@ class LongFailTool(Tool):
 
     async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
         return ToolResult(output=LONG_FAILURE_OUTPUT, metadata={"exit_code": 7})
+
+
+class SlowInput(BaseModel):
+    pass
+
+
+class SlowTool(Tool):
+    name = "slow"
+    description = "Wait until cancelled."
+    input_schema = SlowInput
+
+    def __init__(self, started: threading.Event) -> None:
+        self.started = started
+
+    async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
+        self.started.set()
+        await asyncio.Event().wait()
+        return ToolResult(output="unexpected")
 
 
 def _build_ws_app(tmp_path: Path) -> tuple[FastAPI, SessionStore]:
@@ -317,6 +337,272 @@ def test_tool_result_event_contains_full_payload(monkeypatch, tmp_path: Path):
     block = tool_message["content"][0]
     assert block["ui"]["status"] == "error"
     assert block["ui"]["output"] == LONG_FAILURE_OUTPUT
+
+
+def test_interrupted_tool_round_preserves_completed_tool_result(tmp_path: Path):
+    store = SessionStore(storage_dir=tmp_path / "sessions")
+    session = store.create("session-1")
+    content_blocks = [
+        {
+            "type": "tool_use",
+            "id": "toolu_1",
+            "name": "echo",
+            "input": {"text": "hello"},
+        }
+    ]
+    session.add_user_message("hello")
+
+    websocket_api._persist_cancelled_turn(
+        session=session,
+        session_store=store,
+        content_blocks=content_blocks,
+        tool_results=[
+            {
+                "type": "tool_result",
+                "tool_use_id": "toolu_1",
+                "content": "echo: hello",
+                "ui": {
+                    "id": "toolu_1",
+                    "tool_use_id": "toolu_1",
+                    "name": "echo",
+                    "tool": "echo",
+                    "output": "echo: hello",
+                    "metadata": {},
+                    "status": "success",
+                    "is_error": False,
+                    "is_truncated": False,
+                    "cache_path": None,
+                    "elapsed_ms": 1,
+                },
+            }
+        ],
+        streamed_text="",
+        usage_accumulator=websocket_api.TokenUsageAccumulator(),
+    )
+
+    persisted = store.get("session-1")
+    assert persisted is not None
+    assert [message["role"] for message in persisted.messages] == [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+    ]
+    assert persisted.messages[1]["content"][0]["type"] == "tool_use"
+    assert persisted.messages[2]["content"][0]["type"] == "tool_result"
+    assert persisted.messages[2]["content"][0]["tool_use_id"] == "toolu_1"
+    assert persisted.messages[-1]["content"][0]["text"] == (
+        websocket_api.INTERRUPTED_ASSISTANT_MESSAGE
+    )
+
+
+def test_interrupted_tool_round_fills_missing_tool_result(tmp_path: Path):
+    store = SessionStore(storage_dir=tmp_path / "sessions")
+    session = store.create("session-1")
+    content_blocks = [
+        {
+            "type": "tool_use",
+            "id": "toolu_1",
+            "name": "echo",
+            "input": {"text": "hello"},
+        }
+    ]
+    session.add_user_message("hello")
+
+    websocket_api._persist_cancelled_turn(
+        session=session,
+        session_store=store,
+        content_blocks=content_blocks,
+        tool_results=[],
+        streamed_text="",
+        usage_accumulator=websocket_api.TokenUsageAccumulator(),
+    )
+
+    persisted = store.get("session-1")
+    assert persisted is not None
+    assert [message["role"] for message in persisted.messages] == [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+    ]
+    tool_result = persisted.messages[2]["content"][0]
+    assert tool_result["type"] == "tool_result"
+    assert tool_result["tool_use_id"] == "toolu_1"
+    assert tool_result["ui"]["status"] == "error"
+    assert tool_result["ui"]["metadata"]["error_type"] == "user_abort"
+    assert persisted.messages[-1]["content"][0]["text"] == (
+        websocket_api.INTERRUPTED_ASSISTANT_MESSAGE
+    )
+
+
+def test_abort_endpoint_cancels_slow_tool_and_persists_valid_history(
+    monkeypatch,
+    tmp_path: Path,
+):
+    started = threading.Event()
+
+    async def fake_chat_completion_stream(*, messages, system, tools):
+        yield {
+            "type": "done",
+            "response": {
+                "stop_reason": "tool_use",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_slow",
+                        "name": "slow",
+                        "input": {},
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 3,
+                    "total_tokens": 13,
+                },
+            },
+        }
+
+    monkeypatch.setattr(
+        websocket_api,
+        "chat_completion_stream",
+        fake_chat_completion_stream,
+    )
+
+    session_store = SessionStore(storage_dir=tmp_path / "sessions")
+    attachment_store = AttachmentStore(storage_dir=tmp_path / "attachments")
+    registry = ToolRegistry()
+    registry.register(SlowTool(started))
+    session_store.create("session-1")
+    websocket_api.set_registry(registry)
+    websocket_api.set_session_store(session_store)
+    websocket_api.set_skill_registry(SkillRegistry())
+    websocket_api.set_attachment_store(attachment_store)
+
+    app = FastAPI()
+    app.include_router(websocket_api.router)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/sessions/session-1/conversations/root/ws") as ws:
+            ws.send_text(
+                json.dumps(
+                    {
+                        "type": "message",
+                        "content": "hello",
+                        "turn_id": "turn-1",
+                    }
+                )
+            )
+            assert started.wait(timeout=2)
+            response = client.post(
+                "/sessions/session-1/conversations/root/abort",
+                json={"turn_id": "turn-1"},
+            )
+            assert response.status_code == 200
+            assert response.json()["status"] == "cancelled"
+
+    persisted = session_store.get("session-1")
+    assert persisted is not None
+    assert [message["role"] for message in persisted.messages] == [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+    ]
+    assert persisted.messages[1]["content"][0]["type"] == "tool_use"
+    tool_result = persisted.messages[2]["content"][0]
+    assert tool_result["type"] == "tool_result"
+    assert tool_result["tool_use_id"] == "toolu_slow"
+    assert tool_result["ui"]["metadata"]["error_type"] == "user_abort"
+    assert persisted.messages[3]["content"][0]["text"] == (
+        websocket_api.INTERRUPTED_ASSISTANT_MESSAGE
+    )
+    assert persisted.actual_usage_total["total_tokens"] == 13
+
+
+def test_active_turn_rejects_new_message_before_abort_cleanup(
+    monkeypatch,
+    tmp_path: Path,
+):
+    started = threading.Event()
+
+    async def fake_chat_completion_stream(*, messages, system, tools):
+        yield {
+            "type": "done",
+            "response": {
+                "stop_reason": "tool_use",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_slow",
+                        "name": "slow",
+                        "input": {},
+                    }
+                ],
+            },
+        }
+
+    monkeypatch.setattr(
+        websocket_api,
+        "chat_completion_stream",
+        fake_chat_completion_stream,
+    )
+
+    session_store = SessionStore(storage_dir=tmp_path / "sessions")
+    attachment_store = AttachmentStore(storage_dir=tmp_path / "attachments")
+    registry = ToolRegistry()
+    registry.register(SlowTool(started))
+    session_store.create("session-1")
+    websocket_api.set_registry(registry)
+    websocket_api.set_session_store(session_store)
+    websocket_api.set_skill_registry(SkillRegistry())
+    websocket_api.set_attachment_store(attachment_store)
+
+    app = FastAPI()
+    app.include_router(websocket_api.router)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/sessions/session-1/conversations/root/ws") as ws1:
+            ws1.send_text(
+                json.dumps(
+                    {
+                        "type": "message",
+                        "content": "first",
+                        "turn_id": "turn-1",
+                    }
+                )
+            )
+            assert started.wait(timeout=2)
+            with client.websocket_connect("/sessions/session-1/conversations/root/ws") as ws2:
+                ws2.send_text(
+                    json.dumps(
+                        {
+                            "type": "message",
+                            "content": "second",
+                            "turn_id": "turn-2",
+                        }
+                    )
+                )
+                warning = json.loads(ws2.receive_text())
+                assert warning["type"] == "warning"
+                assert "Previous turn" in warning["message"]
+
+            response = client.post(
+                "/sessions/session-1/conversations/root/abort",
+                json={"turn_id": "turn-1"},
+            )
+            assert response.json()["status"] == "cancelled"
+
+    persisted = session_store.get("session-1")
+    assert persisted is not None
+    real_user_messages = [
+        message
+        for message in persisted.messages
+        if message["role"] == "user"
+        and not isinstance(message.get("content"), list)
+    ]
+    assert len(real_user_messages) == 1
+    assert real_user_messages[0]["text"] == "first"
 
 
 def test_tool_iteration_limit_emits_warning_then_done(monkeypatch, tmp_path: Path):

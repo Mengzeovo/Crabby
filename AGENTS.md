@@ -138,13 +138,21 @@ Important backend files and folders:
   skill, health/version, capability, and admin-facing routes with safe ID
   validation.
 - `server/api/sessions.py`: session metadata and message-history APIs.
-- `server/api/websocket.py`: streaming chat WebSocket, tool-loop warnings,
-  safe conversation ID checks, and delegation of frontend loop-control messages.
+- `server/api/websocket.py`: streaming chat WebSocket, turn-id based abort API,
+  active-turn cancellation registry, tool-loop warnings, safe conversation ID
+  checks, and delegation of frontend loop-control messages. When a chat turn is
+  aborted, it cancels the active backend task, persists partial text or a
+  complete cancelled tool round (`assistant tool_use` plus completed/synthetic
+  `tool_result` blocks), records accumulated usage when present, and writes a
+  short assistant abort marker so the next turn keeps a valid provider message
+  sequence.
 - `server/api/loop_control.py`: WebSocket loop-control handler for
   `loop_submit`, `loop_next`, `loop_stop`, and `loop_pause`. It resolves the
   same Vault runtime data path as loop tools, updates Loop jobs, persists
   `active_loop_id` changes, and sends compact frontend events.
-- `server/api/client_tools.py`: WebSocket bridge for Obsidian-hosted tools.
+- `server/api/client_tools.py`: WebSocket bridge for Obsidian-hosted tools. It
+  removes pending client-tool RPC futures when the owning chat turn is cancelled,
+  so late plugin results are ignored instead of keeping the turn alive.
 - `server/llm/`: LLM client, provider presets, output adapters, profile store,
   profile probe, prompt assembly, context metering, token accounting, session
   activity, and tool loop helpers.
@@ -179,8 +187,9 @@ Important backend files and folders:
   `sync_configurable_builtin_tools()` so admin settings reloads can add or
   remove the `bash` tool immediately when `BASH_ENABLED` changes.
 - `server/tools/bash.py`: non-interactive cross-platform shell tool. On
-  Windows it launches PowerShell without a profile, forces UTF-8 output, and
-  translates top-level `&&` / `||` chains for PowerShell 5.x compatibility.
+  Windows it launches PowerShell without a profile, forces UTF-8 output,
+  translates top-level `&&` / `||` chains for PowerShell 5.x compatibility, and
+  kills the foreground process tree when the owning chat turn is cancelled.
 - `server/tools/tool_result_read.py`: read-only detail expansion tool for
   previous tool-result cards in the current tool context session and
   conversation only. It reads persisted UI-only `ui.output` by `detail_ref` or
@@ -293,16 +302,19 @@ Important plugin files and folders:
   state version while offline; internal runtime mode values remain `dev` /
   `production`.
 - `obsidian-plugin/src/api/client.ts`: backend API client, WebSocket handling,
-  transport/server error classification, admin reload/status calls, profile
-  calls, active-profile test calls, and direct diary-write calls.
+  turn-id generation for streaming chat, abort API calls before closing active
+  chat WebSockets, transport/server error classification, admin reload/status
+  calls, profile calls, active-profile test calls, and direct diary-write calls.
 - `obsidian-plugin/src/chat/`: chat view, transcript, context/token usage bar,
   composer, assistant rendering, personas, profiles, sessions, current-session
-  tree, fork actions, stylesheet injection, turn runner, inline loop-to-diary
-  prompts, and tool-block metadata rendering including file-change counts from
-  `metadata.file_changes`. The context/token bar separates current context
-  window estimates from provider-returned usage totals; usage labels are not a
-  direct context-window bill, and reasoning/cache numbers are displayed as
-  provider sub-breakdowns rather than extra additive totals.
+  tree, fork actions, stylesheet injection, turn runner, stop-button handling
+  that waits for backend abort acknowledgement before clearing sending state,
+  inline loop-to-diary prompts, and tool-block metadata rendering including
+  file-change counts from `metadata.file_changes`. The context/token bar
+  separates current context window estimates from provider-returned usage
+  totals; usage labels are not a direct context-window bill, and
+  reasoning/cache numbers are displayed as provider sub-breakdowns rather than
+  extra additive totals.
 - `obsidian-plugin/src/chat/ChatView.ts`: chat view shell. When no saved LLM
   profile exists, it shows a dismissing banner whose settings action opens the
   Obsidian settings modal and switches to the Crabby plugin tab.
@@ -351,6 +363,9 @@ Important plugin files and folders:
 - `obsidian-plugin/scripts/`: repo-local verification scripts.
 - `obsidian-plugin/scripts/test-chat-tools.js`: verifies tool-result payload
   normalization and chat transcript tool-block rendering behavior.
+- `obsidian-plugin/scripts/test-api-client-abort.js`: verifies streaming chat
+  turn-id propagation to the abort API and confirms the client keeps the stream
+  pending until abort acknowledgement before closing the WebSocket.
 - `obsidian-plugin/scripts/test-backend-config.js`: platform-neutral config
   regression coverage for backend config, runtime state, search engine, and
   Obsidian vault resolution. It uses OS-specific Obsidian metadata locations
@@ -367,6 +382,7 @@ npm ci
 npm run test:config
 npm run test:search-index
 npm run test:chat-content
+npm run test:api-client
 npm run test:chat-styles
 npx tsc --noEmit
 npm run build

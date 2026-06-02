@@ -134,6 +134,34 @@ async def test_client_tool_manager_surfaces_settings_bridge_errors() -> None:
         await task
 
 
+@pytest.mark.asyncio
+async def test_client_tool_manager_clears_pending_on_cancellation() -> None:
+    manager = ObsidianClientToolManager()
+    ws = FakeWebSocket()
+    await manager.connect(ws)  # type: ignore[arg-type]
+
+    task = asyncio.create_task(manager.crabby_settings({"action": "inspect"}))
+    for _ in range(10):
+        if ws.sent:
+            break
+        await asyncio.sleep(0)
+
+    assert ws.sent
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    request_id = ws.sent[0]["request_id"]
+    await manager.handle_client_message(
+        {
+            "type": "client_tool_result",
+            "request_id": request_id,
+            "result": {"ok": True},
+        },
+    )
+    assert manager._pending == {}  # type: ignore[attr-defined]
+
+
 @pytest.fixture(autouse=True)
 def _disconnect_global_manager():
     if obsidian_client_tools.connected:

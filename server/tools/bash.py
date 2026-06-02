@@ -391,6 +391,10 @@ class BashTool(Tool):
                 timeout=params.timeout,
             )
             exit_code = process.returncode or 0
+        except asyncio.CancelledError:
+            _kill_process_tree(process.pid)
+            await process.wait()
+            raise
         except asyncio.TimeoutError:
             timeout_occurred = True
             _kill_process_tree(process.pid)

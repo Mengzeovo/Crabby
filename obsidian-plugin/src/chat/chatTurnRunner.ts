@@ -416,7 +416,7 @@ export function createChatTurnRunner(
 
   function handleStop(): void {
     state.isAborted = true;
-    client.abort();
+    void client.abort();
   }
 
   function handleSysNotify(event: SystemNotificationEvent): void {

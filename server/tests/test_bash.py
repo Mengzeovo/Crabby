@@ -403,3 +403,55 @@ class TestBackgroundExecution:
         assert notifications[0][0] == "conversation-1"
         assert "first" in notifications[0][1]
         assert "second" in notifications[0][1]
+
+
+class TestCancellation:
+    @pytest.mark.asyncio
+    async def test_foreground_command_kills_process_tree_on_cancellation(
+        self,
+        tool: BashTool,
+        ctx: Context,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        killed_pids: list[int] = []
+
+        class FakeProcess:
+            pid = 4242
+            returncode = None
+            stdout = None
+            stderr = None
+            waited = False
+
+            async def communicate(self):
+                await asyncio.Event().wait()
+
+            async def wait(self):
+                self.waited = True
+
+        fake_process = FakeProcess()
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            return fake_process
+
+        monkeypatch.setattr(
+            bash_module.asyncio,
+            "create_subprocess_exec",
+            fake_create_subprocess_exec,
+        )
+        monkeypatch.setattr(
+            bash_module,
+            "_kill_process_tree",
+            lambda pid: killed_pids.append(pid),
+        )
+
+        task = asyncio.create_task(
+            tool.call(tool.input_schema(command="long running"), ctx),
+        )
+        await asyncio.sleep(0)
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert killed_pids == [4242]
+        assert fake_process.waited is True

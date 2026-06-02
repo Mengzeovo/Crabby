@@ -101,6 +101,11 @@ class ObsidianClientToolManager:
                     },
                 )
             return await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.CancelledError:
+            self._pending.pop(request_id, None)
+            if not future.done():
+                future.cancel()
+            raise
         except asyncio.TimeoutError as exc:
             self._pending.pop(request_id, None)
             raise ObsidianClientToolError(
