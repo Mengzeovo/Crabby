@@ -1,6 +1,6 @@
 {
   "name": "crabby-desktop-pet",
-  "version": "0.3.0",
+  "version": "0.3.5",
   "private": true,
   "main": "dist/main/index.cjs",
   "scripts": {
