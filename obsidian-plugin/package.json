@@ -10,6 +10,7 @@
     "test:chat-tools": "node scripts/test-chat-tools.js",
     "test:chat-styles": "node scripts/test-chat-styles.js",
     "test:api-client": "node scripts/test-api-client-abort.js",
+    "test:turn-manager": "node scripts/test-chat-turn-manager.js",
     "test:config": "node scripts/test-backend-config.js",
     "test:search-index": "node scripts/test-search-index.js",
     "test:wing-mapping": "node scripts/test-wing-mapping.js",

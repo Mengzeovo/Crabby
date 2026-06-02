@@ -24,6 +24,7 @@ import { createChatSessions } from "./chatSessions";
 import { ensureChatStyles } from "./chatStyles";
 import { createChatTranscript } from "./chatTranscript";
 import { createChatTurnRunner } from "./chatTurnRunner";
+import { ChatTurnManager } from "./chatTurnManager";
 import type { ChatCleanup, ChatElements, ChatViewState } from "./chatTypes";
 
 export const VIEW_TYPE_CHAT = "crabby-chat";
@@ -35,6 +36,7 @@ type ObsidianSettingsApi = {
 
 export class ChatView extends ItemView {
   private readonly client: AgentClient;
+  private readonly turnManager: ChatTurnManager;
   private readonly state: ChatViewState = {
     messages: [],
     userMsgRefs: [],
@@ -53,6 +55,7 @@ export class ChatView extends ItemView {
   constructor(leaf: WorkspaceLeaf, private readonly plugin: CrabbyPlugin) {
     super(leaf);
     this.client = new AgentClient(this.plugin.settings.backendUrl);
+    this.turnManager = new ChatTurnManager(this.plugin.settings.backendUrl);
   }
 
   getViewType(): string {
@@ -251,6 +254,7 @@ export class ChatView extends ItemView {
       composer,
       transcript,
       persona,
+      turnManager: this.turnManager,
     });
     const diaryPrompt = createDiaryPrompt({
       app: this.app,
@@ -272,7 +276,17 @@ export class ChatView extends ItemView {
       sessions,
       persona,
       diaryPrompt,
+      turnManager: this.turnManager,
     });
+
+    this.cleanupFns.push(
+      this.turnManager.addStatusListener(() => {
+        turnRunner.refreshCurrentTurnState();
+        if (this.state.sessionPanelOpen) {
+          void sessions.loadSessionList();
+        }
+      }),
+    );
 
     this.cleanupFns.push(
       mountProfileSelect(bottomArea, this.plugin, this.client),
@@ -287,6 +301,7 @@ export class ChatView extends ItemView {
 
     const settingsUpdatedListener = () => {
       this.client.setBaseUrl(this.plugin.settings.backendUrl);
+      this.turnManager.setBaseUrl(this.plugin.settings.backendUrl);
     };
     document.addEventListener(SETTINGS_UPDATED_EVENT, settingsUpdatedListener);
     this.cleanupFns.push(() => {
@@ -362,6 +377,7 @@ export class ChatView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.turnManager.destroy();
     for (const cleanup of this.cleanupFns.splice(0).reverse()) {
       try {
         cleanup();

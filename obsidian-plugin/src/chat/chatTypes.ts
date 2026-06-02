@@ -13,6 +13,7 @@ import type {
   ToolCallPayload,
 } from "../api/client";
 import type CrabbyPlugin from "../main";
+import type { ChatTurnManager } from "./chatTurnManager";
 
 export type ChatRole = "user" | "assistant" | "status";
 
@@ -53,6 +54,7 @@ export interface ChatViewState {
   userMsgRefs: UserMsgRef[];
   toolBlocks: Map<string, HTMLDivElement>;
   toolIdToName: Map<string, string>;
+  /** Current conversation sending state, derived from ChatTurnManager. */
   isSending: boolean;
   isAborted: boolean;
   sessionPanelOpen: boolean;
@@ -148,6 +150,7 @@ export interface ChatTurnRunnerController {
   handleSend(overrideText?: string): Promise<void>;
   handleStop(): void;
   handleSysNotify(event: SystemNotificationEvent): void;
+  refreshCurrentTurnState(): void;
 }
 
 export interface TranscriptDeps extends ChatCommonDeps {}
@@ -156,6 +159,7 @@ export interface SessionDeps extends ChatCommonDeps {
   composer: ChatComposerController;
   transcript: ChatTranscriptController;
   persona: ChatPersonaController;
+  turnManager: ChatTurnManager;
 }
 
 export interface TurnRunnerDeps extends ChatCommonDeps {
@@ -164,6 +168,7 @@ export interface TurnRunnerDeps extends ChatCommonDeps {
   sessions: ChatSessionsController;
   persona: ChatPersonaController;
   diaryPrompt: DiaryPromptController;
+  turnManager: ChatTurnManager;
 }
 
 export type ChatCleanup = () => void;

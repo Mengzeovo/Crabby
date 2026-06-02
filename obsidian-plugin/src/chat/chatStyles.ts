@@ -425,7 +425,9 @@ const CHAT_STYLES = `
   .session-card-badge {
     display: inline-flex;
     align-items: center;
+    width: fit-content;
     margin-top: 4px;
+    margin-right: 4px;
     padding: 1px 6px;
     border-radius: 20px;
     background: rgba(var(--interactive-accent-rgb, 99,135,240), 0.15);
@@ -434,6 +436,22 @@ const CHAT_STYLES = `
     font-weight: 700;
     letter-spacing: 0.03em;
     text-transform: uppercase;
+  }
+  .session-card-runtime.running {
+    background: rgba(219, 165, 24, 0.16);
+    color: #b26b00;
+  }
+  .session-card-runtime.done {
+    background: rgba(34, 156, 86, 0.14);
+    color: #1f8f55;
+  }
+  .session-card-runtime.error {
+    background: rgba(224, 82, 82, 0.14);
+    color: #c33f3f;
+  }
+  .session-card-runtime.aborted {
+    background: rgba(120, 120, 120, 0.14);
+    color: var(--text-muted);
   }
   .session-card-delete {
     display: flex;

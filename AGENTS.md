@@ -309,6 +309,8 @@ Important plugin files and folders:
   composer, assistant rendering, personas, profiles, sessions, current-session
   tree, fork actions, stylesheet injection, turn runner, stop-button handling
   that waits for backend abort acknowledgement before clearing sending state,
+  local cross-session turn management that lets one session continue replying
+  in the background while the visible session sends another turn,
   inline loop-to-diary prompts, and tool-block metadata rendering including
   file-change counts from `metadata.file_changes`. The context/token bar
   separates current context window estimates from provider-returned usage
@@ -493,6 +495,13 @@ npm run start
     sessions.
 19. WebSocket `error` events are reserved for transport/protocol failures.
     Backend-delivered business conditions should use `warning`/`done`.
+20. The Obsidian plugin supports local frontend concurrency across different
+    sessions by running each active chat turn through an isolated client /
+    WebSocket. The visible conversation owns live DOM streaming; when a running
+    session is hidden, the turn continues in the background; returning before
+    completion resumes the accumulated foreground stream, and returning after
+    completion reloads persisted history. A single session is still limited to
+    one active conversation turn at a time.
 
 ## Session And Conversation Rules
 

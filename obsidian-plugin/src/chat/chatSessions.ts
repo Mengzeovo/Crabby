@@ -14,6 +14,7 @@ import {
   parseAssistantContent,
 } from "./chatAssistantContent";
 import { ICON_TRASH } from "./chatIcons";
+import type { TurnRuntimeStatus } from "./chatTurnManager";
 import type {
   ChatSessionsController,
   ForkMessageTarget,
@@ -80,6 +81,19 @@ function getReasoningText(block: Record<string, unknown>): string {
 type ConversationTreeNode = ConversationInfo & {
   children: ConversationTreeNode[];
 };
+
+function sessionStatusLabel(status: TurnRuntimeStatus): string {
+  if (status === "running") {
+    return "回复中";
+  }
+  if (status === "error") {
+    return "失败";
+  }
+  if (status === "aborted") {
+    return "已停止";
+  }
+  return "已完成";
+}
 
 class ForkConversationModal extends Modal {
   private readonly resolve: (value: string | null) => void;
@@ -252,7 +266,16 @@ function buildConversationTree(
 export function createChatSessions(
   deps: SessionDeps,
 ): ChatSessionsController {
-  const { app, client, composer, elements, state, transcript, persona } = deps;
+  const {
+    app,
+    client,
+    composer,
+    elements,
+    state,
+    transcript,
+    persona,
+    turnManager,
+  } = deps;
 
   transcript.setForkHandler((target) => {
     void handleForkMessage(target);
@@ -396,7 +419,10 @@ export function createChatSessions(
     closeSessionPanel();
     closeTreePanel();
 
+    turnManager.setCurrentConversation(null, null);
     client.disconnect();
+    state.isSending = false;
+    state.isAborted = false;
     transcript.clearConversationUi();
     composer.clear();
     persona.setPersonaState(createDefaultPersonaState());
@@ -437,7 +463,9 @@ export function createChatSessions(
         );
       }
 
+      const runtimeStatus = turnManager.getStatus(session.id, conversationId);
       client.setSession(session.id, conversationId);
+      state.isAborted = false;
       persona.setPersonaState(
         session.persona_state ?? createDefaultPersonaState(),
       );
@@ -480,6 +508,33 @@ export function createChatSessions(
 
       if (contextStats) {
         transcript.updateContextBar(contextStats);
+      }
+
+      turnManager.setCurrentConversation(session.id, conversationId);
+      state.isSending = turnManager.isRunning(session.id, conversationId);
+
+      if (runtimeStatus === "running") {
+        transcript.appendMessage(
+          "status",
+          "当前会话仍在回复中，已恢复显示正在生成的内容。",
+          false,
+        );
+      } else if (runtimeStatus === "error") {
+        transcript.appendMessage(
+          "status",
+          "该会话的后台回复失败，请重试或查看后端日志。",
+          false,
+        );
+        turnManager.consumeTerminalStatus(session.id, conversationId);
+      } else if (runtimeStatus === "aborted") {
+        transcript.appendMessage(
+          "status",
+          "该会话的后台回复已停止。",
+          false,
+        );
+        turnManager.consumeTerminalStatus(session.id, conversationId);
+      } else if (runtimeStatus === "done") {
+        turnManager.consumeTerminalStatus(session.id, conversationId);
       }
 
       transcript.scrollToBottom(true);
@@ -648,7 +703,7 @@ export function createChatSessions(
   }
 
   async function handleForkMessage(target: ForkMessageTarget): Promise<void> {
-    if (state.isSending) {
+    if (turnManager.hasRunningSession(client.sessionId)) {
       new Notice("当前正在回复，请先完成后再分叉");
       return;
     }
@@ -707,6 +762,14 @@ export function createChatSessions(
       badge.setText("当前");
     }
 
+    const runtimeStatus = turnManager.getSessionStatus(session.id);
+    if (runtimeStatus) {
+      const statusBadge = contentArea.createEl("span", {
+        cls: `session-card-badge session-card-runtime ${runtimeStatus}`,
+      });
+      statusBadge.setText(sessionStatusLabel(runtimeStatus));
+    }
+
     contentArea.addEventListener("click", () => {
       closeSessionPanel();
       void switchToSession(session);
@@ -720,6 +783,10 @@ export function createChatSessions(
       deleteBtn.innerHTML = ICON_TRASH;
       deleteBtn.addEventListener("click", (evt) => {
         evt.stopPropagation();
+        if (turnManager.hasRunningSession(session.id)) {
+          new Notice("该会话仍在回复中，请完成或停止后再删除。");
+          return;
+        }
         void deleteSessionConfirm(session.id);
       });
     }
@@ -768,7 +835,7 @@ export function createChatSessions(
         if (node.active) {
           return;
         }
-        if (state.isSending) {
+        if (turnManager.hasRunningSession(sessionId)) {
           new Notice("当前正在回复，请先完成后再切换分支");
           return;
         }

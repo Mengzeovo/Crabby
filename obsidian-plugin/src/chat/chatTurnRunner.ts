@@ -20,6 +20,12 @@ import type {
 const AUTO_TRIGGER_MESSAGE =
   "（系统通知：上次投递到后台的任务刚刚完成，请直接根据新注入的 <task_notification> 上下文继续回复我。）";
 
+type HiddenReplayEvent =
+  | { type: "assistant"; content: string }
+  | { type: "tool_start"; name: string; id: string }
+  | { type: "tool_result"; payload: ToolCallPayload }
+  | { type: "warning"; message: string };
+
 export function createChatTurnRunner(
   deps: TurnRunnerDeps,
 ): ChatTurnRunnerController {
@@ -33,7 +39,21 @@ export function createChatTurnRunner(
     persona,
     plugin,
     diaryPrompt,
+    turnManager,
   } = deps;
+
+  function currentConversation(): { sessionId: string; conversationId: string } | null {
+    const sessionId = client.sessionId;
+    const conversationId = client.conversationId;
+    if (!sessionId || !conversationId) {
+      return null;
+    }
+    return { sessionId, conversationId };
+  }
+
+  function isForeground(sessionId: string, conversationId: string): boolean {
+    return turnManager.isCurrent(sessionId, conversationId);
+  }
 
   function setSendingUi(isSending: boolean): void {
     elements.inputEl.disabled = isSending;
@@ -48,6 +68,15 @@ export function createChatTurnRunner(
     elements.sendBtn.classList.remove("is-stop");
     elements.sendBtn.innerHTML = ICON_SEND;
     elements.sendBtn.setAttribute("aria-label", "发送");
+  }
+
+  function refreshCurrentTurnState(): void {
+    const current = currentConversation();
+    const isSending = current
+      ? turnManager.isRunning(current.sessionId, current.conversationId)
+      : false;
+    state.isSending = isSending;
+    setSendingUi(isSending);
   }
 
   async function handleSendRest(
@@ -119,7 +148,11 @@ export function createChatTurnRunner(
             state.personaState.manual_persona_id;
           return nextPayload;
         })();
-    if (!payload || state.isSending) {
+    if (!payload) {
+      return;
+    }
+    refreshCurrentTurnState();
+    if (state.isSending) {
       return;
     }
     diaryPrompt.hide();
@@ -142,6 +175,25 @@ export function createChatTurnRunner(
         false,
       );
     }
+
+    let current = currentConversation();
+    if (!current) {
+      const session = await client.createSession();
+      current = {
+        sessionId: session.id,
+        conversationId: session.active_conversation_id,
+      };
+      turnManager.setCurrentConversation(current.sessionId, current.conversationId);
+    }
+    if (turnManager.hasRunningSession(current.sessionId)) {
+      new Notice("该会话仍在回复中，请完成或停止后再发送。");
+      refreshCurrentTurnState();
+      return;
+    }
+    payload.request.session_id = current.sessionId;
+    payload.request.conversation_id = current.conversationId;
+    const turnSessionId = current.sessionId;
+    const turnConversationId = current.conversationId;
 
     state.isSending = true;
     state.isAborted = false;
@@ -172,11 +224,21 @@ export function createChatTurnRunner(
     let streamingRenderer: StreamingAssistantContentRenderer | null = null;
     let streamingRenderFrame: number | null = null;
     let loopStopResult: ToolCallPayload | null = null;
+    let hiddenReplayEvents: HiddenReplayEvent[] = [];
+    let activeToolReplay: { name: string; id: string } | null = null;
 
     const buildCurrentAssistantContent = (): string =>
       buildAssistantContent(reasoningAccumulated, accumulated);
 
+    const ensureStreamingMessageAttached = (): void => {
+      if (msgEl && !elements.messagesEl.contains(msgEl)) {
+        msgEl = null;
+        streamingRenderer = null;
+      }
+    };
+
     const renderStreamingMessageNow = (): void => {
+      ensureStreamingMessageAttached();
       const content = buildCurrentAssistantContent();
       fullAccumulated = content;
       if (!content && !msgEl) {
@@ -223,24 +285,106 @@ export function createChatTurnRunner(
       }
     };
 
+    const isTurnForeground = (): boolean =>
+      isForeground(turnSessionId, turnConversationId);
+
+    const resetStreamingBuffer = (): void => {
+      accumulated = "";
+      reasoningAccumulated = "";
+      fullAccumulated = "";
+      streamingRenderer = null;
+      msgEl = null;
+    };
+
+    const queueHiddenAssistantSegment = (): void => {
+      const assistantContent = buildCurrentAssistantContent();
+      if (assistantContent.trim()) {
+        hiddenReplayEvents.push({
+          type: "assistant",
+          content: assistantContent,
+        });
+      }
+    };
+
+    const replayHiddenEvents = (): void => {
+      if (
+        (!hiddenReplayEvents.length && !activeToolReplay) ||
+        !isTurnForeground()
+      ) {
+        return;
+      }
+      const events = hiddenReplayEvents;
+      hiddenReplayEvents = [];
+      const hasQueuedActiveToolStart =
+        activeToolReplay !== null &&
+        events.some(
+          (event) =>
+            event.type === "tool_start" && event.id === activeToolReplay?.id,
+        );
+      if (activeToolReplay && !hasQueuedActiveToolStart) {
+        transcript.beginTool(activeToolReplay.name, activeToolReplay.id);
+      }
+      for (const event of events) {
+        if (event.type === "assistant") {
+          transcript.appendMessage("assistant", event.content, true);
+        } else if (event.type === "tool_start") {
+          activeToolReplay = { name: event.name, id: event.id };
+          transcript.beginTool(event.name, event.id);
+        } else if (event.type === "tool_result") {
+          transcript.completeTool(event.payload);
+          const resultId = event.payload.tool_use_id ?? event.payload.id ?? null;
+          if (resultId && activeToolReplay?.id === resultId) {
+            activeToolReplay = null;
+          }
+        } else if (event.type === "warning") {
+          transcript.appendMessage("status", event.message, false);
+        }
+      }
+    };
+
     try {
-      await client.streamChat(payload.request, {
+      const turnHandle = turnManager.startTurn({
+        sessionId: turnSessionId,
+        conversationId: turnConversationId,
+        payload: payload.request,
+        callbacks: {
+        onForeground: () => {
+          replayHiddenEvents();
+          if (msgEl || buildCurrentAssistantContent().trim()) {
+            flushStreamingMessage();
+          }
+        },
+
         onAssistantPrefix: (prefix: string) => {
           accumulated += prefix;
+          fullAccumulated = buildCurrentAssistantContent();
+          if (!isTurnForeground()) return;
           renderStreamingMessage();
         },
 
         onReasoningDelta: (delta: string) => {
           reasoningAccumulated += delta;
+          fullAccumulated = buildCurrentAssistantContent();
+          if (!isTurnForeground()) return;
           renderStreamingMessage();
         },
 
         onTextDelta: (delta: string) => {
           accumulated += delta;
+          fullAccumulated = buildCurrentAssistantContent();
+          if (!isTurnForeground()) return;
           renderStreamingMessage();
         },
 
         onToolStart: (name: string, id: string) => {
+          fullAccumulated = buildCurrentAssistantContent();
+          if (!isTurnForeground()) {
+            queueHiddenAssistantSegment();
+            resetStreamingBuffer();
+            activeToolReplay = { name, id };
+            hiddenReplayEvents.push({ type: "tool_start", name, id });
+            return;
+          }
           if (msgEl || buildCurrentAssistantContent().trim()) {
             flushStreamingMessage();
           }
@@ -255,22 +399,31 @@ export function createChatTurnRunner(
             msgEl.remove();
           }
 
-          accumulated = "";
-          reasoningAccumulated = "";
-          fullAccumulated = "";
-          streamingRenderer = null;
-          msgEl = null;
+          resetStreamingBuffer();
+          activeToolReplay = { name, id };
           transcript.beginTool(name, id);
         },
 
         onToolResult: (payload: ToolCallPayload) => {
-          transcript.completeTool(payload);
           if (isLoopStopResult(payload)) {
             loopStopResult = payload;
+          }
+          const resultId = payload.tool_use_id ?? payload.id ?? null;
+          if (!isTurnForeground()) {
+            hiddenReplayEvents.push({ type: "tool_result", payload });
+            return;
+          }
+          transcript.completeTool(payload);
+          if (resultId && activeToolReplay?.id === resultId) {
+            activeToolReplay = null;
           }
         },
 
         onWarning: (message: string) => {
+          if (!isTurnForeground()) {
+            hiddenReplayEvents.push({ type: "warning", message });
+            return;
+          }
           transcript.appendMessage("status", message, false);
         },
 
@@ -282,6 +435,9 @@ export function createChatTurnRunner(
           context,
           personaState,
         ) => {
+          if (!isTurnForeground()) {
+            return;
+          }
           if (state.isAborted) {
             return;
           }
@@ -335,6 +491,7 @@ export function createChatTurnRunner(
         },
 
         onError: (payload: { message: string; code: string }) => {
+          if (!isTurnForeground()) return;
           const message = payload.message;
           if (state.isAborted) {
             return;
@@ -352,9 +509,15 @@ export function createChatTurnRunner(
             `❌ 出错: ${message}\n\n请检查后端是否可访问，或查看后端日志。`,
           );
         },
+        },
       });
+      if (!turnHandle) {
+        new Notice("该会话仍在回复中，请完成或停止后再发送。");
+        return;
+      }
+      await turnHandle.finished;
     } catch (err) {
-      if (!state.isAborted) {
+      if (!state.isAborted && isTurnForeground()) {
         if (msgEl || buildCurrentAssistantContent().trim()) {
           flushStreamingMessage();
         }
@@ -374,12 +537,13 @@ export function createChatTurnRunner(
         }
         transcript.removeTransientUi();
         transcript.clearToolTracking();
-        if (shouldFallbackToRest(err)) {
+        if (shouldFallbackToRest(err) && isTurnForeground()) {
           await handleSendRest(payload, backfillUserMessageId);
         }
       }
     } finally {
-      if (state.isAborted) {
+      const foreground = isTurnForeground();
+      if (state.isAborted && foreground) {
         if (msgEl || buildCurrentAssistantContent().trim()) {
           flushStreamingMessage();
         }
@@ -408,15 +572,20 @@ export function createChatTurnRunner(
       }
 
       cancelStreamingMessageRender();
-      state.isAborted = false;
-      state.isSending = false;
-      setSendingUi(false);
+      if (foreground) {
+        state.isAborted = false;
+        refreshCurrentTurnState();
+      }
     }
   }
 
   function handleStop(): void {
+    const current = currentConversation();
+    if (!current) {
+      return;
+    }
     state.isAborted = true;
-    void client.abort();
+    void turnManager.abort(current.sessionId, current.conversationId);
   }
 
   function handleSysNotify(event: SystemNotificationEvent): void {
@@ -432,6 +601,7 @@ export function createChatTurnRunner(
     handleSend,
     handleStop,
     handleSysNotify,
+    refreshCurrentTurnState,
   };
 }
 
