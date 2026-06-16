@@ -332,8 +332,11 @@ async def context_stats(session_id: str, conversation_id: str) -> dict[str, Any]
     if not _session_store.conversation_exists(session.id, safe_conversation_id):
         raise HTTPException(404, f"Conversation {conversation_id} not found")
 
-    tools_schema = _registry.to_anthropic_tools()
-    tool_catalog = _registry.build_tool_catalog()
+    tools_schema, tool_catalog = _build_tools_schema_and_catalog(
+        [],
+        session_id=session.id,
+        search_service=_search_service,
+    )
     system = build_system_prompt(
         active_persona=_resolve_session_persona(session),
         tool_catalog=tool_catalog,

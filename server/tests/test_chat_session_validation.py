@@ -4,20 +4,46 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 from api import rest as rest_api
 from attachment_store import AttachmentStore
+from llm.context_meter import ContextBreakdown
 from memory import SessionStore
 from skills import SkillRegistry
+from tools.base import Context, Tool, ToolResult
 from tools.registry import ToolRegistry
 
 
-def _build_app(tmp_path):
+class _NoopInput(BaseModel):
+    value: str = ""
+
+
+class _EagerTool(Tool):
+    name = "eager_tool"
+    description = "Eager tool."
+    input_schema = _NoopInput
+    always_eager = True
+
+    async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
+        return ToolResult(output="eager")
+
+
+class _DeferredTool(Tool):
+    name = "deferred_tool"
+    description = "Deferred tool."
+    input_schema = _NoopInput
+
+    async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
+        return ToolResult(output="deferred")
+
+
+def _build_app(tmp_path, registry: ToolRegistry | None = None):
     storage_dir = tmp_path / "sessions"
     store = SessionStore(storage_dir=storage_dir)
     attachment_store = AttachmentStore(storage_dir=tmp_path / "attachments")
 
-    rest_api.set_registry(ToolRegistry())
+    rest_api.set_registry(registry or ToolRegistry())
     rest_api.set_session_store(store)
     rest_api.set_skill_registry(SkillRegistry())
     rest_api.set_attachment_store(attachment_store)
@@ -67,6 +93,35 @@ def test_chat_rejects_unknown_conversation_id(tmp_path):
         )
 
     assert response.status_code == 404
+
+
+def test_context_stats_uses_per_turn_tool_schema(monkeypatch, tmp_path):
+    registry = ToolRegistry()
+    registry.register(_EagerTool())
+    registry.register(_DeferredTool())
+
+    captured: dict[str, list[str]] = {}
+
+    def fake_measure_context(system, tools_schema, messages):
+        captured["tool_names"] = [schema["name"] for schema in tools_schema]
+        return ContextBreakdown(schema_tokens=len(tools_schema))
+
+    monkeypatch.setattr(rest_api, "measure_context", fake_measure_context)
+
+    app, store, _storage_dir = _build_app(tmp_path, registry=registry)
+    session = store.create("session-1")
+    session.add_user_message("hello")
+    session.actual_usage_total = {"total_tokens": 3}
+    store.persist(session)
+
+    with TestClient(app) as client:
+        response = client.get("/sessions/session-1/conversations/root/context-stats")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert captured["tool_names"] == ["eager_tool"]
+    assert body["schema_tokens"] == 1
+    assert body["cumulative_usage"]["total_tokens"] == 3
 
 
 def test_chat_with_session_id_writes_active_conversation(monkeypatch, tmp_path):
