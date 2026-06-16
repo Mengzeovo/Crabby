@@ -74,6 +74,7 @@ class GrepTool(Tool):
     """
 
     name = "grep"
+    always_eager = True
     description = (
         "在 Vault 文件中按正则表达式搜索内容。"
         "返回匹配行及其文件路径和行号。"

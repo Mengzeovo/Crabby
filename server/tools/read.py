@@ -85,6 +85,7 @@ class ReadTool(Tool):
     """
 
     name = "read"
+    always_eager = True
     description = (
         "读取 Vault 中指定文件的内容。"
         "file_path 是相对于 Vault 根目录的路径，例如 'Home.md' 或 '0-日常/2026-04-05.md'。"

@@ -328,6 +328,7 @@ def create_default_registry() -> ToolRegistry:
     from tools.read import ReadTool
     from tools.task_query import TaskQueryTool
     from tools.tool_result_read import ToolResultReadTool
+    from tools.watcher_query import WatcherQueryTool
 
     registry = ToolRegistry()
 
@@ -339,19 +340,21 @@ def create_default_registry() -> ToolRegistry:
     search_service = ToolSearchService(registry)
     registry.register(ToolSearchTool(search_service))  # always_eager=True by default
 
-    # Core eager tools
-    registry.register(ReadTool())          # always_eager=True
-    registry.register(GrepTool())          # always_eager=True
-    registry.register(GlobTool())          # always_eager=True
+    # Core eager tools (always_eager=True on the tool class) — exposed on every
+    # turn so common file operations never need a tool_search round-trip first.
+    registry.register(ReadTool())
+    registry.register(GrepTool())
+    registry.register(GlobTool())
+    registry.register(EditTool())
 
-    # Deferred tools (always_eager=False, the default)
+    # Deferred tools (always_eager=False, the default) — discovered via tool_search.
     registry.register(ObsidianSearchTool())
     registry.register(CrabbySettingsTool())
     registry.register(DiaryReadTool())
     registry.register(DiaryWriteTool())
-    registry.register(EditTool())
     registry.register(TaskQueryTool())
     registry.register(ToolResultReadTool())
+    registry.register(WatcherQueryTool())
 
     try:
         from tools.fetch import FetchTool

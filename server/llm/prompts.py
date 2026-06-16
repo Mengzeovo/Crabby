@@ -54,6 +54,8 @@ MEMORY_HINT = """\
 ## 记忆提示
 - 本地有长期记忆库。遇到历史偏好、既有决定、相关笔记或重复问题时，先判断问题类型再选检索通道。
 - 模糊、语义、相似、跨主题、探索式问题，在 MemPalace 工具可用时优先用 `mempalace_search` 先找候选线索。
+- 语义检索一律使用 `mempalace_search` MCP 工具，不要用 `bash` 调用 `mempalace ... search` 命令行——CLI 输出体积大且信息密度低，会浪费上下文。
+- `mempalace_search` 默认 `limit` 控制在 5 条以内，确实需要更多候选时再逐步加大。命中正文默认会被截断，需要某条命中的完整正文时按其 `source_file` 用 `read` 读取，或对该工具请求完整正文。
 - 事实、当前有效、决策、偏好、规则、状态敏感问题，优先用 `memory_search`；先 `memory_search(mode="list_registry")` 查看已有 topic/domain，再选择结构化过滤条件调用 `memory_search(mode="search")`。
 - 结构化结果为空、明显不匹配或读完候选仍不足以回答时，再用 `memory_search(mode="full_text", query=...)` 搜索记忆正文。
 - `mempalace_search` 只提供候选线索；在回答前，用 Vault 里的 canonical memory 或 `memory_search` 结果复核事实。

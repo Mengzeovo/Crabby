@@ -78,7 +78,7 @@ class DiaryWriteTool(Tool):
     )
     input_schema = DiaryWriteInput
     is_read_only = False
-    always_eager = True
+    always_eager = False
 
     def check_permission(self, params: BaseModel, ctx: Context) -> bool:
         return isinstance(params, DiaryWriteInput) and ctx.permission_level != "restricted"
@@ -206,7 +206,7 @@ class DiaryReadTool(Tool):
     description = "读取指定周期的日记文件，按插件设置解析目标路径。"
     input_schema = DiaryReadInput
     is_read_only = True
-    always_eager = True
+    always_eager = False
 
     def check_permission(self, params: BaseModel, ctx: Context) -> bool:
         return isinstance(params, DiaryReadInput)

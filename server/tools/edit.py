@@ -129,6 +129,7 @@ class EditTool(Tool):
     """
 
     name = "edit"
+    always_eager = True
     description = (
         "修改 Vault 中指定文件的内容。\n"
         "你需要提供准确的 old_string 以及要替换成的 new_string。\n"

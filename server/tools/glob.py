@@ -33,7 +33,7 @@ BLOCKED_DIRS = {
 }
 
 # 单次查询返回的最大文件数，防止结果集过大
-MAX_FILES = 500
+MAX_FILES = 100
 
 
 class GlobInput(BaseModel):
@@ -62,11 +62,14 @@ class GlobTool(Tool):
     """
 
     name = "glob"
+    always_eager = True
     description = (
         "按文件名 glob 模式查找 Vault 中的文件。"
         "返回匹配文件的相对路径列表。"
         "适合查找特定文件、列出目录内容、发现文件结构。"
         "例如：'**/*.md' 查找所有 Markdown，'0-日常/01. Daily/**' 列出所有日记。"
+        "过宽的 pattern（如 '**/*'）会返回大量文件并被截断，"
+        "尽量用更具体的 pattern 或 path 缩小范围。"
     )
     input_schema = GlobInput
     is_read_only = True
