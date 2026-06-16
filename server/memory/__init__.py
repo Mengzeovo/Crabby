@@ -98,13 +98,25 @@ def _is_tool_result_content(content: Any) -> bool:
     )
 
 
-def _content_for_model(content: Any) -> Any:
+def _content_for_model(content: Any, *, role: str = "") -> Any:
     """Strip UI-only fields before sending persisted messages to providers."""
     if not isinstance(content, list):
         return content
 
+    assistant_has_tool_use = role == "assistant" and any(
+        isinstance(block, dict) and block.get("type") == "tool_use"
+        for block in content
+    )
+
     stripped: list[Any] = []
     for block in content:
+        if (
+            role == "assistant"
+            and not assistant_has_tool_use
+            and isinstance(block, dict)
+            and block.get("type") == "reasoning_details"
+        ):
+            continue
         if isinstance(block, dict) and block.get("type") == "tool_result":
             stripped.append(
                 {
@@ -569,7 +581,10 @@ class Session:
             converted.append(
                 {
                     "role": role,
-                    "content": _content_for_model(message.get("content", "")),
+                    "content": _content_for_model(
+                        message.get("content", ""),
+                        role=role,
+                    ),
                 }
             )
         return converted

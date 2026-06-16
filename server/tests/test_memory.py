@@ -142,6 +142,73 @@ def test_tool_result_ui_payload_is_not_sent_to_model(tmp_path):
     ]
 
 
+def test_final_assistant_reasoning_is_not_sent_to_model(tmp_path):
+    store = SessionStore(storage_dir=tmp_path)
+    session = store.create("reasoning-final")
+    session.add_assistant_message(
+        [
+            {
+                "type": "reasoning_details",
+                "reasoning_details": [{"text": "private chain"}],
+            },
+            {"type": "text", "text": "visible answer"},
+        ]
+    )
+    store.persist(session)
+
+    ui_messages = store.get_ui_messages("reasoning-final", "root")
+    model_messages = store.get_model_messages("reasoning-final", None, "root")
+
+    assert ui_messages is not None
+    assert ui_messages[0]["content"][0]["type"] == "reasoning_details"
+    assert model_messages == [
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "visible answer"}],
+        }
+    ]
+
+
+def test_tool_use_assistant_reasoning_is_sent_to_model(tmp_path):
+    store = SessionStore(storage_dir=tmp_path)
+    session = store.create("reasoning-tool-use")
+    session.add_assistant_message(
+        [
+            {
+                "type": "reasoning_details",
+                "reasoning_details": [{"text": "tool thinking"}],
+            },
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "lookup",
+                "input": {"q": "x"},
+            },
+        ]
+    )
+    store.persist(session)
+
+    model_messages = store.get_model_messages("reasoning-tool-use", None, "root")
+
+    assert model_messages == [
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "reasoning_details",
+                    "reasoning_details": [{"text": "tool thinking"}],
+                },
+                {
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "lookup",
+                    "input": {"q": "x"},
+                },
+            ],
+        }
+    ]
+
+
 def test_session_persists_actual_usage_total(tmp_path):
     store = SessionStore(storage_dir=tmp_path)
     session = store.create("usage")

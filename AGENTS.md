@@ -529,7 +529,9 @@ npm run start
   expansion. `tool_result_read` is limited to the current session/conversation
   from the execution context and must not accept model-supplied session or
   conversation overrides. Model-message materialization strips UI-only fields
-  before provider requests.
+  before provider requests and also strips assistant `reasoning_details` from
+  assistant messages that do not contain `tool_use`; assistant tool-call
+  messages keep reasoning details for provider tool-continuation compatibility.
 
 ## Persona And Skill Rules
 
