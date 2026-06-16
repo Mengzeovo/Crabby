@@ -164,7 +164,9 @@ Important backend files and folders:
 - `server/llm/profile_store.py`: persists backend-owned profiles in `.env`.
 - `server/llm/profile_probe.py`: validates/tests active profiles.
 - `server/llm/agent_runner.py`: shared non-streaming agent runner for REST,
-  fallback WebSocket paths, cron, and other background turns.
+  fallback WebSocket paths, cron, and other background turns. It accumulates
+  provider-returned usage across tool-loop model calls and records it on the
+  session before returning or exiting at the tool-iteration limit.
 - `server/llm/tools_schema.py`: shared helper for assembling per-round eager
   tool schemas plus the full system-prompt tool catalog. It applies skill
   `allowed_tools` filters when supplied and promotes deferred tools discovered
@@ -862,8 +864,10 @@ Use the smallest relevant verification set:
   reload.
 - The backend system prompt dynamically injects runtime platform label,
   `sys.platform`, and shell used by `bash`.
-- REST chat, WebSocket chat, and cron turns share
-  `server/llm/agent_runner.py`'s `DEFAULT_MAX_AGENT_ITERATIONS`, currently 200.
+- REST chat and WebSocket chat use
+  `server/llm/agent_runner.py`'s `DEFAULT_MAX_AGENT_ITERATIONS`, currently 80.
+  Non-interactive Loop daemon jobs pass their own 40-iteration cap to keep
+  scheduled background work bounded.
 - WebSocket client fallback to REST is only for transport failures, not
   backend-delivered stream errors.
 - Thinking/reasoning controls are opt-in and provider-specific.

@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from config import settings
 from llm.client import chat_completion
 from llm.tool_executor import execute_tool_call
 from llm.tools_schema import build_per_turn_tools
+from llm.token_usage import TokenUsageAccumulator, record_turn_usage
 from tools.base import Context
 from tools.registry import TOOL_EXPOSURE_CHAT, ToolRegistry
 
@@ -19,7 +21,7 @@ if TYPE_CHECKING:
 
 
 TOOL_ITERATION_LIMIT_MESSAGE = "Tool call iteration limit exceeded. Please try again."
-DEFAULT_MAX_AGENT_ITERATIONS = 200
+DEFAULT_MAX_AGENT_ITERATIONS = 80
 
 
 def _refresh_tools_schema(
@@ -60,61 +62,67 @@ async def run_agent_turn(
 ) -> str:
     """Run a full non-streaming agent turn and persist messages into session."""
     allowed_names = getattr(ctx, "allowed_tool_names", None)
-    for _ in range(max_iterations):
-        tools_schema = _refresh_tools_schema(
-            registry,
-            tools_schema,
-            session_id,
-            search_service,
-            allowed_names,
-        )
-        resp = await chat_completion(
-            messages=session.get_messages(),
-            system=system_prompt,
-            tools=tools_schema if tools_schema else None,
-        )
+    usage_accumulator = TokenUsageAccumulator(provider=settings.llm_provider)
 
-        stop_reason = resp.get("stop_reason", "end_turn")
-        content_blocks = resp.get("content", [])
-
-        if stop_reason != "tool_use":
-            session.add_assistant_message(content_blocks)
-            return _extract_text(content_blocks)
-
-        session.add_assistant_message(content_blocks)
-        tool_results = []
-
-        for block in content_blocks:
-            if block.get("type") != "tool_use":
-                continue
-
-            tool_name = block["name"]
-            tool_input = block["input"]
-            tool_id = block["id"]
-
-            llm_text, ui_payload = await execute_tool_call(
+    try:
+        for _ in range(max_iterations):
+            tools_schema = _refresh_tools_schema(
                 registry,
-                tool_name,
-                tool_input,
-                ctx=ctx,
-                tool_id=tool_id,
-                allowed_exposures={TOOL_EXPOSURE_CHAT},
+                tools_schema,
+                session_id,
+                search_service,
+                allowed_names,
             )
-            tool_results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tool_id,
-                    "content": llm_text,
-                    "ui": ui_payload,
-                }
+            resp = await chat_completion(
+                messages=session.get_messages(),
+                system=system_prompt,
+                tools=tools_schema if tools_schema else None,
             )
+            usage_accumulator.add(resp.get("usage"))
 
-        session.add_tool_result(tool_results)
+            stop_reason = resp.get("stop_reason", "end_turn")
+            content_blocks = resp.get("content", [])
 
-    session.add_assistant_message(
-        [{"type": "text", "text": TOOL_ITERATION_LIMIT_MESSAGE}]
-    )
-    return TOOL_ITERATION_LIMIT_MESSAGE
+            if stop_reason != "tool_use":
+                session.add_assistant_message(content_blocks)
+                return _extract_text(content_blocks)
+
+            session.add_assistant_message(content_blocks)
+            tool_results = []
+
+            for block in content_blocks:
+                if block.get("type") != "tool_use":
+                    continue
+
+                tool_name = block["name"]
+                tool_input = block["input"]
+                tool_id = block["id"]
+
+                llm_text, ui_payload = await execute_tool_call(
+                    registry,
+                    tool_name,
+                    tool_input,
+                    ctx=ctx,
+                    tool_id=tool_id,
+                    allowed_exposures={TOOL_EXPOSURE_CHAT},
+                )
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_id,
+                        "content": llm_text,
+                        "ui": ui_payload,
+                    }
+                )
+
+            session.add_tool_result(tool_results)
+
+        session.add_assistant_message(
+            [{"type": "text", "text": TOOL_ITERATION_LIMIT_MESSAGE}]
+        )
+        return TOOL_ITERATION_LIMIT_MESSAGE
+    finally:
+        record_turn_usage(session, usage_accumulator)
 
 
 def _extract_text(content_blocks: list[dict[str, Any]]) -> str:

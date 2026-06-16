@@ -27,6 +27,8 @@ class EchoTool(Tool):
 
 
 async def test_run_agent_turn_saves_final_assistant_message(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(agent_runner.settings, "llm_provider", "deepseek")
+
     async def fake_chat_completion(
         *,
         messages: list[dict[str, Any]],
@@ -36,6 +38,13 @@ async def test_run_agent_turn_saves_final_assistant_message(monkeypatch, tmp_pat
         return {
             "stop_reason": "end_turn",
             "content": [{"type": "text", "text": "done"}],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 3,
+                "total_tokens": 13,
+                "prompt_cache_hit_tokens": 7,
+                "prompt_cache_miss_tokens": 3,
+            },
         }
 
     monkeypatch.setattr(agent_runner, "chat_completion", fake_chat_completion)
@@ -53,12 +62,26 @@ async def test_run_agent_turn_saves_final_assistant_message(monkeypatch, tmp_pat
     assert session.messages[0]["role"] == "assistant"
     assert session.messages[0]["content"] == [{"type": "text", "text": "done"}]
     assert session.messages[0]["message_id"].startswith("m_")
+    assert session.actual_usage_total == {
+        "call_count": 1,
+        "prompt_tokens": 10,
+        "completion_tokens": 3,
+        "total_tokens": 13,
+        "reasoning_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "prompt_cache_hit_tokens": 7,
+        "prompt_cache_miss_tokens": 3,
+        "prompt_cached_tokens": 0,
+    }
 
 
 async def test_run_agent_turn_executes_tool_then_final_reply(
     monkeypatch,
     tmp_path: Path,
 ):
+    monkeypatch.setattr(agent_runner.settings, "llm_provider", "deepseek")
+
     responses = [
         {
             "stop_reason": "tool_use",
@@ -70,10 +93,24 @@ async def test_run_agent_turn_executes_tool_then_final_reply(
                     "input": {"text": "hello"},
                 }
             ],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 3,
+                "total_tokens": 13,
+                "prompt_cache_hit_tokens": 6,
+                "prompt_cache_miss_tokens": 4,
+            },
         },
         {
             "stop_reason": "end_turn",
             "content": [{"type": "text", "text": "final"}],
+            "usage": {
+                "prompt_tokens": 20,
+                "completion_tokens": 4,
+                "total_tokens": 24,
+                "prompt_cache_hit_tokens": 15,
+                "prompt_cache_miss_tokens": 5,
+            },
         },
     ]
 
@@ -144,12 +181,25 @@ async def test_run_agent_turn_executes_tool_then_final_reply(
     assert session.messages[2]["role"] == "assistant"
     assert session.messages[2]["content"] == [{"type": "text", "text": "final"}]
     assert session.messages[2]["message_id"].startswith("m_")
+    assert session.actual_usage_total == {
+        "call_count": 2,
+        "prompt_tokens": 30,
+        "completion_tokens": 7,
+        "total_tokens": 37,
+        "reasoning_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "prompt_cache_hit_tokens": 21,
+        "prompt_cache_miss_tokens": 9,
+        "prompt_cached_tokens": 0,
+    }
 
 
-async def test_run_agent_turn_default_iteration_limit_is_200(
+async def test_run_agent_turn_default_iteration_limit_is_80(
     monkeypatch,
     tmp_path: Path,
 ):
+    monkeypatch.setattr(agent_runner.settings, "llm_provider", "deepseek")
     calls = 0
 
     async def fake_chat_completion(
@@ -170,6 +220,11 @@ async def test_run_agent_turn_default_iteration_limit_is_200(
                     "input": {},
                 }
             ],
+            "usage": {
+                "prompt_tokens": 1,
+                "completion_tokens": 0,
+                "total_tokens": 1,
+            },
         }
 
     monkeypatch.setattr(agent_runner, "chat_completion", fake_chat_completion)
@@ -184,5 +239,7 @@ async def test_run_agent_turn_default_iteration_limit_is_200(
     )
 
     assert calls == agent_runner.DEFAULT_MAX_AGENT_ITERATIONS
-    assert calls == 200
+    assert calls == 80
     assert reply == agent_runner.TOOL_ITERATION_LIMIT_MESSAGE
+    assert session.actual_usage_total["call_count"] == 80
+    assert session.actual_usage_total["total_tokens"] == 80

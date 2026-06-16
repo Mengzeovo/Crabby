@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 _job_queue: asyncio.Queue | None = None
 _running_tasks: list[asyncio.Task] = []
+LOOP_MAX_AGENT_ITERATIONS = 40
 
 
 def start_loop_daemon(
@@ -171,7 +172,7 @@ async def _execute_loop_job(
     runtime_data_path: Path | None = None,
 ) -> None:
     """Execute a non-interactive loop job in an isolated session."""
-    from llm.agent_runner import DEFAULT_MAX_AGENT_ITERATIONS, run_agent_turn
+    from llm.agent_runner import run_agent_turn
     from llm.prompts import build_system_prompt
     from llm.session_activity import start_session_activity, stop_session_activity
     from llm.tool_executor import build_default_context
@@ -181,6 +182,8 @@ async def _execute_loop_job(
     # Loop jobs use empty session_id to participate in the global refcount,
     # ensuring they wait for the system to be globally idle before running.
     start_session_activity("loop_job")
+
+    session = None
 
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -213,7 +216,7 @@ async def _execute_loop_job(
             system_prompt=system,
             tools_schema=eager_schemas,
             ctx=ctx,
-            max_iterations=DEFAULT_MAX_AGENT_ITERATIONS,
+            max_iterations=LOOP_MAX_AGENT_ITERATIONS,
             search_service=search_service,
             session_id=isolated_session_id,
         )
@@ -235,6 +238,14 @@ async def _execute_loop_job(
 
     except Exception:
         logger.exception("Loop: job [%s] execution error", job.id)
+        if session is not None:
+            try:
+                session_store.persist(session)
+            except Exception:
+                logger.exception(
+                    "Loop: failed to persist partial session for job [%s]",
+                    job.id,
+                )
         if not job.recurring:
             update_last_fired(
                 job.id,
