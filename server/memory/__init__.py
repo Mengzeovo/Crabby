@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from attachment_store import AttachmentStore
+from external_projects import DEFAULT_ACCESS_LEVEL, normalize_access_level
 from personas import PersonaState
 from user_turn import PreparedTurn, build_user_message_content
 
@@ -32,7 +33,7 @@ _current_vault_path: Path | None = None
 
 _SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 ROOT_CONVERSATION_ID = "root"
-SESSION_SCHEMA_VERSION = 2
+SESSION_SCHEMA_VERSION = 3
 DEFAULT_BRANCH_CACHE_TTL_SECONDS = 30 * 60
 DEFAULT_BRANCH_CACHE_MAX_BYTES = 64 * 1024 * 1024
 
@@ -429,6 +430,10 @@ class Session:
     """ID of the currently active interactive loop for this session, if any."""
     vault_path: Path | None = None
     """Vault root path used to derive runtime data directories. Set at Session creation."""
+    external_project_path: str | None = None
+    """激活的外部项目目录绝对路径；None 表示纯 Vault 会话（默认）。"""
+    external_access_level: str = DEFAULT_ACCESS_LEVEL
+    """外部项目访问等级：read-only / workspace-write / full-access。"""
     conversation_index: dict[str, ConversationRecord] = field(
         default_factory=dict,
         repr=False,
@@ -448,6 +453,9 @@ class Session:
         self.auto_save_checkpoints = _normalize_auto_save_checkpoints(
             self.auto_save_checkpoints
         )
+        self.external_access_level = normalize_access_level(self.external_access_level)
+        if self.external_project_path is not None:
+            self.external_project_path = str(self.external_project_path).strip() or None
         # Auto-set vault_path from global state if not already set.
         if self.vault_path is None:
             self.vault_path = _current_vault_path
@@ -701,6 +709,8 @@ class Session:
             "auto_save_checkpoints": self.auto_save_checkpoints,
             "active_loop_id": self.active_loop_id,
             "vault_path": str(self.vault_path) if self.vault_path else None,
+            "external_project_path": self.external_project_path,
+            "external_access_level": self.external_access_level,
         }
 
     def to_manifest_dict(self) -> dict[str, Any]:
@@ -721,6 +731,8 @@ class Session:
             "auto_save_checkpoints": self.auto_save_checkpoints,
             "active_loop_id": self.active_loop_id,
             "vault_path": str(self.vault_path) if self.vault_path else None,
+            "external_project_path": self.external_project_path,
+            "external_access_level": self.external_access_level,
             "conversations": {
                 conversation.id: conversation.to_manifest_dict()
                 for conversation in conversation_index.values()
@@ -782,6 +794,9 @@ class Session:
             ),
             active_loop_id=data.get("active_loop_id"),
             vault_path=resolved_vp,
+            external_project_path=data.get("external_project_path"),
+            external_access_level=data.get("external_access_level")
+            or DEFAULT_ACCESS_LEVEL,
         )
 
     @classmethod
@@ -831,6 +846,9 @@ class Session:
             conversation_index=conversation_index,
             active_loop_id=manifest.get("active_loop_id"),
             vault_path=resolved_vp,
+            external_project_path=manifest.get("external_project_path"),
+            external_access_level=manifest.get("external_access_level")
+            or DEFAULT_ACCESS_LEVEL,
         )
 
     def _derive_title_from_user_message(self, message: dict[str, Any]) -> str:

@@ -248,7 +248,7 @@ def test_session_persists_manifest_and_root_conversation(tmp_path):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     conversation = json.loads(conversation_path.read_text(encoding="utf-8"))
 
-    assert manifest["schema_version"] == 2
+    assert manifest["schema_version"] == 3
     assert manifest["root_conversation_id"] == "root"
     assert manifest["active_conversation_id"] == "root"
     assert manifest["conversations"]["root"]["message_count"] == 1
@@ -292,6 +292,44 @@ def test_session_persists_auto_save_checkpoints(tmp_path):
 
     assert reloaded is not None
     assert reloaded.get_auto_save_checkpoint("root") == checkpoint
+
+
+def test_session_persists_external_project_fields(tmp_path):
+    store = SessionStore(storage_dir=tmp_path)
+    session = store.create("external-session")
+    session.external_project_path = "d:/code/Demo"
+    session.external_access_level = "full-access"
+    store.persist(session)
+
+    manifest_path = tmp_path / "external-session" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["external_project_path"] == "d:/code/Demo"
+    assert manifest["external_access_level"] == "full-access"
+
+    reloaded = SessionStore(storage_dir=tmp_path).get("external-session")
+    assert reloaded is not None
+    assert reloaded.external_project_path == "d:/code/Demo"
+    assert reloaded.external_access_level == "full-access"
+
+
+def test_session_defaults_external_access_level_and_no_project(tmp_path):
+    store = SessionStore(storage_dir=tmp_path)
+    session = store.create("plain-session")
+    # 默认是纯 Vault 会话：无外部项目，访问等级回落到默认。
+    assert session.external_project_path is None
+    assert session.external_access_level == "workspace-write"
+
+
+def test_session_normalizes_unknown_external_access_level(tmp_path):
+    store = SessionStore(storage_dir=tmp_path)
+    session = store.create("bad-level-session")
+    session.external_access_level = "bogus"
+    store.persist(session)
+
+    reloaded = SessionStore(storage_dir=tmp_path).get("bad-level-session")
+    assert reloaded is not None
+    # 损坏/陌生等级不应静默提权，回落到默认 workspace-write。
+    assert reloaded.external_access_level == "workspace-write"
 
 
 def test_legacy_flat_session_is_migrated_to_manifest_layout(tmp_path):

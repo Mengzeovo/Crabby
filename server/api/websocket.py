@@ -653,12 +653,16 @@ async def ws_chat(ws: WebSocket, session_id: str, conversation_id: str) -> None:
                     active_skills=active_skills,
                     all_skills=all_skills,
                     tool_catalog=tool_catalog,
+                    external_project_path=session.external_project_path,
+                    external_access_level=session.external_access_level,
                 )
 
                 ctx = build_default_context(
                     session_id=session.id,
                     conversation_id=conversation_id,
                     allowed_tool_names=allowed_tool_names,
+                    external_project_path=session.external_project_path,
+                    external_access_level=session.external_access_level,
                 )
                 turn_notifications = session.consume_pending_notifications()
                 if turn_notifications:

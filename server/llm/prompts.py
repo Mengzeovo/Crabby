@@ -205,11 +205,43 @@ def _render_tool_catalog(tool_catalog: dict[str, Any] | None) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _render_external_project(
+    external_project_path: str | None,
+    external_access_level: str | None,
+) -> str:
+    """Render the active external project block for the system prompt.
+
+    Returns an empty string for plain Vault sessions (no external project),
+    so ordinary chats are unaffected.
+    """
+    if not external_project_path:
+        return ""
+
+    level = (external_access_level or "").strip() or "workspace-write"
+    level_help = {
+        "read-only": "只读：可读取外部项目，但 edit 写入仅限 Vault；bash 工作目录仍在 Vault。",
+        "workspace-write": "可写：可读写外部项目，bash 默认在外部项目目录执行。",
+        "full-access": "完全访问：可读写外部项目，bash 在外部项目执行并放宽非破坏性命令告警。",
+    }.get(level, level)
+
+    return (
+        "\n## 外部项目\n"
+        f"- 本会话已注册外部项目目录: {external_project_path}\n"
+        f"- 访问等级: {level}（{level_help}）\n"
+        "- 引用外部项目文件时使用其绝对路径；引用 Vault 文件时仍用相对路径。\n"
+        "- Vault 始终可读写，用于存放规划、理解与实现记录；"
+        "外部目录是实际代码所在。\n"
+        "- 破坏性命令（rm/del/format 等）在任何等级下都被拦截。\n"
+    )
+
+
 def build_system_prompt(
     active_persona: Persona | None = None,
     active_skills: list[Skill] | None = None,
     all_skills: list[Skill] | None = None,
     tool_catalog: dict[str, Any] | None = None,
+    external_project_path: str | None = None,
+    external_access_level: str | None = None,
 ) -> str:
     """Build the full system prompt."""
     prompt_segments = load_prompt_segments()
@@ -225,6 +257,11 @@ def build_system_prompt(
         f"- 当前日期: {_runtime_date_label()}\n"
         f"- shell 工具: {_runtime_shell_label()}\n"
         f"- Vault 路径: {settings.vault_path}\n"
+    )
+
+    dynamic += _render_external_project(
+        external_project_path,
+        external_access_level,
     )
 
     tool_section = _render_tool_catalog(tool_catalog)

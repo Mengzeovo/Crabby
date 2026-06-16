@@ -8,6 +8,7 @@ import time
 from typing import Any
 
 from config import DATA_DIR, settings
+from external_projects import resolve_access_policy
 from tools.base import Context, ToolResult
 from tools.registry import TOOL_EXPOSURE_CHAT, ToolRegistry
 
@@ -226,8 +227,17 @@ def build_default_context(
     conversation_id: str | None = None,
     branch_fingerprint: str | None = None,
     allowed_tool_names: set[str] | None = None,
+    external_project_path: str | None = None,
+    external_access_level: str | None = None,
 ) -> Context:
-    """Build a normal-permission Context from global settings."""
+    """Build a normal-permission Context from global settings.
+
+    When ``external_project_path`` is set, the session has registered an
+    external project directory. The access level maps onto concrete extra
+    read/write roots plus bash behavior via the external_projects policy, so
+    file tools can reach the external project according to the chosen level.
+    """
+    policy = resolve_access_policy(external_project_path, external_access_level)
     return Context(
         vault_path=settings.vault_path,
         permission_level="normal",
@@ -236,6 +246,10 @@ def build_default_context(
         branch_fingerprint=branch_fingerprint,
         runtime_data_path=DATA_DIR,
         allowed_tool_names=allowed_tool_names,
+        extra_read_roots=policy.extra_read_roots,
+        extra_write_roots=policy.extra_write_roots,
+        bash_cwd=policy.bash_cwd,
+        bash_relax_dangerous=policy.bash_relax_dangerous,
     )
 
 

@@ -54,6 +54,34 @@ class Context(BaseModel):
     allowed_tool_names: set[str] | None = None
     """当前 turn 的 skill 工具白名单；None 表示不限制。"""
 
+    extra_read_roots: list[Path] = []
+    """除 Vault 外，本次调用还可读取的外部根目录（绝对路径）。
+
+    外部项目功能使用：read/grep/glob 在校验路径逃逸时，
+    允许命中 Vault 根或其中任一外部读根。默认空表示仅限 Vault。
+    """
+
+    extra_write_roots: list[Path] = []
+    """除 Vault 外，本次调用还可写入的外部根目录（绝对路径）。
+
+    edit 工具在校验写入边界时，允许命中 Vault 根或其中任一外部写根。
+    只读权限等级下应为空（即外部项目不可写）。
+    """
+
+    bash_cwd: Path | None = None
+    """bash 工具的工作目录覆盖；None 表示沿用 Vault 根。
+
+    可写/完全访问等级下指向激活的外部项目目录，使 shell 命令
+    默认在外部项目内执行。
+    """
+
+    bash_relax_dangerous: bool = False
+    """是否放宽 bash 的危险命令（非破坏性）告警拦截。
+
+    仅在“完全访问”等级下为 True，用于安装依赖、构建等操作；
+    破坏性命令黑名单始终生效，不受此开关影响。
+    """
+
 
 # ---------------------------------------------------------------------------
 # ToolResult — 工具执行的标准化返回值

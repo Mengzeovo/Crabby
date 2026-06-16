@@ -11,10 +11,12 @@ import type CrabbyPlugin from "../main";
 import { isDraftLlmProfile } from "../settings";
 import { createChatComposer } from "./chatComposer";
 import { createDiaryPrompt } from "./chatDiaryPrompt";
+import { openExternalProjectModal } from "./chatExternalProject";
 import {
   ICON_ATTACH,
   ICON_HISTORY,
   ICON_PLUS,
+  ICON_PROJECT,
   ICON_SEND,
   ICON_TREE,
 } from "./chatIcons";
@@ -100,6 +102,11 @@ export class ChatView extends ItemView {
       attr: { "aria-label": "会话树" },
     });
     treeBtn.innerHTML = ICON_TREE;
+    const projectBtn = headerLeftEl.createEl("button", {
+      cls: "chat-header-btn chat-project-btn",
+      attr: { "aria-label": "外部项目" },
+    });
+    projectBtn.innerHTML = ICON_PROJECT;
 
     const sessionTitleEl = headerArea.createDiv({ cls: "chat-header-title" });
     sessionTitleEl.setText("新会话");
@@ -325,6 +332,29 @@ export class ChatView extends ItemView {
     });
     newBtn.addEventListener("click", () => {
       sessions.handleNewSession();
+    });
+    projectBtn.addEventListener("click", () => {
+      openExternalProjectModal({
+        app: this.app,
+        client: this.client,
+        ensureSessionId: async () => {
+          if (this.client.sessionId) {
+            return this.client.sessionId;
+          }
+          const session = await this.client.createSession();
+          this.client.setSession(session.id, session.active_conversation_id);
+          return session.id;
+        },
+        onApplied: (session) => {
+          if (session.external_project_path) {
+            new Notice(
+              `已为本会话注册外部项目：${session.external_project_path}`,
+            );
+          } else {
+            new Notice("已解除本会话的外部项目绑定。");
+          }
+        },
+      });
     });
 
     sendBtn.addEventListener("click", () => {

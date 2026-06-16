@@ -41,7 +41,7 @@ class TestReadPathTraversal:
             Context(vault_path=vault),
         )
         assert "SECRET" not in result.output
-        assert "Vault" in result.output or "不存在" in result.output
+        assert "范围" in result.output or "不存在" in result.output
 
     def test_check_permission_rejects_basename_pattern_dotenv(self, tmp_path: Path):
         vault, _ = _make_sibling_layout(tmp_path)
@@ -75,7 +75,7 @@ class TestGlobPathTraversal:
             Context(vault_path=vault),
         )
         assert "creds.md" not in result.output
-        assert "Vault" in result.output
+        assert "范围" in result.output
 
 
 class TestGrepPathTraversal:
@@ -87,7 +87,7 @@ class TestGrepPathTraversal:
             Context(vault_path=vault),
         )
         assert "SECRET" not in result.output
-        assert "Vault" in result.output
+        assert "范围" in result.output
 
 
 class TestEditPathTraversal:
@@ -113,4 +113,4 @@ class TestEditPathTraversal:
             Context(vault_path=vault),
         )
         assert (sibling / "creds.md").read_text(encoding="utf-8") == "SECRET"
-        assert "Vault" in result.output or "不能超出" in result.output
+        assert "范围" in result.output or "不能超出" in result.output

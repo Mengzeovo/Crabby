@@ -21,7 +21,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 from pydantic import BaseModel, Field
 
 from runtime_paths import tool_results_cache_dir
-from tools._path_utils import is_within_path
+from tools._path_utils import access_roots, is_within_any, resolve_user_path
 from tools.base import Context, Tool, ToolResult
 
 # 敏感文件名模式——Agent 绝不可读取这些文件
@@ -119,9 +119,11 @@ class ReadTool(Tool):
                 return False
 
         # 路径逃逸检查：用 relative_to，不要用 startswith
+        # 允许命中 Vault 根或任一外部读根（外部项目功能）
         vault = ctx.vault_path.resolve()
-        resolved = (vault / params.file_path).resolve()
-        return is_within_path(resolved, vault)
+        roots = access_roots(vault, ctx.extra_read_roots)
+        resolved = resolve_user_path(params.file_path, vault)
+        return is_within_any(resolved, roots)
 
     async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
         """读取文件内容并返回。
@@ -142,13 +144,14 @@ class ReadTool(Tool):
         """
         assert isinstance(params, ReadInput)
         vault = ctx.vault_path.resolve()
-        full_path = (vault / params.file_path).resolve()
+        roots = access_roots(vault, ctx.extra_read_roots)
+        full_path = resolve_user_path(params.file_path, vault)
 
         # 二次防御：即使有人绕过 check_permission 直接调 call，
-        # 也不能读到 vault 之外的内容。
-        if not is_within_path(full_path, vault):
+        # 也不能读到允许范围（Vault + 外部读根）之外的内容。
+        if not is_within_any(full_path, roots):
             return ToolResult(
-                output="错误：路径不能超出 Vault 根目录",
+                output="错误：路径不在允许访问的目录范围内",
                 metadata={"error": True, "error_type": "path_escape", "file_path": params.file_path},
             )
 

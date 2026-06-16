@@ -1401,6 +1401,83 @@ const CHAT_STYLES = `
   .cso-provider[data-provider="minimax"] { background: rgba(219, 39, 119, 0.15); color: #db2777; }
   .cso-provider[data-provider="zhipu"] { background: rgba(22, 163, 74, 0.15); color: #16a34a; }
   .cso-provider[data-provider="custom_openai"] { background: rgba(100, 116, 139, 0.15); color: #64748b; }
+
+  .external-project-modal h2 {
+    margin: 0 0 8px 0;
+    font-size: 18px;
+  }
+
+  .external-project-modal h3 {
+    margin: 16px 0 6px 0;
+    font-size: 14px;
+  }
+
+  .external-project-hint {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+    margin: 0 0 12px 0;
+  }
+
+  .external-project-error {
+    color: var(--text-error);
+    font-size: 13px;
+  }
+
+  .external-project-current {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    word-break: break-all;
+  }
+
+  .external-project-binding-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .external-project-binding-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+  }
+
+  .external-project-binding-info {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    word-break: break-all;
+  }
+
+  .external-project-binding-external {
+    font-weight: 600;
+  }
+
+  .external-project-binding-vault {
+    color: var(--text-muted);
+  }
+
+  .external-project-binding-empty {
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 4px 0;
+  }
+
+  .external-project-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+  }
 `;
 
 export function ensureChatStyles(): void {

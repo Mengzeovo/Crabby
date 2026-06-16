@@ -111,6 +111,13 @@ Important backend files and folders:
   templates.
 - `server/runtime_config.py`: runtime config helpers for prompts, personas,
   and skills.
+- `server/external_projects.py`: external project registry plus access-level
+  policy. It persists Vault-dir <-> external-dir bindings at
+  `<vault>/.crabby/config/projects.json`, validates external paths (absolute,
+  existing directory), and maps a session's access level
+  (`read-only` / `workspace-write` / `full-access`) onto concrete extra
+  read/write roots and bash behavior (`resolve_access_policy`). The Vault root
+  is always readable/writable; the level only governs the external project.
 - `server/mcp_config.py`: MCP config loading and environment interpolation.
 - `server/mcp_runtime.py`: MCP startup, status, and transactional reload. When
   Vault tools are enabled, it launches `vault_tools_runner.py` directly in dev
@@ -137,7 +144,11 @@ Important backend files and folders:
 - `server/api/rest.py`: REST chat, diary-write bridge, context stats, persona,
   skill, health/version, capability, and admin-facing routes with safe ID
   validation.
-- `server/api/sessions.py`: session metadata and message-history APIs.
+- `server/api/sessions.py`: session metadata and message-history APIs, plus
+  the `/projects` registry router (access-levels, path validation, and
+  Vault-dir <-> external-dir bindings) and the `PATCH /sessions/{id}` external
+  project fields (`external_project_path`, `external_access_level`,
+  `clear_external_project`).
 - `server/api/websocket.py`: streaming chat WebSocket, turn-id based abort API,
   active-turn cancellation registry, tool-loop warnings, safe conversation ID
   checks, and delegation of frontend loop-control messages. When a chat turn is
@@ -185,23 +196,55 @@ Important backend files and folders:
 - `server/tools/`: built-in tools such as `obsidian_search`,
   `crabby_settings`, `read`, `grep`, `glob`, `bash`, `edit`, `fetch`, `cron`,
   `task_query`, and memory tools.
+- `server/tools/_path_utils.py`: shared path-safety helpers. `is_within_path`
+  enforces the Vault boundary via `Path.relative_to`; `is_within_any`,
+  `containing_root`, `resolve_user_path`, and `access_roots` extend that to a
+  Vault root plus any external project roots so read/grep/glob/edit can operate
+  across multiple roots. `resolve_user_path` joins Vault-relative inputs onto
+  the Vault but passes absolute inputs (external project files) through.
+  read/grep/glob check against Vault + `ctx.extra_read_roots`; edit checks
+  against Vault + `ctx.extra_write_roots`. grep/glob compute blocked-dir and
+  display paths relative to each file's containing root, showing external files
+  as absolute paths.
 - `server/tools/registry.py`: built-in/dynamic tool registry. It also exposes
   `sync_configurable_builtin_tools()` so admin settings reloads can add or
   remove the `bash` tool immediately when `BASH_ENABLED` changes.
 - `server/tools/bash.py`: non-interactive cross-platform shell tool. On
   Windows it launches PowerShell without a profile, forces UTF-8 output,
   translates top-level `&&` / `||` chains for PowerShell 5.x compatibility, and
-  kills the foreground process tree when the owning chat turn is cancelled.
+  kills the foreground process tree when the owning chat turn is cancelled. Its
+  working directory is `ctx.bash_cwd` when set (the external project under
+  workspace-write / full-access), otherwise the Vault root. Under full-access
+  (`ctx.bash_relax_dangerous`) non-destructive danger warnings (sudo / pip
+  install / chmod 777) are suppressed; the destructive blocklist
+  (rm/del/Remove-Item/format/mkfs/dd) always applies. bash has no path
+  sandbox — it relies on the blocklist and the `restricted` gate, so it can
+  reach outside the Vault regardless of the external access level. Its
+  working directory is `ctx.bash_cwd` when set (an external project under
+  workspace-write / full-access), otherwise the Vault root. The destructive
+  command blocklist always applies; only the non-destructive danger warnings are
+  relaxed under `ctx.bash_relax_dangerous` (full-access). bash has no path
+  containment, so its external reach is governed by cwd and the blocklist, not
+  by the read/write roots that read/edit/grep/glob enforce.
+- `server/tools/_path_utils.py`: shared path-safety helpers. `is_within_path`
+  uses `Path.relative_to` (not `startswith`) to defeat sibling-prefix escapes;
+  `is_within_any` / `containing_root` extend that across the Vault root plus any
+  external read/write roots; `resolve_user_path` joins Vault-relative inputs onto
+  the Vault while letting absolute external paths resolve as-is; `access_roots`
+  builds the ordered Vault-first root list. read/grep/glob check against
+  `extra_read_roots`, edit against `extra_write_roots`.
 - `server/tools/tool_result_read.py`: read-only detail expansion tool for
   previous tool-result cards in the current tool context session and
   conversation only. It reads persisted UI-only `ui.output` by `detail_ref` or
   `tool_use_id` with offset/limit/query controls, and can safely expand
   truncated tool cache files only when `cache_path` resolves inside the runtime
   `cache/tool-results/` directory.
-- `server/tools/edit.py`: Vault-relative exact replacement/new-file tool that
-  preserves dominant newline style, rejects paths outside the Vault, and returns
-  user-readable change summaries plus structured `metadata.file_changes` entries
-  for successful writes.
+- `server/tools/edit.py`: exact replacement/new-file tool that preserves
+  dominant newline style, returns user-readable change summaries plus structured
+  `metadata.file_changes` entries for successful writes, and rejects paths
+  outside the Vault root and any `ctx.extra_write_roots` (external project under
+  workspace-write / full-access). Vault-relative inputs join onto the Vault;
+  absolute paths must fall inside a write root.
 - `server/tools/base.py`: shared tool formatter and UI payload helper. LLM-visible
   tool errors now treat `metadata.error` as an error prefix, not just blocked /
   timeout / exit-code failures.
@@ -321,7 +364,14 @@ Important plugin files and folders:
   extra additive totals.
 - `obsidian-plugin/src/chat/ChatView.ts`: chat view shell. When no saved LLM
   profile exists, it shows a dismissing banner whose settings action opens the
-  Obsidian settings modal and switches to the Crabby plugin tab.
+  Obsidian settings modal and switches to the Crabby plugin tab. Its header also
+  hosts an external-project button that opens the external-project modal for the
+  current session, creating a session first if none exists yet.
+- `obsidian-plugin/src/chat/chatExternalProject.ts`: external-project modal. It
+  reads/sets the current session's `external_project_path` and
+  `external_access_level` through `PATCH /sessions/{id}`, validates the external
+  path through `/projects/validate-path` before applying, and manages the
+  persistent Vault-dir <-> external-dir binding registry through `/projects/*`.
 - `obsidian-plugin/src/chat/chatDiaryPrompt.ts`: inline prompt rendered above
   the chat input after `loop_stop`, allowing the user to write the loop summary
   into today's diary only for non-error loop completions with a `job_id`. It
@@ -514,6 +564,10 @@ npm run start
 - Session manifests may include `auto_save_checkpoints`, keyed by
   `conversation_id`, with the last reviewed message ID, revision, branch
   fingerprint, and review timestamp.
+- Session manifests are at `SESSION_SCHEMA_VERSION = 3`, which adds
+  `external_project_path` and `external_access_level` for the external project
+  feature. Older manifests load with safe defaults (no external project,
+  `workspace-write` level) since unknown keys are read with `.get()`.
 - Forked conversations inherit the parent auto-save checkpoint only when the
   checkpointed message is at or before the fork point; parent checkpoints after
   the fork point are not inherited.
@@ -644,6 +698,26 @@ npm run start
   user-defined tools under `<vault>/.crabby/tools/`. The Obsidian settings UI
   saves this value through `.env` and uses full admin reload so MCP state and
   status reflect the change.
+- External projects are an opt-in per-session capability. A session may register
+  one external project directory (`external_project_path`) plus an access level
+  (`external_access_level`: `read-only` / `workspace-write` / `full-access`,
+  default `workspace-write`), persisted in the session manifest (schema v3).
+  `read`/`grep`/`glob` may operate on the Vault plus the external read root at
+  any level; `edit` may write the external root only at write/full levels;
+  `bash` runs with cwd in the external project at write/full levels and relaxes
+  non-destructive command warnings only at `full-access`. The destructive-command
+  blocklist always applies. The Vault root is always readable/writable. The
+  persistent Vault-dir <-> external-dir registry lives at
+  `<vault>/.crabby/config/projects.json` and is metadata only; actual capability
+  is decided per-session at tool-execution time in
+  `llm.tool_executor.build_default_context`. `bash` has no path sandbox (it
+  relies on the command blocklist), so `read-only` keeps its cwd in the Vault but
+  cannot strictly prevent absolute-path access; `read`/`edit`/`grep`/`glob` are
+  strictly enforced per level.
+- Project registry / session external-project APIs: `GET /projects/access-levels`,
+  `POST /projects/validate-path`, `GET|POST|DELETE /projects/bindings`, and the
+  `external_project_path` / `external_access_level` / `clear_external_project`
+  fields on `PATCH /sessions/{id}`.
 - Tool errors should expose `metadata.error` so the LLM sees `[error]` instead
   of a success prefix. Loop tools, including `loop_stop`, must mark missing jobs
   as errors rather than successful textual results.

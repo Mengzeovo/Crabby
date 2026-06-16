@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from tools._path_utils import is_within_path
+from tools._path_utils import access_roots, is_within_any, resolve_user_path
 from tools.base import Context, Tool, ToolResult
 
 
@@ -146,19 +146,22 @@ class EditTool(Tool):
             # 限制模式下，只允许写 memory 等特殊目录（或者干脆拒绝）
             return False
 
-        # 检查路径逃逸：解析后的路径必须仍在你给定的 Vault 下
+        # 检查写入边界：解析后的路径必须落在 Vault 根或任一外部写根内。
+        # 相对路径 join 到 Vault（行为不变）；绝对路径（外部项目文件）按原样解析。
         vault = ctx.vault_path.resolve()
-        resolved = (vault / params.file_path).resolve()
-        return is_within_path(resolved, vault)
+        roots = access_roots(vault, ctx.extra_write_roots)
+        resolved = resolve_user_path(params.file_path, vault)
+        return is_within_any(resolved, roots)
 
     async def call(self, params: BaseModel, ctx: Context) -> ToolResult:
         """执行编辑替换操作。"""
         assert isinstance(params, EditInput)
         vault = ctx.vault_path.resolve()
-        full_path = (vault / params.file_path).resolve()
+        roots = access_roots(vault, ctx.extra_write_roots)
+        full_path = resolve_user_path(params.file_path, vault)
 
-        if not is_within_path(full_path, vault):
-            return ToolResult(output="错误：路径不能超出 Vault 根目录")
+        if not is_within_any(full_path, roots):
+            return ToolResult(output="错误：路径不在允许写入的目录范围内")
 
         # 判断文件是否存在
         if not full_path.is_file():

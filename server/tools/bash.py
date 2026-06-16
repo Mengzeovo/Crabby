@@ -349,8 +349,13 @@ class BashTool(Tool):
                 },
             )
 
-        warnings = self._check_dangerous(command)
+        # 完全访问等级放宽非破坏性危险命令（装依赖/构建）告警；
+        # 破坏性命令黑名单（上方 _check_blocked）始终生效，不受此影响。
+        warnings = [] if ctx.bash_relax_dangerous else self._check_dangerous(command)
         shell_args = _build_shell_command(command)
+
+        # 工作目录：外部项目可写等级下切到外部项目目录，否则留在 Vault 根。
+        cwd = ctx.bash_cwd if ctx.bash_cwd is not None else ctx.vault_path
 
         try:
             process = await asyncio.create_subprocess_exec(
@@ -358,7 +363,7 @@ class BashTool(Tool):
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=str(ctx.vault_path),
+                cwd=str(cwd),
                 env=self._clean_env(),
             )
         except OSError as exc:

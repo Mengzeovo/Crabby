@@ -26,6 +26,7 @@ from api.attachments import set_store as set_attachment_router_store
 from api.client_tools import router as client_tools_router
 from api.rest import router as chat_router, set_registry, set_session_store
 from api.rest import set_attachment_store as rest_set_attachment_store
+from api.sessions import projects_router
 from api.sessions import router as sessions_router
 from api.sessions import set_store
 from api.websocket import router as ws_router
@@ -58,6 +59,7 @@ app.add_middleware(
 app.include_router(admin_router)
 app.include_router(chat_router)
 app.include_router(sessions_router)
+app.include_router(projects_router)
 app.include_router(ws_router)
 app.include_router(attachments_router)
 app.include_router(client_tools_router)

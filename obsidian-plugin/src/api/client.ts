@@ -158,6 +158,8 @@ export interface SessionInfo {
   active_conversation_id: string;
   branch_fingerprint: string;
   persona_state: PersonaState;
+  external_project_path?: string | null;
+  external_access_level?: string;
 }
 
 /** A conversation branch inside a backend session. */
@@ -212,6 +214,28 @@ export interface PatchSessionPayload {
   active_conversation_id?: string | null;
   persona_mode?: string | null;
   manual_persona_id?: string | null;
+  external_project_path?: string | null;
+  external_access_level?: string | null;
+  clear_external_project?: boolean;
+}
+
+/** A Vault-dir <-> external-dir binding in the project registry. */
+export interface ProjectBinding {
+  vault_dir: string;
+  external_path: string;
+}
+
+/** Access-level metadata for the external-project UI. */
+export interface AccessLevelsInfo {
+  levels: string[];
+  default: string;
+}
+
+/** Result of validating an external project path before binding. */
+export interface ValidatePathResult {
+  valid: boolean;
+  resolved_path?: string | null;
+  error?: string | null;
 }
 
 export interface BackendCapabilities {
@@ -645,6 +669,61 @@ export class AgentClient {
       this.applySessionInfo(session);
     }
     return session;
+  }
+
+  async getAccessLevels(): Promise<AccessLevelsInfo> {
+    const resp = await fetch(`${this.baseUrl}/projects/access-levels`);
+    if (!resp.ok) throw new Error(`Access levels API error: ${resp.status}`);
+    return (await resp.json()) as AccessLevelsInfo;
+  }
+
+  async validateProjectPath(externalPath: string): Promise<ValidatePathResult> {
+    const resp = await fetch(`${this.baseUrl}/projects/validate-path`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ external_path: externalPath }),
+    });
+    if (!resp.ok) {
+      const detail = await readErrorDetail(resp);
+      throw new Error(detail || `Validate path API error: ${resp.status}`);
+    }
+    return (await resp.json()) as ValidatePathResult;
+  }
+
+  async listProjectBindings(): Promise<ProjectBinding[]> {
+    const resp = await fetch(`${this.baseUrl}/projects/bindings`);
+    if (!resp.ok) throw new Error(`List bindings API error: ${resp.status}`);
+    return (await resp.json()) as ProjectBinding[];
+  }
+
+  async upsertProjectBinding(
+    payload: ProjectBinding,
+  ): Promise<ProjectBinding> {
+    const resp = await fetch(`${this.baseUrl}/projects/bindings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const detail = await readErrorDetail(resp);
+      throw new Error(detail || `Upsert binding API error: ${resp.status}`);
+    }
+    return (await resp.json()) as ProjectBinding;
+  }
+
+  async removeProjectBinding(payload: {
+    vault_dir?: string;
+    external_path?: string;
+  }): Promise<void> {
+    const resp = await fetch(`${this.baseUrl}/projects/bindings`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok && resp.status !== 204) {
+      const detail = await readErrorDetail(resp);
+      throw new Error(detail || `Remove binding API error: ${resp.status}`);
+    }
   }
 
   async chat(
