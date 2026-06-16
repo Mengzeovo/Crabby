@@ -1,6 +1,6 @@
 [project]
 name = "crabby"
-version = "0.3.5"
+version = "0.4.0"
 description = "Local AI assistant built on Obsidian Vault"
 requires-python = ">=3.11"
 dependencies = [

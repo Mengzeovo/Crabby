@@ -704,7 +704,7 @@ async function main() {
     );
     adapter._files.set(".crabby/data/search-index/documents.jsonl", "");
 
-    const index = new SearchIndex(app, { pluginVersion: "0.3.5" });
+    const index = new SearchIndex(app, { pluginVersion: "0.4.0" });
     await index.initialize();
     const docs = index.getDocuments();
     assert.equal(docs.length, 1, "version mismatch must trigger full rebuild");
@@ -713,7 +713,7 @@ async function main() {
     );
     assert.equal(
       m.built_with_plugin_version,
-      "0.3.5",
+      "0.4.0",
       "manifest must record new plugin version after rebuild",
     );
     console.log("ok plugin version mismatch triggers rebuild");

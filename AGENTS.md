@@ -321,7 +321,7 @@ uv sync --dev
 uv run python main.py
 uv run pytest
 uv run ruff check .
-uv run --with pyinstaller python ../scripts/build-backend-runtime.py --version 0.3.5
+uv run --with pyinstaller python ../scripts/build-backend-runtime.py --version 0.4.0
 ```
 
 ## Obsidian Plugin Map
