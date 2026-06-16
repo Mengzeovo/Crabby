@@ -104,7 +104,7 @@ export class ChatView extends ItemView {
     treeBtn.innerHTML = ICON_TREE;
     const projectBtn = headerLeftEl.createEl("button", {
       cls: "chat-header-btn chat-project-btn",
-      attr: { "aria-label": "外部项目" },
+      attr: { "aria-label": "Watcher" },
     });
     projectBtn.innerHTML = ICON_PROJECT;
 
@@ -348,10 +348,10 @@ export class ChatView extends ItemView {
         onApplied: (session) => {
           if (session.external_project_path) {
             new Notice(
-              `已为本会话注册外部项目：${session.external_project_path}`,
+              `已为本会话注册监控项目：${session.external_project_path}`,
             );
           } else {
-            new Notice("已解除本会话的外部项目绑定。");
+            new Notice("已解除本会话的监控项目。");
           }
         },
       });
