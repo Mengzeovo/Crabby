@@ -338,14 +338,28 @@ export class ChatView extends ItemView {
         app: this.app,
         client: this.client,
         ensureSessionId: async () => {
-          if (this.client.sessionId) {
-            return this.client.sessionId;
+          const sessionId = this.client.sessionId;
+          const conversationId = this.client.conversationId;
+          if (sessionId && conversationId) {
+            this.turnManager.setCurrentConversation(
+              sessionId,
+              conversationId,
+            );
+            return sessionId;
           }
           const session = await this.client.createSession();
           this.client.setSession(session.id, session.active_conversation_id);
+          this.turnManager.setCurrentConversation(
+            session.id,
+            session.active_conversation_id,
+          );
           return session.id;
         },
         onApplied: (session) => {
+          this.turnManager.setCurrentConversation(
+            session.id,
+            session.active_conversation_id,
+          );
           if (session.external_project_path) {
             new Notice(
               `已为本会话注册监控项目：${session.external_project_path}`,

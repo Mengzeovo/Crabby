@@ -18,6 +18,43 @@ async function loadTurnManagerModule() {
   return require(outfile);
 }
 
+async function loadTurnRunnerModule() {
+  const outdir = await fs.mkdtemp(path.join(os.tmpdir(), "turn-runner-test-"));
+  const outfile = path.join(outdir, "turn-runner.cjs");
+  await esbuild.build({
+    entryPoints: [path.join(__dirname, "../src/chat/chatTurnRunner.ts")],
+    bundle: true,
+    format: "cjs",
+    platform: "node",
+    outfile,
+    logLevel: "silent",
+    plugins: [
+      {
+        name: "obsidian-stub",
+        setup(build) {
+          build.onResolve({ filter: /^obsidian$/ }, () => ({
+            path: "obsidian-stub",
+            namespace: "obsidian-stub",
+          }));
+          build.onLoad({ filter: /.*/, namespace: "obsidian-stub" }, () => ({
+            contents: `
+class Notice {
+  static messages = [];
+  constructor(message) {
+    Notice.messages.push(String(message));
+  }
+}
+module.exports = { MarkdownRenderer: { render() {} }, Notice };
+`,
+            loader: "js",
+          }));
+        },
+      },
+    ],
+  });
+  return require(outfile);
+}
+
 function nextTick() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -187,6 +224,202 @@ async function main() {
   });
   await first.finished;
   assert.equal(manager.getSessionStatus("session-1"), "done");
+
+  const { createChatTurnRunner } = await loadTurnRunnerModule();
+  await testTurnRunnerReassertsCurrentConversation(createChatTurnRunner);
+}
+
+async function testTurnRunnerReassertsCurrentConversation(createChatTurnRunner) {
+  const setCalls = [];
+  let currentConversation = null;
+  let startOptions = null;
+  let hasRunningCheckedAfterSync = false;
+  let composerCleared = false;
+  const appendedMessages = [];
+
+  const turnManager = {
+    setCurrentConversation(sessionId, conversationId) {
+      currentConversation = { sessionId, conversationId };
+      setCalls.push(currentConversation);
+    },
+    isRunning() {
+      return false;
+    },
+    isCurrent(sessionId, conversationId) {
+      return (
+        currentConversation?.sessionId === sessionId &&
+        currentConversation?.conversationId === conversationId
+      );
+    },
+    hasRunningSession(sessionId) {
+      assert.equal(sessionId, "watcher-session");
+      assert.deepEqual(currentConversation, {
+        sessionId: "watcher-session",
+        conversationId: "root",
+      });
+      hasRunningCheckedAfterSync = true;
+      return false;
+    },
+    startTurn(options) {
+      startOptions = options;
+      return {
+        sessionId: options.sessionId,
+        conversationId: options.conversationId,
+        status: "running",
+        finished: Promise.resolve(),
+        abort: async () => {},
+        detach: () => {},
+      };
+    },
+  };
+
+  const runner = createChatTurnRunner({
+    app: {},
+    component: {},
+    client: {
+      sessionId: "watcher-session",
+      conversationId: "root",
+      createSession: async () => {
+        throw new Error("existing Watcher session should be reused");
+      },
+      chat: async () => {
+        throw new Error("streaming path should be used");
+      },
+    },
+    plugin: {
+      applyLlmProfile: async () => ({ ok: true, message: "" }),
+      ensureBackendVaultPathSynced: async () => ({
+        ok: true,
+        changed: false,
+        message: "ok",
+      }),
+    },
+    composer: {
+      getSubmitPayload: () => ({
+        request: { content: "hello" },
+        displayText: "hello",
+        displayAttachments: [],
+      }),
+      navigateHistory: () => false,
+      clear: () => {
+        composerCleared = true;
+      },
+      destroy: () => {},
+    },
+    elements: createTurnRunnerElements(),
+    state: {
+      messages: [],
+      userMsgRefs: [],
+      toolBlocks: new Map(),
+      toolIdToName: new Map(),
+      isSending: false,
+      isAborted: false,
+      sessionPanelOpen: false,
+      treePanelOpen: false,
+      personaState: {
+        mode: "auto",
+        manual_persona_id: null,
+        active_persona_id: null,
+        source: "none",
+        status: "unresolved",
+      },
+    },
+    transcript: {
+      appendMessage: (...args) => appendedMessages.push(args),
+      renderAssistantMessage: () => {},
+      updateLastUserMessageId: () => false,
+      beginTool: () => {},
+      completeTool: () => {},
+      renderHistoricalTool: () => {},
+      clearConversationUi: () => {},
+      clearToolTracking: () => {},
+      removeTransientUi: () => {},
+      scrollToBottom: () => {},
+      updateContextBar: () => {},
+      setForkHandler: () => {},
+    },
+    sessions: {
+      handleNewSession: () => {},
+      toggleSessionPanel: () => {},
+      toggleTreePanel: () => {},
+      loadSessionList: async () => {},
+      loadConversationTree: async () => {},
+      switchToSession: async () => {},
+      deleteSessionConfirm: async () => {},
+      syncCurrentSessionTitle: async () => {},
+    },
+    persona: { setPersonaState: () => {} },
+    diaryPrompt: {
+      showLoopStopResult: () => {},
+      hide: () => {},
+      destroy: () => {},
+    },
+    turnManager,
+  });
+
+  await runner.handleSend();
+
+  assert.deepEqual(setCalls, [
+    { sessionId: "watcher-session", conversationId: "root" },
+  ]);
+  assert.equal(hasRunningCheckedAfterSync, true);
+  assert.equal(startOptions.sessionId, "watcher-session");
+  assert.equal(startOptions.conversationId, "root");
+  assert.deepEqual(startOptions.payload, {
+    content: "hello",
+    persona_mode: "auto",
+    manual_persona_id: null,
+    session_id: "watcher-session",
+    conversation_id: "root",
+  });
+  assert.equal(composerCleared, true);
+  assert.deepEqual(appendedMessages[0], ["user", "hello", true, []]);
+}
+
+function createTurnRunnerElements() {
+  const inputEl = { disabled: false };
+  const attachmentBtn = { disabled: false };
+  const sendBtn = {
+    classList: new ClassListStub(),
+    innerHTML: "",
+    attributes: {},
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    },
+  };
+  return {
+    messagesEl: {},
+    minimapEl: {},
+    diaryPromptEl: {},
+    inputAreaEl: {},
+    inputEl,
+    sendBtn,
+    attachmentBtn,
+    hiddenFileInput: {},
+    composerPillsEl: {},
+    suggestionListEl: {},
+    contextBarEl: {},
+    sessionTitleEl: {},
+    sessionPanelEl: {},
+    sessionListEl: {},
+    treePanelEl: {},
+    treePanelTitleEl: {},
+    treeListEl: {},
+  };
+}
+
+class ClassListStub {
+  constructor() {
+    this.classes = new Set();
+  }
+
+  add(...classes) {
+    classes.forEach((cls) => this.classes.add(cls));
+  }
+
+  remove(...classes) {
+    classes.forEach((cls) => this.classes.delete(cls));
+  }
 }
 
 main().catch((error) => {

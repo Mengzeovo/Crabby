@@ -355,7 +355,9 @@ Important plugin files and folders:
   tree, fork actions, stylesheet injection, turn runner, stop-button handling
   that waits for backend abort acknowledgement before clearing sending state,
   local cross-session turn management that lets one session continue replying
-  in the background while the visible session sends another turn,
+  in the background while the visible session sends another turn, and a send
+  path that reasserts the current `ChatTurnManager` conversation before opening
+  a streaming turn so foreground replies are rendered reliably,
   inline loop-to-diary prompts, and tool-block metadata rendering including
   file-change counts from `metadata.file_changes`. The context/token bar
   separates current context window estimates from provider-returned usage
@@ -366,7 +368,10 @@ Important plugin files and folders:
   profile exists, it shows a dismissing banner whose settings action opens the
   Obsidian settings modal and switches to the Crabby plugin tab. Its header also
   hosts an external-project button that opens the external-project modal for the
-  current session, creating a session first if none exists yet.
+  current session, creating a session first if none exists yet. When that
+  Watcher flow creates, reuses, or updates a session, ChatView syncs the
+  `ChatTurnManager` current conversation so subsequent streaming replies render
+  in the foreground chat instead of being treated as background turns.
 - `obsidian-plugin/src/chat/chatExternalProject.ts`: external-project modal. It
   reads/sets the current session's `external_project_path` and
   `external_access_level` through `PATCH /sessions/{id}`, validates the external
@@ -420,6 +425,9 @@ Important plugin files and folders:
 - `obsidian-plugin/scripts/test-api-client-abort.js`: verifies streaming chat
   turn-id propagation to the abort API and confirms the client keeps the stream
   pending until abort acknowledgement before closing the WebSocket.
+- `obsidian-plugin/scripts/test-chat-turn-manager.js`: verifies cross-session
+  foreground/background turn management and that the send path reasserts the
+  current conversation before streaming a turn.
 - `obsidian-plugin/scripts/test-backend-config.js`: platform-neutral config
   regression coverage for backend config, runtime state, search engine, and
   Obsidian vault resolution. It uses OS-specific Obsidian metadata locations
@@ -437,6 +445,7 @@ npm run test:config
 npm run test:search-index
 npm run test:chat-content
 npm run test:api-client
+npm run test:turn-manager
 npm run test:chat-styles
 npx tsc --noEmit
 npm run build

@@ -183,8 +183,8 @@ export function createChatTurnRunner(
         sessionId: session.id,
         conversationId: session.active_conversation_id,
       };
-      turnManager.setCurrentConversation(current.sessionId, current.conversationId);
     }
+    turnManager.setCurrentConversation(current.sessionId, current.conversationId);
     if (turnManager.hasRunningSession(current.sessionId)) {
       new Notice("该会话仍在回复中，请完成或停止后再发送。");
       refreshCurrentTurnState();
